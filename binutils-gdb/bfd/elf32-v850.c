@@ -1,5 +1,5 @@
 /* V850-specific support for 32-bit ELF
-   Copyright (C) 1996-2019 Free Software Foundation, Inc.
+   Copyright (C) 1996-2018 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -61,7 +61,7 @@ v850_elf_check_relocs (bfd *abfd,
     return TRUE;
 
 #ifdef DEBUG
-  _bfd_error_handler ("v850_elf_check_relocs called for section %pA in %pB",
+  _bfd_error_handler ("v850_elf_check_relocs called for section %A in %B",
 		      sec, abfd);
 #endif
 
@@ -101,7 +101,9 @@ v850_elf_check_relocs (bfd *abfd,
 	/* This relocation describes which C++ vtable entries
 	   are actually used.  Record for later use during GC.  */
 	case R_V850_GNU_VTENTRY:
-	  if (!bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
+	  BFD_ASSERT (h != NULL);
+	  if (h != NULL
+	      && !bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
 	    return FALSE;
 	  break;
 
@@ -148,19 +150,19 @@ v850_elf_check_relocs (bfd *abfd,
 		  switch (h->other & V850_OTHER_MASK)
 		    {
 		    default:
-		      msg = _("variable `%s' cannot occupy in multiple small data regions");
+		      msg = _("Variable `%s' cannot occupy in multiple small data regions");
 		      break;
 		    case V850_OTHER_SDA | V850_OTHER_ZDA | V850_OTHER_TDA:
-		      msg = _("variable `%s' can only be in one of the small, zero, and tiny data regions");
+		      msg = _("Variable `%s' can only be in one of the small, zero, and tiny data regions");
 		      break;
 		    case V850_OTHER_SDA | V850_OTHER_ZDA:
-		      msg = _("variable `%s' cannot be in both small and zero data regions simultaneously");
+		      msg = _("Variable `%s' cannot be in both small and zero data regions simultaneously");
 		      break;
 		    case V850_OTHER_SDA | V850_OTHER_TDA:
-		      msg = _("variable `%s' cannot be in both small and tiny data regions simultaneously");
+		      msg = _("Variable `%s' cannot be in both small and tiny data regions simultaneously");
 		      break;
 		    case V850_OTHER_ZDA | V850_OTHER_TDA:
-		      msg = _("variable `%s' cannot be in both zero and tiny data regions simultaneously");
+		      msg = _("Variable `%s' cannot be in both zero and tiny data regions simultaneously");
 		      break;
 		    }
 
@@ -458,7 +460,7 @@ v850_elf_perform_lo16_relocation (bfd *abfd, unsigned long *insn,
 	}
       else
 	{
-	  _bfd_error_handler (_("failed to find previous HI16 reloc"));
+	  _bfd_error_handler (_("FAILED to find previous HI16 reloc"));
 	  return FALSE;
 	}
     }
@@ -488,8 +490,7 @@ v850_elf_perform_relocation (bfd *abfd,
     {
     default:
 #ifdef DEBUG
-      _bfd_error_handler ("%pB: unsupported relocation type %#x",
-			  abfd, r_type);
+      fprintf (stderr, "%B: reloc number %d not recognised\n", abfd, r_type);
 #endif
       return bfd_reloc_notsupported;
 
@@ -1883,8 +1884,8 @@ v850_elf_reloc_name_lookup (bfd *abfd ATTRIBUTE_UNUSED,
 
 /* Set the howto pointer for an V850 ELF reloc.  */
 
-static bfd_boolean
-v850_elf_info_to_howto_rel (bfd *abfd,
+static void
+v850_elf_info_to_howto_rel (bfd *abfd ATTRIBUTE_UNUSED,
 			    arelent *cache_ptr,
 			    Elf_Internal_Rela *dst)
 {
@@ -1894,19 +1895,16 @@ v850_elf_info_to_howto_rel (bfd *abfd,
   if (r_type >= (unsigned int) R_V850_max)
     {
       /* xgettext:c-format */
-      _bfd_error_handler (_("%pB: unsupported relocation type %#x"),
-			  abfd, r_type);
-      bfd_set_error (bfd_error_bad_value);
-      return FALSE;
+      _bfd_error_handler (_("%B: invalid V850 reloc number: %d"), abfd, r_type);
+      r_type = 0;
     }
   cache_ptr->howto = &v850_elf_howto_table[r_type];
-  return TRUE;
 }
 
 /* Set the howto pointer for a V850 ELF reloc (type RELA).  */
 
-static bfd_boolean
-v850_elf_info_to_howto_rela (bfd *abfd,
+static void
+v850_elf_info_to_howto_rela (bfd *abfd ATTRIBUTE_UNUSED,
 			     arelent * cache_ptr,
 			     Elf_Internal_Rela *dst)
 {
@@ -1916,13 +1914,10 @@ v850_elf_info_to_howto_rela (bfd *abfd,
   if (r_type >= (unsigned int) R_V850_max)
     {
       /* xgettext:c-format */
-      _bfd_error_handler (_("%pB: unsupported relocation type %#x"),
-			  abfd, r_type);
-      bfd_set_error (bfd_error_bad_value);
-      return FALSE;
+      _bfd_error_handler (_("%B: invalid V850 reloc number: %d"), abfd, r_type);
+      r_type = 0;
     }
   cache_ptr->howto = &v850_elf_howto_table[r_type];
-  return TRUE;
 }
 
 static bfd_boolean
@@ -2150,8 +2145,7 @@ v850_elf_final_link_relocate (reloc_howto_type *howto,
 
     default:
 #ifdef DEBUG
-      _bfd_error_handler ("%pB: unsupported relocation type %#x",
-	       input_bfd, r_type);
+      fprintf (stderr, "%B: reloc number %d not recognised\n", input_bfd, r_type);
 #endif
       return bfd_reloc_notsupported;
     }
@@ -2527,7 +2521,7 @@ v850_elf_merge_notes (bfd * ibfd, bfd *obfd)
 		{
 		  _bfd_error_handler
 		    /* xgettext:c-format */
-		    (_("error: %pB needs 8-byte alignment but %pB is set for 4-byte alignment"),
+		    (_("error: %B needs 8-byte alignment but %B is set for 4-byte alignment"),
 				      ibfd, obfd);
 		  result = FALSE;
 		}
@@ -2543,8 +2537,8 @@ v850_elf_merge_notes (bfd * ibfd, bfd *obfd)
 		{
 		  _bfd_error_handler
 		    /* xgettext:c-format */
-		    (_("error: %pB uses 64-bit doubles but "
-		       "%pB uses 32-bit doubles"), ibfd, obfd);
+		    (_("error: %B uses 64-bit doubles but "
+		       "%B uses 32-bit doubles"), ibfd, obfd);
 		  result = FALSE;
 		}
 	      else
@@ -2558,7 +2552,7 @@ v850_elf_merge_notes (bfd * ibfd, bfd *obfd)
 		{
 		  _bfd_error_handler
 		    /* xgettext:c-format */
-		    (_("error: %pB uses FPU-3.0 but %pB only supports FPU-2.0"),
+		    (_("error: %B uses FPU-3.0 but %B only supports FPU-2.0"),
 		     ibfd, obfd);
 		  result = FALSE;
 		}
@@ -2815,7 +2809,7 @@ v850_elf_merge_private_bfd_data (bfd *ibfd, struct bfd_link_info *info)
       if ((in_flags & EF_V800_850E3) != (out_flags & EF_V800_850E3))
 	{
 	  _bfd_error_handler
-	    (_("%pB: architecture mismatch with previous modules"), ibfd);
+	    (_("%B: Architecture mismatch with previous modules"), ibfd);
 	  elf_elfheader (obfd)->e_flags |= EF_V800_850E3;
 	}
 
@@ -2871,7 +2865,7 @@ v850_elf_merge_private_bfd_data (bfd *ibfd, struct bfd_link_info *info)
 	}
 
       _bfd_error_handler
-	(_("%pB: architecture mismatch with previous modules"), ibfd);
+	(_("%B: Architecture mismatch with previous modules"), ibfd);
     }
 
   return result;
@@ -3604,9 +3598,9 @@ v850_elf_relax_section (bfd *abfd,
 		{
 		  _bfd_error_handler
 		    /* xgettext:c-format */
-		    (_("%pB: %#" PRIx64 ": warning: %s points to "
+		    (_("%B: %#Lx: warning: R_V850_LONGCALL points to "
 		       "unrecognized insns"),
-		     abfd, (uint64_t) irel->r_offset, "R_V850_LONGCALL");
+		     abfd, irel->r_offset);
 		  continue;
 		}
 
@@ -3614,11 +3608,10 @@ v850_elf_relax_section (bfd *abfd,
 		{
 		  _bfd_error_handler
 		    /* xgettext:c-format */
-		    (_("%pB: %#" PRIx64 ": warning: %s points to "
+		    (_("%B: %#Lx: warning: R_V850_LONGCALL points to "
 		       "unrecognized insn %#x"),
 		     abfd,
-		     (uint64_t) (irel->r_offset + no_match),
-		     "R_V850_LONGCALL",
+		     irel->r_offset + no_match,
 		     insn[no_match]);
 		  continue;
 		}
@@ -3660,9 +3653,9 @@ v850_elf_relax_section (bfd *abfd,
 		{
 		  _bfd_error_handler
 		    /* xgettext:c-format */
-		    (_("%pB: %#" PRIx64 ": warning: %s points to "
+		    (_("%B: %#Lx: warning: R_V850_LONGCALL points to "
 		       "unrecognized reloc"),
-		     abfd, (uint64_t) irel->r_offset, "R_V850_LONGCALL");
+		     abfd, irel->r_offset);
 
 		  continue;
 		}
@@ -3700,10 +3693,10 @@ v850_elf_relax_section (bfd *abfd,
 		{
 		  _bfd_error_handler
 		    /* xgettext:c-format */
-		    (_("%pB: %#" PRIx64 ": warning: %s points to "
-		       "unrecognized reloc %#" PRIx64),
-		     abfd, (uint64_t) irel->r_offset, "R_V850_LONGCALL",
-		     (uint64_t) irelcall->r_offset);
+		    (_("%B: %#Lx: warning: R_V850_LONGCALL points to "
+		       "unrecognized reloc %#Lx"),
+		     abfd, irel->r_offset,
+		     irelcall->r_offset);
 		  continue;
 		}
 
@@ -3843,9 +3836,9 @@ v850_elf_relax_section (bfd *abfd,
 		{
 		  _bfd_error_handler
 		    /* xgettext:c-format */
-		    (_("%pB: %#" PRIx64 ": warning: %s points to "
+		    (_("%B: %#Lx: warning: R_V850_LONGJUMP points to "
 		       "unrecognized insns"),
-		     abfd, (uint64_t) irel->r_offset, "R_V850_LONGJUMP");
+		     abfd, irel->r_offset);
 		  continue;
 		}
 
@@ -3853,11 +3846,10 @@ v850_elf_relax_section (bfd *abfd,
 		{
 		  _bfd_error_handler
 		    /* xgettext:c-format */
-		    (_("%pB: %#" PRIx64 ": warning: %s points to "
+		    (_("%B: %#Lx: warning: R_V850_LONGJUMP points to "
 		       "unrecognized insn %#x"),
 		     abfd,
-		     (uint64_t) (irel->r_offset + no_match),
-		     "R_V850_LONGJUMP",
+		     irel->r_offset + no_match,
 		     insn[no_match]);
 		  continue;
 		}
@@ -3888,9 +3880,9 @@ v850_elf_relax_section (bfd *abfd,
 		{
 		  _bfd_error_handler
 		    /* xgettext:c-format */
-		    (_("%pB: %#" PRIx64 ": warning: %s points to "
+		    (_("%B: %#Lx: warning: R_V850_LONGJUMP points to "
 		       "unrecognized reloc"),
-		     abfd, (uint64_t) irel->r_offset, "R_V850_LONGJUMP");
+		     abfd, irel->r_offset);
 		  continue;
 		}
 
@@ -4249,30 +4241,25 @@ v800_elf_reloc_name_lookup (bfd * abfd, const char * r_name)
 
 /* Set the howto pointer in CACHE_PTR for a V800 ELF reloc.  */
 
-static bfd_boolean
+static void
 v800_elf_info_to_howto (bfd *		    abfd,
 			arelent *	    cache_ptr,
 			Elf_Internal_Rela * dst)
 {
   unsigned int r_type = ELF32_R_TYPE (dst->r_info);
 
+  BFD_ASSERT (bfd_get_arch (abfd) == bfd_arch_v850_rh850);
+
+  BFD_ASSERT (r_type < (unsigned int) R_V800_max);
+
   if (r_type == R_V800_NONE)
     r_type = R_V810_NONE;
 
-  if (bfd_get_arch (abfd) != bfd_arch_v850_rh850
-      || r_type >= (unsigned int) R_V800_max
-      || r_type < (unsigned int) R_V810_NONE
-      || (r_type - R_V810_NONE) >= ARRAY_SIZE (v800_elf_howto_table))
-    {
-      /* xgettext:c-format */
-      _bfd_error_handler (_("%pB: unsupported relocation type %#x"),
-			  abfd, r_type);
-      bfd_set_error (bfd_error_bad_value);
-      return FALSE;
-    }
+  BFD_ASSERT (r_type >= (unsigned int) R_V810_NONE);
+  r_type -= R_V810_NONE;
+  BFD_ASSERT (r_type < ARRAY_SIZE (v800_elf_howto_table));
 
-  cache_ptr->howto = v800_elf_howto_table + (r_type - R_V810_NONE);
-  return TRUE;
+  cache_ptr->howto = v800_elf_howto_table + r_type;
 }
 
 #undef  TARGET_LITTLE_SYM

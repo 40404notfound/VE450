@@ -1,6 +1,6 @@
 /* Process record and replay target for GDB, the GNU debugger.
 
-   Copyright (C) 2008-2019 Free Software Foundation, Inc.
+   Copyright (C) 2008-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -21,7 +21,7 @@
 #include "gdbcmd.h"
 #include "completer.h"
 #include "record.h"
-#include "observable.h"
+#include "observer.h"
 #include "inferior.h"
 #include "common/common-utils.h"
 #include "cli/cli-utils.h"
@@ -75,7 +75,7 @@ require_record_target (void)
   t = find_record_target ();
   if (t == NULL)
     error (_("No record target is currently active.\n"
-	     "Use one of the \"target record-<TAB><TAB>\" commands first."));
+	     "Use one of the \"target record-<tab><tab>\" commands first."));
 
   return t;
 }
@@ -99,25 +99,25 @@ record_start (const char *method, const char *format, int from_tty)
   if (method == NULL)
     {
       if (format == NULL)
-	execute_command_to_string ("record", from_tty, false);
+	execute_command_to_string ("record", from_tty);
       else
 	error (_("Invalid format."));
     }
   else if (strcmp (method, "full") == 0)
     {
       if (format == NULL)
-	execute_command_to_string ("record full", from_tty, false);
+	execute_command_to_string ("record full", from_tty);
       else
 	error (_("Invalid format."));
     }
   else if (strcmp (method, "btrace") == 0)
     {
       if (format == NULL)
-	execute_command_to_string ("record btrace", from_tty, false);
+	execute_command_to_string ("record btrace", from_tty);
       else if (strcmp (format, "bts") == 0)
-	execute_command_to_string ("record btrace bts", from_tty, false);
+	execute_command_to_string ("record btrace bts", from_tty);
       else if (strcmp (format, "pt") == 0)
-	execute_command_to_string ("record btrace pt", from_tty, false);
+	execute_command_to_string ("record btrace pt", from_tty);
       else
 	error (_("Invalid format."));
     }
@@ -130,7 +130,7 @@ record_start (const char *method, const char *format, int from_tty)
 void
 record_stop (int from_tty)
 {
-  execute_command_to_string ("record stop", from_tty, false);
+  execute_command_to_string ("record stop", from_tty);
 }
 
 /* See record.h.  */
@@ -154,9 +154,9 @@ record_read_memory (struct gdbarch *gdbarch,
 static void
 record_stop (struct target_ops *t)
 {
-  DEBUG ("stop %s", t->shortname ());
+  DEBUG ("stop %s", t->to_shortname);
 
-  t->stop_recording ();
+  t->to_stop_recording (t);
 }
 
 /* Unpush the record target.  */
@@ -164,7 +164,7 @@ record_stop (struct target_ops *t)
 static void
 record_unpush (struct target_ops *t)
 {
-  DEBUG ("unpush %s", t->shortname ());
+  DEBUG ("unpush %s", t->to_shortname);
 
   unpush_target (t);
 }
@@ -174,9 +174,9 @@ record_unpush (struct target_ops *t)
 void
 record_disconnect (struct target_ops *t, const char *args, int from_tty)
 {
-  gdb_assert (t->stratum () == record_stratum);
+  gdb_assert (t->to_stratum == record_stratum);
 
-  DEBUG ("disconnect %s", t->shortname ());
+  DEBUG ("disconnect %s", t->to_shortname);
 
   record_stop (t);
   record_unpush (t);
@@ -187,16 +187,16 @@ record_disconnect (struct target_ops *t, const char *args, int from_tty)
 /* See record.h.  */
 
 void
-record_detach (struct target_ops *t, inferior *inf, int from_tty)
+record_detach (struct target_ops *t, const char *args, int from_tty)
 {
-  gdb_assert (t->stratum () == record_stratum);
+  gdb_assert (t->to_stratum == record_stratum);
 
-  DEBUG ("detach %s", t->shortname ());
+  DEBUG ("detach %s", t->to_shortname);
 
   record_stop (t);
   record_unpush (t);
 
-  target_detach (inf, from_tty);
+  target_detach (args, from_tty);
 }
 
 /* See record.h.  */
@@ -204,9 +204,9 @@ record_detach (struct target_ops *t, inferior *inf, int from_tty)
 void
 record_mourn_inferior (struct target_ops *t)
 {
-  gdb_assert (t->stratum () == record_stratum);
+  gdb_assert (t->to_stratum == record_stratum);
 
-  DEBUG ("mourn inferior %s", t->shortname ());
+  DEBUG ("mourn inferior %s", t->to_shortname);
 
   /* It is safer to not stop recording.  Resources will be freed when
      threads are discarded.  */
@@ -220,9 +220,9 @@ record_mourn_inferior (struct target_ops *t)
 void
 record_kill (struct target_ops *t)
 {
-  gdb_assert (t->stratum () == record_stratum);
+  gdb_assert (t->to_stratum == record_stratum);
 
-  DEBUG ("kill %s", t->shortname ());
+  DEBUG ("kill %s", t->to_shortname);
 
   /* It is safer to not stop recording.  Resources will be freed when
      threads are discarded.  */
@@ -311,7 +311,7 @@ cmd_record_stop (const char *args, int from_tty)
   printf_unfiltered (_("Process record is stopped and all execution "
 		       "logs are deleted.\n"));
 
-  gdb::observers::record_changed.notify (current_inferior (), 0, NULL, NULL);
+  observer_notify_record_changed (current_inferior (), 0, NULL, NULL);
 }
 
 /* The "set record" command.  */
@@ -320,7 +320,7 @@ static void
 set_record_command (const char *args, int from_tty)
 {
   printf_unfiltered (_("\"set record\" must be followed "
-		       "by an appropriate subcommand.\n"));
+		       "by an apporpriate subcommand.\n"));
   help_list (set_record_cmdlist, "set record ", all_commands, gdb_stdout);
 }
 
@@ -346,8 +346,8 @@ info_record_command (const char *args, int from_tty)
       return;
     }
 
-  printf_filtered (_("Active record target: %s\n"), t->shortname ());
-  t->info_record ();
+  printf_filtered (_("Active record target: %s\n"), t->to_shortname);
+  t->to_info_record (t);
 }
 
 /* The "record save" command.  */
@@ -366,7 +366,7 @@ cmd_record_save (const char *args, int from_tty)
     {
       /* Default recfile name is "gdb_record.PID".  */
       xsnprintf (recfilename_buffer, sizeof (recfilename_buffer),
-                "gdb_record.%d", inferior_ptid.pid ());
+                "gdb_record.%d", ptid_get_pid (inferior_ptid));
       recfilename = recfilename_buffer;
     }
 
@@ -615,11 +615,14 @@ cmd_record_insn_history (const char *arg, int from_tty)
 
 /* Read function-call-history modifiers from an argument string.  */
 
-static record_print_flags
+static int
 get_call_history_modifiers (const char **arg)
 {
-  record_print_flags modifiers = 0;
-  const char *args = *arg;
+  int modifiers;
+  const char *args;
+
+  modifiers = 0;
+  args = *arg;
 
   if (args == NULL)
     return modifiers;
@@ -669,11 +672,13 @@ get_call_history_modifiers (const char **arg)
 static void
 cmd_record_call_history (const char *arg, int from_tty)
 {
+  int flags, size;
+
   require_record_target ();
 
-  record_print_flags flags = get_call_history_modifiers (&arg);
+  flags = get_call_history_modifiers (&arg);
 
-  int size = command_size_to_target_size (record_call_history_size);
+  size = command_size_to_target_size (record_call_history_size);
 
   if (arg == NULL || *arg == 0 || strcmp (arg, "+") == 0)
     target_call_history (size, flags);
@@ -822,8 +827,8 @@ A size of \"unlimited\" means unlimited lines.  The default is 10."),
 
   c = add_cmd ("save", class_obscure, cmd_record_save,
 	       _("Save the execution log to a file.\n\
-Usage: record save [FILENAME]\n\
-Default filename is 'gdb_record.PROCESS_ID'."),
+Argument is optional filename.\n\
+Default filename is 'gdb_record.<process_id>'."),
 	       &record_cmdlist);
   set_cmd_completer (c, filename_completer);
 

@@ -1,5 +1,5 @@
 /* Opcode table for the ARC.
-   Copyright (C) 1994-2019 Free Software Foundation, Inc.
+   Copyright (C) 1994-2018 Free Software Foundation, Inc.
 
    Contributed by Claudiu Zissulescu (claziss@synopsys.com)
 
@@ -651,13 +651,9 @@ static long long
 extract_w6 (unsigned long long  insn,
 	    bfd_boolean *       invalid ATTRIBUTE_UNUSED)
 {
-  int value = 0;
+  unsigned value = 0;
 
   value |= ((insn >> 6) & 0x003f) << 0;
-
-  /* Extend the sign.  */
-  int signbit = 1 << 5;
-  value = (value ^ signbit) - signbit;
 
   return value;
 }

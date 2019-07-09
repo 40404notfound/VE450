@@ -1,6 +1,6 @@
 /* Target-dependent code for AMD64.
 
-   Copyright (C) 2001-2019 Free Software Foundation, Inc.
+   Copyright (C) 2001-2018 Free Software Foundation, Inc.
 
    Contributed by Jiri Smid, SuSE Labs.
 
@@ -39,7 +39,7 @@
 #include "disasm.h"
 #include "amd64-tdep.h"
 #include "i387-tdep.h"
-#include "common/x86-xstate.h"
+#include "x86-xstate.h"
 #include <algorithm>
 #include "target-descriptions.h"
 #include "arch/amd64.h"
@@ -47,8 +47,6 @@
 #include "ax.h"
 #include "ax-gdb.h"
 #include "common/byte-vector.h"
-#include "osabi.h"
-#include "x86-tdep.h"
 
 /* Note that the AMD64 architecture was previously known as x86-64.
    The latter is (forever) engraved into the canonical system name as
@@ -349,15 +347,19 @@ amd64_pseudo_register_name (struct gdbarch *gdbarch, int regnum)
 
 static struct value *
 amd64_pseudo_register_read_value (struct gdbarch *gdbarch,
-				  readable_regcache *regcache,
+				  struct regcache *regcache,
 				  int regnum)
 {
+  gdb_byte *raw_buf = (gdb_byte *) alloca (register_size (gdbarch, regnum));
   struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
+  enum register_status status;
+  struct value *result_value;
+  gdb_byte *buf;
 
-  value *result_value = allocate_value (register_type (gdbarch, regnum));
+  result_value = allocate_value (register_type (gdbarch, regnum));
   VALUE_LVAL (result_value) = lval_register;
   VALUE_REGNUM (result_value) = regnum;
-  gdb_byte *buf = value_contents_raw (result_value);
+  buf = value_contents_raw (result_value);
 
   if (i386_byte_regnum_p (gdbarch, regnum))
     {
@@ -366,11 +368,10 @@ amd64_pseudo_register_read_value (struct gdbarch *gdbarch,
       /* Extract (always little endian).  */
       if (gpnum >= AMD64_NUM_LOWER_BYTE_REGS)
 	{
-	  gpnum -= AMD64_NUM_LOWER_BYTE_REGS;
-	  gdb_byte raw_buf[register_size (gdbarch, gpnum)];
-
 	  /* Special handling for AH, BH, CH, DH.  */
-	  register_status status = regcache->raw_read (gpnum, raw_buf);
+	  status = regcache_raw_read (regcache,
+				      gpnum - AMD64_NUM_LOWER_BYTE_REGS,
+				      raw_buf);
 	  if (status == REG_VALID)
 	    memcpy (buf, raw_buf + 1, 1);
 	  else
@@ -379,8 +380,7 @@ amd64_pseudo_register_read_value (struct gdbarch *gdbarch,
 	}
       else
 	{
-	  gdb_byte raw_buf[register_size (gdbarch, gpnum)];
-	  register_status status = regcache->raw_read (gpnum, raw_buf);
+	  status = regcache_raw_read (regcache, gpnum, raw_buf);
 	  if (status == REG_VALID)
 	    memcpy (buf, raw_buf, 1);
 	  else
@@ -391,9 +391,8 @@ amd64_pseudo_register_read_value (struct gdbarch *gdbarch,
   else if (i386_dword_regnum_p (gdbarch, regnum))
     {
       int gpnum = regnum - tdep->eax_regnum;
-      gdb_byte raw_buf[register_size (gdbarch, gpnum)];
       /* Extract (always little endian).  */
-      register_status status = regcache->raw_read (gpnum, raw_buf);
+      status = regcache_raw_read (regcache, gpnum, raw_buf);
       if (status == REG_VALID)
 	memcpy (buf, raw_buf, 4);
       else
@@ -412,6 +411,7 @@ amd64_pseudo_register_write (struct gdbarch *gdbarch,
 			     struct regcache *regcache,
 			     int regnum, const gdb_byte *buf)
 {
+  gdb_byte *raw_buf = (gdb_byte *) alloca (register_size (gdbarch, regnum));
   struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
 
   if (i386_byte_regnum_p (gdbarch, regnum))
@@ -420,39 +420,35 @@ amd64_pseudo_register_write (struct gdbarch *gdbarch,
 
       if (gpnum >= AMD64_NUM_LOWER_BYTE_REGS)
 	{
-	  gpnum -= AMD64_NUM_LOWER_BYTE_REGS;
-	  gdb_byte raw_buf[register_size (gdbarch, gpnum)];
-
 	  /* Read ... AH, BH, CH, DH.  */
-	  regcache->raw_read (gpnum, raw_buf);
+	  regcache_raw_read (regcache,
+			     gpnum - AMD64_NUM_LOWER_BYTE_REGS, raw_buf);
 	  /* ... Modify ... (always little endian).  */
 	  memcpy (raw_buf + 1, buf, 1);
 	  /* ... Write.  */
-	  regcache->raw_write (gpnum, raw_buf);
+	  regcache_raw_write (regcache,
+			      gpnum - AMD64_NUM_LOWER_BYTE_REGS, raw_buf);
 	}
       else
 	{
-	  gdb_byte raw_buf[register_size (gdbarch, gpnum)];
-
 	  /* Read ...  */
-	  regcache->raw_read (gpnum, raw_buf);
+	  regcache_raw_read (regcache, gpnum, raw_buf);
 	  /* ... Modify ... (always little endian).  */
 	  memcpy (raw_buf, buf, 1);
 	  /* ... Write.  */
-	  regcache->raw_write (gpnum, raw_buf);
+	  regcache_raw_write (regcache, gpnum, raw_buf);
 	}
     }
   else if (i386_dword_regnum_p (gdbarch, regnum))
     {
       int gpnum = regnum - tdep->eax_regnum;
-      gdb_byte raw_buf[register_size (gdbarch, gpnum)];
 
       /* Read ...  */
-      regcache->raw_read (gpnum, raw_buf);
+      regcache_raw_read (regcache, gpnum, raw_buf);
       /* ... Modify ... (always little endian).  */
       memcpy (raw_buf, buf, 4);
       /* ... Write.  */
-      regcache->raw_write (gpnum, raw_buf);
+      regcache_raw_write (regcache, gpnum, raw_buf);
     }
   else
     i386_pseudo_register_write (gdbarch, regcache, regnum, buf);
@@ -541,42 +537,17 @@ amd64_merge_classes (enum amd64_reg_class class1, enum amd64_reg_class class2)
 
 static void amd64_classify (struct type *type, enum amd64_reg_class theclass[2]);
 
-/* Return true if TYPE is a structure or union with unaligned fields.  */
+/* Return non-zero if TYPE is a non-POD structure or union type.  */
 
-static bool
-amd64_has_unaligned_fields (struct type *type)
+static int
+amd64_non_pod_p (struct type *type)
 {
-  if (TYPE_CODE (type) == TYPE_CODE_STRUCT
-      || TYPE_CODE (type) == TYPE_CODE_UNION)
-    {
-      for (int i = 0; i < TYPE_NFIELDS (type); i++)
-	{
-	  struct type *subtype = check_typedef (TYPE_FIELD_TYPE (type, i));
-	  int bitpos = TYPE_FIELD_BITPOS (type, i);
-	  int align = type_align(subtype);
+  /* ??? A class with a base class certainly isn't POD, but does this
+     catch all non-POD structure types?  */
+  if (TYPE_CODE (type) == TYPE_CODE_STRUCT && TYPE_N_BASECLASSES (type) > 0)
+    return 1;
 
-	  /* Ignore static fields, empty fields (for example nested
-	     empty structures), and bitfields (these are handled by
-	     the caller).  */
-	  if (field_is_static (&TYPE_FIELD (type, i))
-	      || (TYPE_FIELD_BITSIZE (type, i) == 0
-		  && TYPE_LENGTH (subtype) == 0)
-	      || TYPE_FIELD_PACKED (type, i))
-	    continue;
-
-	  if (bitpos % 8 != 0)
-	    return true;
-
-	  int bytepos = bitpos / 8;
-	  if (bytepos % align != 0)
-	    return true;
-
-	  if (amd64_has_unaligned_fields (subtype))
-	    return true;
-	}
-    }
-
-  return false;
+  return 0;
 }
 
 /* Classify TYPE according to the rules for aggregate (structures and
@@ -585,9 +556,10 @@ amd64_has_unaligned_fields (struct type *type)
 static void
 amd64_classify_aggregate (struct type *type, enum amd64_reg_class theclass[2])
 {
-  /* 1. If the size of an object is larger than two eightbytes, or it has
+  /* 1. If the size of an object is larger than two eightbytes, or in
+        C++, is a non-POD structure or union type, or contains
         unaligned fields, it has class memory.  */
-  if (TYPE_LENGTH (type) > 16 || amd64_has_unaligned_fields (type))
+  if (TYPE_LENGTH (type) > 16 || amd64_non_pod_p (type))
     {
       theclass[0] = theclass[1] = AMD64_MEMORY;
       return;
@@ -630,9 +602,8 @@ amd64_classify_aggregate (struct type *type, enum amd64_reg_class theclass[2])
 	    bitsize = TYPE_LENGTH (subtype) * 8;
 	  endpos = (TYPE_FIELD_BITPOS (type, i) + bitsize - 1) / 64;
 
-	  /* Ignore static fields, or empty fields, for example nested
-	     empty structures.*/
-	  if (field_is_static (&TYPE_FIELD (type, i)) || bitsize == 0)
+	  /* Ignore static fields.  */
+	  if (field_is_static (&TYPE_FIELD (type, i)))
 	    continue;
 
 	  gdb_assert (pos == 0 || pos == 1);
@@ -798,15 +769,15 @@ amd64_return_value (struct gdbarch *gdbarch, struct value *function,
     {
       if (readbuf)
 	{
-	  regcache->raw_read (AMD64_ST0_REGNUM, readbuf);
-	  regcache->raw_read (AMD64_ST1_REGNUM, readbuf + 16);
+	  regcache_raw_read (regcache, AMD64_ST0_REGNUM, readbuf);
+	  regcache_raw_read (regcache, AMD64_ST1_REGNUM, readbuf + 16);
 	}
 
       if (writebuf)
 	{
 	  i387_return_value (gdbarch, regcache);
-	  regcache->raw_write (AMD64_ST0_REGNUM, writebuf);
-	  regcache->raw_write (AMD64_ST1_REGNUM, writebuf + 16);
+	  regcache_raw_write (regcache, AMD64_ST0_REGNUM, writebuf);
+	  regcache_raw_write (regcache, AMD64_ST1_REGNUM, writebuf + 16);
 
 	  /* Fix up the tag word such that both %st(0) and %st(1) are
 	     marked as valid.  */
@@ -873,11 +844,11 @@ amd64_return_value (struct gdbarch *gdbarch, struct value *function,
       gdb_assert (regnum != -1);
 
       if (readbuf)
-	regcache->raw_read_part (regnum, offset, std::min (len, 8),
-				 readbuf + i * 8);
+	regcache_raw_read_part (regcache, regnum, offset, std::min (len, 8),
+				readbuf + i * 8);
       if (writebuf)
-	regcache->raw_write_part (regnum, offset, std::min (len, 8),
-				  writebuf + i * 8);
+	regcache_raw_write_part (regcache, regnum, offset, std::min (len, 8),
+				 writebuf + i * 8);
     }
 
   return RETURN_VALUE_REGISTER_CONVENTION;
@@ -885,8 +856,8 @@ amd64_return_value (struct gdbarch *gdbarch, struct value *function,
 
 
 static CORE_ADDR
-amd64_push_arguments (struct regcache *regcache, int nargs, struct value **args,
-		      CORE_ADDR sp, function_call_return_method return_method)
+amd64_push_arguments (struct regcache *regcache, int nargs,
+		      struct value **args, CORE_ADDR sp, int struct_return)
 {
   static int integer_regnum[] =
   {
@@ -914,7 +885,7 @@ amd64_push_arguments (struct regcache *regcache, int nargs, struct value **args,
   int i;
 
   /* Reserve a register for the "hidden" argument.  */
-if (return_method == return_method_struct)
+  if (struct_return)
     integer_reg++;
 
   for (i = 0; i < nargs; i++)
@@ -985,7 +956,7 @@ if (return_method == return_method_struct)
 	      gdb_assert (regnum != -1);
 	      memset (buf, 0, sizeof buf);
 	      memcpy (buf, valbuf + j * 8, std::min (len, 8));
-	      regcache->raw_write_part (regnum, offset, 8, buf);
+	      regcache_raw_write_part (regcache, regnum, offset, 8, buf);
 	    }
 	}
     }
@@ -1020,8 +991,7 @@ static CORE_ADDR
 amd64_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
 		       struct regcache *regcache, CORE_ADDR bp_addr,
 		       int nargs, struct value **args,	CORE_ADDR sp,
-		       function_call_return_method return_method,
-		       CORE_ADDR struct_addr)
+		       int struct_return, CORE_ADDR struct_addr)
 {
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
   gdb_byte buf[8];
@@ -1034,13 +1004,13 @@ amd64_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
   i387_reset_bnd_regs (gdbarch, regcache);
 
   /* Pass arguments.  */
-  sp = amd64_push_arguments (regcache, nargs, args, sp, return_method);
+  sp = amd64_push_arguments (regcache, nargs, args, sp, struct_return);
 
   /* Pass "hidden" argument".  */
-  if (return_method == return_method_struct)
+  if (struct_return)
     {
       store_unsigned_integer (buf, 8, byte_order, struct_addr);
-      regcache->cooked_write (AMD64_RDI_REGNUM, buf);
+      regcache_cooked_write (regcache, AMD64_RDI_REGNUM, buf);
     }
 
   /* Store return address.  */
@@ -1050,10 +1020,10 @@ amd64_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
 
   /* Finally, update the stack pointer...  */
   store_unsigned_integer (buf, 8, byte_order, sp);
-  regcache->cooked_write (AMD64_RSP_REGNUM, buf);
+  regcache_cooked_write (regcache, AMD64_RSP_REGNUM, buf);
 
   /* ...and fake a frame pointer.  */
-  regcache->cooked_write (AMD64_RBP_REGNUM, buf);
+  regcache_cooked_write (regcache, AMD64_RBP_REGNUM, buf);
 
   return sp + 16;
 }
@@ -2605,15 +2575,16 @@ amd64_frame_cache (struct frame_info *this_frame, void **this_cache)
   cache = amd64_alloc_frame_cache ();
   *this_cache = cache;
 
-  try
+  TRY
     {
       amd64_frame_cache_1 (this_frame, cache);
     }
-  catch (const gdb_exception_error &ex)
+  CATCH (ex, RETURN_MASK_ERROR)
     {
       if (ex.error != NOT_AVAILABLE_ERROR)
-	throw;
+	throw_exception (ex);
     }
+  END_CATCH
 
   return cache;
 }
@@ -2722,7 +2693,7 @@ amd64_sigtramp_frame_cache (struct frame_info *this_frame, void **this_cache)
 
   cache = amd64_alloc_frame_cache ();
 
-  try
+  TRY
     {
       get_frame_register (this_frame, AMD64_RSP_REGNUM, buf);
       cache->base = extract_unsigned_integer (buf, 8, byte_order) - 8;
@@ -2736,11 +2707,12 @@ amd64_sigtramp_frame_cache (struct frame_info *this_frame, void **this_cache)
 
       cache->base_p = 1;
     }
-  catch (const gdb_exception_error &ex)
+  CATCH (ex, RETURN_MASK_ERROR)
     {
       if (ex.error != NOT_AVAILABLE_ERROR)
-	throw;
+	throw_exception (ex);
     }
+  END_CATCH
 
   *this_cache = cache;
   return cache;
@@ -2898,7 +2870,7 @@ amd64_epilogue_frame_cache (struct frame_info *this_frame, void **this_cache)
   cache = amd64_alloc_frame_cache ();
   *this_cache = cache;
 
-  try
+  TRY
     {
       /* Cache base will be %esp plus cache->sp_offset (-8).  */
       get_frame_register (this_frame, AMD64_RSP_REGNUM, buf);
@@ -2916,11 +2888,12 @@ amd64_epilogue_frame_cache (struct frame_info *this_frame, void **this_cache)
 
       cache->base_p = 1;
     }
-  catch (const gdb_exception_error &ex)
+  CATCH (ex, RETURN_MASK_ERROR)
     {
       if (ex.error != NOT_AVAILABLE_ERROR)
-	throw;
+	throw_exception (ex);
     }
+  END_CATCH
 
   return cache;
 }
@@ -3060,16 +3033,6 @@ static const int amd64_record_regmap[] =
   AMD64_DS_REGNUM, AMD64_ES_REGNUM, AMD64_FS_REGNUM, AMD64_GS_REGNUM
 };
 
-/* Implement the "in_indirect_branch_thunk" gdbarch function.  */
-
-static bool
-amd64_in_indirect_branch_thunk (struct gdbarch *gdbarch, CORE_ADDR pc)
-{
-  return x86_in_indirect_branch_thunk (pc, amd64_register_names,
-				       AMD64_RAX_REGNUM,
-				       AMD64_RIP_REGNUM);
-}
-
 void
 amd64_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch,
 		const target_desc *default_tdesc)
@@ -3128,7 +3091,15 @@ amd64_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch,
 
   if (tdesc_find_feature (tdesc, "org.gnu.gdb.i386.segments") != NULL)
     {
-      tdep->fsbase_regnum = AMD64_FSBASE_REGNUM;
+      const struct tdesc_feature *feature =
+	  tdesc_find_feature (tdesc, "org.gnu.gdb.i386.segments");
+      struct tdesc_arch_data *tdesc_data_segments =
+	  (struct tdesc_arch_data *) info.tdep_info;
+
+      tdesc_numbered_register (feature, tdesc_data_segments,
+		       AMD64_FSBASE_REGNUM, "fs_base");
+      tdesc_numbered_register (feature, tdesc_data_segments,
+		       AMD64_GSBASE_REGNUM, "gs_base");
     }
 
   if (tdesc_find_feature (tdesc, "org.gnu.gdb.i386.pkeys") != NULL)
@@ -3234,19 +3205,8 @@ amd64_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch,
   set_gdbarch_insn_is_call (gdbarch, amd64_insn_is_call);
   set_gdbarch_insn_is_ret (gdbarch, amd64_insn_is_ret);
   set_gdbarch_insn_is_jump (gdbarch, amd64_insn_is_jump);
-
-  set_gdbarch_in_indirect_branch_thunk (gdbarch,
-					amd64_in_indirect_branch_thunk);
 }
-
-/* Initialize ARCH for x86-64, no osabi.  */
-
-static void
-amd64_none_init_abi (gdbarch_info info, gdbarch *arch)
-{
-  amd64_init_abi (info, arch, amd64_target_description (X86_XSTATE_SSE_MASK,
-							true));
-}
+
 
 static struct type *
 amd64_x32_pseudo_register_type (struct gdbarch *gdbarch, int regnum)
@@ -3280,33 +3240,22 @@ amd64_x32_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch,
   set_gdbarch_ptr_bit (gdbarch, 32);
 }
 
-/* Initialize ARCH for x64-32, no osabi.  */
-
-static void
-amd64_x32_none_init_abi (gdbarch_info info, gdbarch *arch)
-{
-  amd64_x32_init_abi (info, arch,
-		      amd64_target_description (X86_XSTATE_SSE_MASK, true));
-}
-
 /* Return the target description for a specified XSAVE feature mask.  */
 
 const struct target_desc *
-amd64_target_description (uint64_t xcr0, bool segments)
+amd64_target_description (uint64_t xcr0)
 {
   static target_desc *amd64_tdescs \
-    [2/*AVX*/][2/*MPX*/][2/*AVX512*/][2/*PKRU*/][2/*segments*/] = {};
+    [2/*AVX*/][2/*MPX*/][2/*AVX512*/][2/*PKRU*/] = {};
   target_desc **tdesc;
 
   tdesc = &amd64_tdescs[(xcr0 & X86_XSTATE_AVX) ? 1 : 0]
     [(xcr0 & X86_XSTATE_MPX) ? 1 : 0]
     [(xcr0 & X86_XSTATE_AVX512) ? 1 : 0]
-    [(xcr0 & X86_XSTATE_PKRU) ? 1 : 0]
-    [segments ? 1 : 0];
+    [(xcr0 & X86_XSTATE_PKRU) ? 1 : 0];
 
   if (*tdesc == NULL)
-    *tdesc = amd64_create_target_description (xcr0, false, false,
-					      segments);
+    *tdesc = amd64_create_target_description (xcr0, false, false);
 
   return *tdesc;
 }
@@ -3314,11 +3263,6 @@ amd64_target_description (uint64_t xcr0, bool segments)
 void
 _initialize_amd64_tdep (void)
 {
-  gdbarch_register_osabi (bfd_arch_i386, bfd_mach_x86_64, GDB_OSABI_NONE,
- 			  amd64_none_init_abi);
-  gdbarch_register_osabi (bfd_arch_i386, bfd_mach_x64_32, GDB_OSABI_NONE,
- 			  amd64_x32_none_init_abi);
-
 #if GDB_SELF_TEST
   struct
   {
@@ -3336,7 +3280,7 @@ _initialize_amd64_tdep (void)
 
   for (auto &a : xml_masks)
     {
-      auto tdesc = amd64_target_description (a.mask, true);
+      auto tdesc = amd64_target_description (a.mask);
 
       selftests::record_xml_tdesc (a.xml, tdesc);
     }
@@ -3371,9 +3315,9 @@ amd64_supply_fxsave (struct regcache *regcache, int regnum,
       const gdb_byte *regs = (const gdb_byte *) fxsave;
 
       if (regnum == -1 || regnum == I387_FISEG_REGNUM (tdep))
-	regcache->raw_supply (I387_FISEG_REGNUM (tdep), regs + 12);
+	regcache_raw_supply (regcache, I387_FISEG_REGNUM (tdep), regs + 12);
       if (regnum == -1 || regnum == I387_FOSEG_REGNUM (tdep))
-	regcache->raw_supply (I387_FOSEG_REGNUM (tdep), regs + 20);
+	regcache_raw_supply (regcache, I387_FOSEG_REGNUM (tdep), regs + 20);
     }
 }
 
@@ -3392,20 +3336,13 @@ amd64_supply_xsave (struct regcache *regcache, int regnum,
       && gdbarch_bfd_arch_info (gdbarch)->bits_per_word == 64)
     {
       const gdb_byte *regs = (const gdb_byte *) xsave;
-      ULONGEST clear_bv;
 
-      clear_bv = i387_xsave_get_clear_bv (gdbarch, xsave);
-
-      /* If the FISEG and FOSEG registers have not been initialised yet
-	 (their CLEAR_BV bit is set) then their default values of zero will
-	 have already been setup by I387_SUPPLY_XSAVE.  */
-      if (!(clear_bv & X86_XSTATE_X87))
-	{
-	  if (regnum == -1 || regnum == I387_FISEG_REGNUM (tdep))
-	    regcache->raw_supply (I387_FISEG_REGNUM (tdep), regs + 12);
-	  if (regnum == -1 || regnum == I387_FOSEG_REGNUM (tdep))
-	    regcache->raw_supply (I387_FOSEG_REGNUM (tdep), regs + 20);
-	}
+      if (regnum == -1 || regnum == I387_FISEG_REGNUM (tdep))
+	regcache_raw_supply (regcache, I387_FISEG_REGNUM (tdep),
+			     regs + 12);
+      if (regnum == -1 || regnum == I387_FOSEG_REGNUM (tdep))
+	regcache_raw_supply (regcache, I387_FOSEG_REGNUM (tdep),
+			     regs + 20);
     }
 }
 
@@ -3427,9 +3364,9 @@ amd64_collect_fxsave (const struct regcache *regcache, int regnum,
   if (gdbarch_bfd_arch_info (gdbarch)->bits_per_word == 64)
     {
       if (regnum == -1 || regnum == I387_FISEG_REGNUM (tdep))
-	regcache->raw_collect (I387_FISEG_REGNUM (tdep), regs + 12);
+	regcache_raw_collect (regcache, I387_FISEG_REGNUM (tdep), regs + 12);
       if (regnum == -1 || regnum == I387_FOSEG_REGNUM (tdep))
-	regcache->raw_collect (I387_FOSEG_REGNUM (tdep), regs + 20);
+	regcache_raw_collect (regcache, I387_FOSEG_REGNUM (tdep), regs + 20);
     }
 }
 
@@ -3448,10 +3385,10 @@ amd64_collect_xsave (const struct regcache *regcache, int regnum,
   if (gdbarch_bfd_arch_info (gdbarch)->bits_per_word == 64)
     {
       if (regnum == -1 || regnum == I387_FISEG_REGNUM (tdep))
-	regcache->raw_collect (I387_FISEG_REGNUM (tdep),
+	regcache_raw_collect (regcache, I387_FISEG_REGNUM (tdep),
 			      regs + 12);
       if (regnum == -1 || regnum == I387_FOSEG_REGNUM (tdep))
-	regcache->raw_collect (I387_FOSEG_REGNUM (tdep),
+	regcache_raw_collect (regcache, I387_FOSEG_REGNUM (tdep),
 			      regs + 20);
     }
 }

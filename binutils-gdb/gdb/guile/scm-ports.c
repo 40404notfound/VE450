@@ -1,7 +1,7 @@
 /* Support for connecting Guile's stdio to GDB's.
    as well as r/w memory via ports.
 
-   Copyright (C) 2014-2019 Free Software Foundation, Inc.
+   Copyright (C) 2014-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -272,19 +272,18 @@ ioscm_write (SCM port, const void *data, size_t size)
   if (scm_is_eq (port, input_port_scm))
     return;
 
-  gdbscm_gdb_exception exc {};
-  try
+  TRY
     {
       if (scm_is_eq (port, error_port_scm))
 	fputsn_filtered ((const char *) data, size, gdb_stderr);
       else
 	fputsn_filtered ((const char *) data, size, gdb_stdout);
     }
-  catch (const gdb_exception &except)
+  CATCH (except, RETURN_MASK_ALL)
     {
-      exc = unpack (except);
+      GDBSCM_HANDLE_GDB_EXCEPTION (except);
     }
-  GDBSCM_HANDLE_GDB_EXCEPTION (exc);
+  END_CATCH
 }
 
 /* Flush gdb's stdout or stderr.  */

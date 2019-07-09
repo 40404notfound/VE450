@@ -1,9 +1,8 @@
-#as: -mthumb-interwork
 #objdump: -d --prefix-addresses --show-raw-insn
 #name: ADR(L) for Thumb functions
-#skip: *-*-pe *-wince-* *-*-vxworks
+#skip: *-*-pe *-wince-* *-*-coff *-*-vxworks
 
-# Test that using ADR(L) on thumb function symbols sets the T bit when -mthumb-interwork is active.
+# Test that using ADR(L) on thumb function symbols sets the T bit.
 
 .*: +file format .*arm.*
 

@@ -1,5 +1,5 @@
 /* Remote utility routines for the remote server for GDB.
-   Copyright (C) 1993-2019 Free Software Foundation, Inc.
+   Copyright (C) 1993-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -16,8 +16,12 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#ifndef GDBSERVER_REMOTE_UTILS_H
-#define GDBSERVER_REMOTE_UTILS_H
+#ifndef REMOTE_UTILS_H
+#define REMOTE_UTILS_H
+
+extern int remote_debug;
+extern int noack_mode;
+extern int transport_is_reliable;
 
 int gdb_connected (void);
 
@@ -67,4 +71,4 @@ int relocate_instruction (CORE_ADDR *to, CORE_ADDR oldloc);
 
 void monitor_output (const char *msg);
 
-#endif /* GDBSERVER_REMOTE_UTILS_H */
+#endif /* REMOTE_UTILS_H */

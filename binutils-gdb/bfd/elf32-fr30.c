@@ -1,5 +1,5 @@
 /* FR30-specific support for 32-bit ELF.
-   Copyright (C) 1998-2019 Free Software Foundation, Inc.
+   Copyright (C) 1998-2018 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -367,7 +367,7 @@ fr30_reloc_name_lookup (bfd *abfd ATTRIBUTE_UNUSED, const char *r_name)
 
 /* Set the howto pointer for an FR30 ELF reloc.  */
 
-static bfd_boolean
+static void
 fr30_info_to_howto_rela (bfd *abfd ATTRIBUTE_UNUSED,
 			 arelent *cache_ptr,
 			 Elf_Internal_Rela *dst)
@@ -378,13 +378,10 @@ fr30_info_to_howto_rela (bfd *abfd ATTRIBUTE_UNUSED,
   if (r_type >= (unsigned int) R_FR30_max)
     {
       /* xgettext:c-format */
-      _bfd_error_handler (_("%pB: unsupported relocation type %#x"),
-			  abfd, r_type);
-      bfd_set_error (bfd_error_bad_value);
-      return FALSE;
+      _bfd_error_handler (_("%B: invalid FR30 reloc number: %d"), abfd, r_type);
+      r_type = 0;
     }
   cache_ptr->howto = & fr30_elf_howto_table [r_type];
-  return TRUE;
 }
 
 /* Perform a single relocation.  By default we use the standard BFD
@@ -687,7 +684,9 @@ fr30_elf_check_relocs (bfd *abfd,
 	/* This relocation describes which C++ vtable entries are actually
 	   used.  Record for later use during GC.  */
 	case R_FR30_GNU_VTENTRY:
-	  if (!bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
+	  BFD_ASSERT (h != NULL);
+	  if (h != NULL
+	      && !bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
 	    return FALSE;
 	  break;
 	}

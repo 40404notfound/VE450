@@ -1,6 +1,6 @@
 /* Xilinx MicroBlaze-specific support for 32-bit ELF
 
-   Copyright (C) 2009-2019 Free Software Foundation, Inc.
+   Copyright (C) 2009-2018 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -251,21 +251,6 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
 	  0x0000ffff,		/* Dest Mask.  */
 	  TRUE),		/* PC relative offset?  */
 
-     /* A 64 bit TEXTPCREL relocation.  Table-entry not really used.  */
-   HOWTO (R_MICROBLAZE_TEXTPCREL_64,	/* Type.  */
-	  0,			/* Rightshift.  */
-	  2,			/* Size (0 = byte, 1 = short, 2 = long).  */
-	  16,			/* Bitsize.  */
-	  TRUE,			/* PC_relative.  */
-	  0,			/* Bitpos.  */
-	  complain_overflow_dont, /* Complain on overflow.  */
-	  bfd_elf_generic_reloc,	/* Special Function.  */
-	  "R_MICROBLAZE_TEXTPCREL_64",	/* Name.  */
-	  FALSE,		/* Partial Inplace.  */
-	  0,			/* Source Mask.  */
-	  0x0000ffff,		/* Dest Mask.  */
-	  TRUE),		/* PC relative offset?  */
-
    /* A 64 bit GOT relocation.  Table-entry not really used.  */
    HOWTO (R_MICROBLAZE_GOT_64,  /* Type.  */
 	  0,			/* Rightshift.  */
@@ -276,21 +261,6 @@ static reloc_howto_type microblaze_elf_howto_raw[] =
 	  complain_overflow_dont, /* Complain on overflow.  */
 	  bfd_elf_generic_reloc,/* Special Function.  */
 	  "R_MICROBLAZE_GOT_64",/* Name.  */
-	  FALSE,		/* Partial Inplace.  */
-	  0,			/* Source Mask.  */
-	  0x0000ffff,		/* Dest Mask.  */
-	  FALSE),		/* PC relative offset?  */
-
-    /* A 64 bit TEXTREL relocation.  Table-entry not really used.  */
-   HOWTO (R_MICROBLAZE_TEXTREL_64,  /* Type.  */
-	  0,			/* Rightshift.  */
-	  2,			/* Size (0 = byte, 1 = short, 2 = long).  */
-	  16,			/* Bitsize.  */
-	  FALSE,		/* PC_relative.  */
-	  0,			/* Bitpos.  */
-	  complain_overflow_dont, /* Complain on overflow.  */
-	  bfd_elf_generic_reloc,/* Special Function.  */
-	  "R_MICROBLAZE_TEXTREL_64",/* Name.  */
 	  FALSE,		/* Partial Inplace.  */
 	  0,			/* Source Mask.  */
 	  0x0000ffff,		/* Dest Mask.  */
@@ -608,12 +578,6 @@ microblaze_elf_reloc_type_lookup (bfd * abfd ATTRIBUTE_UNUSED,
     case BFD_RELOC_MICROBLAZE_64_GOT:
       microblaze_reloc = R_MICROBLAZE_GOT_64;
       break;
-    case BFD_RELOC_MICROBLAZE_64_TEXTPCREL:
-      microblaze_reloc = R_MICROBLAZE_TEXTPCREL_64;
-      break;
-    case BFD_RELOC_MICROBLAZE_64_TEXTREL:
-      microblaze_reloc = R_MICROBLAZE_TEXTREL_64;
-      break;
     case BFD_RELOC_MICROBLAZE_64_PLT:
       microblaze_reloc = R_MICROBLAZE_PLT_64;
       break;
@@ -674,8 +638,8 @@ microblaze_elf_reloc_name_lookup (bfd *abfd ATTRIBUTE_UNUSED,
 
 /* Set the howto pointer for a RCE ELF reloc.  */
 
-static bfd_boolean
-microblaze_elf_info_to_howto (bfd * abfd,
+static void
+microblaze_elf_info_to_howto (bfd * abfd ATTRIBUTE_UNUSED,
 			      arelent * cache_ptr,
 			      Elf_Internal_Rela * dst)
 {
@@ -689,14 +653,13 @@ microblaze_elf_info_to_howto (bfd * abfd,
   if (r_type >= R_MICROBLAZE_max)
     {
       /* xgettext:c-format */
-      _bfd_error_handler (_("%pB: unsupported relocation type %#x"),
+      _bfd_error_handler (_("%B: unrecognised MicroBlaze reloc number: %d"),
 			  abfd, r_type);
       bfd_set_error (bfd_error_bad_value);
-      return FALSE;
+      r_type = R_MICROBLAZE_NONE;
     }
 
   cache_ptr->howto = microblaze_elf_howto_table [r_type];
-  return TRUE;
 }
 
 /* Microblaze ELF local labels start with 'L.' or '$L', not '.L'.  */
@@ -966,7 +929,7 @@ microblaze_elf_relocate_section (bfd *output_bfd,
       if (r_type < 0 || r_type >= (int) R_MICROBLAZE_max)
 	{
 	  /* xgettext:c-format */
-	  _bfd_error_handler (_("%pB: unsupported relocation type %#x"),
+	  _bfd_error_handler (_("%B: unknown relocation type %d"),
 			      input_bfd, (int) r_type);
 	  bfd_set_error (bfd_error_bad_value);
 	  ret = FALSE;
@@ -1098,8 +1061,8 @@ microblaze_elf_relocate_section (bfd *output_bfd,
 		      {
 			_bfd_error_handler
 			  /* xgettext:c-format */
-			  (_("%pB: the target (%s) of an %s relocation"
-			     " is in the wrong section (%pA)"),
+			  (_("%B: The target (%s) of an %s relocation"
+			     " is in the wrong section (%A)"),
 			   input_bfd,
 			   sym_name,
 			   microblaze_elf_howto_table[(int) r_type]->name,
@@ -1146,8 +1109,8 @@ microblaze_elf_relocate_section (bfd *output_bfd,
 		      {
 			_bfd_error_handler
 			  /* xgettext:c-format */
-			  (_("%pB: the target (%s) of an %s relocation"
-			     " is in the wrong section (%pA)"),
+			  (_("%B: The target (%s) of an %s relocation"
+			     " is in the wrong section (%A)"),
 			   input_bfd,
 			   sym_name,
 			   microblaze_elf_howto_table[(int) r_type]->name,
@@ -1166,18 +1129,6 @@ microblaze_elf_relocate_section (bfd *output_bfd,
 	    case (int) R_MICROBLAZE_GOTPC_64:
 	      relocation = (htab->elf.sgotplt->output_section->vma
 			    + htab->elf.sgotplt->output_offset);
-	      relocation -= (input_section->output_section->vma
-			     + input_section->output_offset
-			     + offset + INST_WORD_SIZE);
-	      relocation += addend;
-	      bfd_put_16 (input_bfd, (relocation >> 16) & 0xffff,
-			  contents + offset + endian);
-	      bfd_put_16 (input_bfd, relocation & 0xffff,
-			  contents + offset + endian + INST_WORD_SIZE);
-	      break;
-
-	    case (int) R_MICROBLAZE_TEXTPCREL_64:
-	      relocation = input_section->output_section->vma;
 	      relocation -= (input_section->output_section->vma
 			     + input_section->output_offset
 			     + offset + INST_WORD_SIZE);
@@ -1438,8 +1389,6 @@ microblaze_elf_relocate_section (bfd *output_bfd,
 	      bfd_put_16 (input_bfd, relocation & 0xffff,
 			  contents + offset + 2 + INST_WORD_SIZE);
 	      break;
-	    case (int) R_MICROBLAZE_TEXTREL_64:
-	    case (int) R_MICROBLAZE_TEXTREL_32_LO:
 	    case (int) R_MICROBLAZE_64_PCREL :
 	    case (int) R_MICROBLAZE_64:
 	    case (int) R_MICROBLAZE_32:
@@ -1458,22 +1407,11 @@ microblaze_elf_relocate_section (bfd *output_bfd,
 			  relocation -= (input_section->output_section->vma
 					 + input_section->output_offset
 					 + offset + INST_WORD_SIZE);
-			else if (r_type == R_MICROBLAZE_TEXTREL_64
-				 || r_type == R_MICROBLAZE_TEXTREL_32_LO)
-			  relocation -= input_section->output_section->vma;
-
-			if (r_type == R_MICROBLAZE_TEXTREL_32_LO)
-			  bfd_put_16 (input_bfd, relocation & 0xffff,
-				      contents + offset + endian);
-
-			else
-			  {
-			    bfd_put_16 (input_bfd, (relocation >> 16) & 0xffff,
+			bfd_put_16 (input_bfd, (relocation >> 16) & 0xffff,
 				    contents + offset + endian);
-			    bfd_put_16 (input_bfd, relocation & 0xffff,
+			bfd_put_16 (input_bfd, relocation & 0xffff,
 				    contents + offset + endian + INST_WORD_SIZE);
 		      }
-		    }
 		    break;
 		  }
 
@@ -1541,7 +1479,7 @@ microblaze_elf_relocate_section (bfd *output_bfd,
 			  {
 			    BFD_FAIL ();
 			    _bfd_error_handler
-			      (_("%pB: probably compiled without -fPIC?"),
+			      (_("%B: probably compiled without -fPIC?"),
 			       input_bfd);
 			    bfd_set_error (bfd_error_bad_value);
 			    return FALSE;
@@ -1564,24 +1502,11 @@ microblaze_elf_relocate_section (bfd *output_bfd,
 			  relocation -= (input_section->output_section->vma
 					 + input_section->output_offset
 					 + offset + INST_WORD_SIZE);
-			else if (r_type == R_MICROBLAZE_TEXTREL_64
-				 || r_type == R_MICROBLAZE_TEXTREL_32_LO)
-			  relocation -= input_section->output_section->vma;
-
-			if (r_type == R_MICROBLAZE_TEXTREL_32_LO)
-			  {
-			     bfd_put_16 (input_bfd, relocation & 0xffff,
-					 contents + offset + endian);
-			  }
-			else
-			  {
-			    bfd_put_16 (input_bfd, (relocation >> 16) & 0xffff,
-				        contents + offset + endian);
-			    bfd_put_16 (input_bfd, relocation & 0xffff,
-					contents + offset + endian
-					+ INST_WORD_SIZE);
-			  }
-		    }
+			bfd_put_16 (input_bfd, (relocation >> 16) & 0xffff,
+				    contents + offset + endian);
+			bfd_put_16 (input_bfd, relocation & 0xffff,
+				    contents + offset + endian + INST_WORD_SIZE);
+		      }
 		    break;
 		  }
 	      }
@@ -1774,8 +1699,7 @@ microblaze_elf_relax_section (bfd *abfd,
     {
       bfd_vma symval;
       if ((ELF32_R_TYPE (irel->r_info) != (int) R_MICROBLAZE_64_PCREL)
-	  && (ELF32_R_TYPE (irel->r_info) != (int) R_MICROBLAZE_64)
-	  && (ELF32_R_TYPE (irel->r_info) != (int) R_MICROBLAZE_TEXTREL_64))
+	  && (ELF32_R_TYPE (irel->r_info) != (int) R_MICROBLAZE_64 ))
 	continue; /* Can't delete this reloc.  */
 
       /* Get the section contents.  */
@@ -1845,10 +1769,6 @@ microblaze_elf_relax_section (bfd *abfd,
 	       + sec->output_section->vma
 	       + sec->output_offset);
 	}
-      else if (ELF32_R_TYPE (irel->r_info) == (int) R_MICROBLAZE_TEXTREL_64)
-	{
-	  symval = symval + irel->r_addend - (sec->output_section->vma);
-	}
       else
 	symval += irel->r_addend;
 
@@ -1870,10 +1790,6 @@ microblaze_elf_relax_section (bfd *abfd,
 	    case R_MICROBLAZE_64:
 	      irel->r_info = ELF32_R_INFO (ELF32_R_SYM (irel->r_info),
 					   (int) R_MICROBLAZE_32_LO);
-	      break;
-	    case R_MICROBLAZE_TEXTREL_64:
-	      irel->r_info = ELF32_R_INFO (ELF32_R_SYM (irel->r_info),
-					   (int) R_MICROBLAZE_TEXTREL_32_LO);
 	      break;
 	    default:
 	      /* Cannot happen.  */
@@ -1901,8 +1817,6 @@ microblaze_elf_relax_section (bfd *abfd,
 	      break;
 	    case R_MICROBLAZE_64_PCREL:
 	      break;
-	    case R_MICROBLAZE_TEXTREL_64:
-	    case R_MICROBLAZE_TEXTREL_32_LO:
 	    case R_MICROBLAZE_64:
 	    case R_MICROBLAZE_32_LO:
 	      /* If this reloc is against a symbol defined in this
@@ -2039,10 +1953,7 @@ microblaze_elf_relax_section (bfd *abfd,
 		    }
 		}
 	      else if ((ELF32_R_TYPE (irelscan->r_info) == (int) R_MICROBLAZE_32_PCREL_LO)
-		       || (ELF32_R_TYPE (irelscan->r_info)
-				   == (int) R_MICROBLAZE_32_LO)
-		       || (ELF32_R_TYPE (irelscan->r_info)
-				   == (int) R_MICROBLAZE_TEXTREL_32_LO))
+		       || (ELF32_R_TYPE (irelscan->r_info) == (int) R_MICROBLAZE_32_LO))
 		{
 		  isym = isymbuf + ELF32_R_SYM (irelscan->r_info);
 
@@ -2086,9 +1997,7 @@ microblaze_elf_relax_section (bfd *abfd,
 		    }
 		}
 
-	      if (ELF32_R_TYPE (irelscan->r_info) == (int) R_MICROBLAZE_64
-		  || (ELF32_R_TYPE (irelscan->r_info)
-			      == (int) R_MICROBLAZE_TEXTREL_64))
+	      if (ELF32_R_TYPE (irelscan->r_info) == (int) R_MICROBLAZE_64)
 		{
 		  isym = isymbuf + ELF32_R_SYM (irelscan->r_info);
 
@@ -3455,10 +3364,9 @@ microblaze_elf_finish_dynamic_sections (bfd *output_bfd,
 	  memset (splt->contents, 0, PLT_ENTRY_SIZE);
 	  bfd_put_32 (output_bfd, (bfd_vma) 0x80000000 /* nop.  */,
 		      splt->contents + splt->size - 4);
-
-	  if (splt->output_section != bfd_abs_section_ptr)
-	    elf_section_data (splt->output_section)->this_hdr.sh_entsize = 4;
 	}
+
+      elf_section_data (splt->output_section)->this_hdr.sh_entsize = 4;
     }
 
   /* Set the first entry in the global offset table to the address of

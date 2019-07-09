@@ -1,6 +1,6 @@
 #ld: -shared -z relro -z noseparate-code
 #readelf: -l --wide
-#target: *-*-linux-gnu *-*-gnu* *-*-nacl* arm*-*-uclinuxfdpiceabi
+#target: *-*-linux-gnu *-*-gnu* *-*-nacl*
 
 #...
   GNU_RELRO .*

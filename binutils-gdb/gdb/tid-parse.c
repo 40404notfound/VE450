@@ -1,6 +1,6 @@
 /* TID parsing for GDB, the GNU debugger.
 
-   Copyright (C) 2015-2019 Free Software Foundation, Inc.
+   Copyright (C) 2015-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -55,6 +55,7 @@ parse_thread_id (const char *tidstr, const char **end)
 {
   const char *number = tidstr;
   const char *dot, *p1;
+  struct thread_info *tp;
   struct inferior *inf;
   int thr_num;
   int explicit_inf_id = 0;
@@ -89,13 +90,12 @@ parse_thread_id (const char *tidstr, const char **end)
   if (thr_num == 0)
     invalid_thread_id_error (number);
 
-  thread_info *tp = nullptr;
-  for (thread_info *it : inf->threads ())
-    if (it->per_inf_num == thr_num)
-      {
-	tp = it;
+  ALL_THREADS (tp)
+    {
+      if (ptid_get_pid (tp->ptid) == inf->pid
+	  && tp->per_inf_num == thr_num)
 	break;
-      }
+    }
 
   if (tp == NULL)
     {
@@ -139,13 +139,7 @@ tid_range_parser::finished () const
   switch (m_state)
     {
     case STATE_INFERIOR:
-      /* Parsing is finished when at end of string or null string,
-	 or we are not in a range and not in front of an integer, negative
-	 integer, convenience var or negative convenience var.  */
-      return (*m_cur_tok == '\0'
-	      || !(isdigit (*m_cur_tok)
-		   || *m_cur_tok == '$'
-		   || *m_cur_tok == '*'));
+      return *m_cur_tok == '\0';
     case STATE_THREAD_RANGE:
     case STATE_STAR_RANGE:
       return m_range_parser.finished ();
@@ -307,13 +301,7 @@ tid_range_parser::in_star_range () const
   return m_state == STATE_STAR_RANGE;
 }
 
-bool
-tid_range_parser::in_thread_range () const
-{
-  return m_state == STATE_THREAD_RANGE;
-}
-
-/* See tid-parse.h.  */
+/* See gdbthread.h.  */
 
 int
 tid_is_in_list (const char *list, int default_inferior,
@@ -323,8 +311,6 @@ tid_is_in_list (const char *list, int default_inferior,
     return 1;
 
   tid_range_parser parser (list, default_inferior);
-  if (parser.finished ())
-    invalid_thread_id_error (parser.cur_tok ());
   while (!parser.finished ())
     {
       int tmp_inf, tmp_thr_start, tmp_thr_end;

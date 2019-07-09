@@ -1,6 +1,6 @@
 /* Source-language-related definitions for GDB.
 
-   Copyright (C) 1991-2019 Free Software Foundation, Inc.
+   Copyright (C) 1991-2018 Free Software Foundation, Inc.
 
    Contributed by the Department of Computer Science at the State University
    of New York at Buffalo.
@@ -36,9 +36,8 @@ struct value_print_options;
 struct type_print_options;
 struct lang_varobj_ops;
 struct parser_state;
-class compile_instance;
+struct compile_instance;
 struct completion_match_for_lcd;
-class innermost_block_tracker;
 
 #define MAX_FORTRAN_DIMS  7	/* Maximum number of F77 array dims.  */
 
@@ -173,16 +172,17 @@ struct language_defn
 
     int (*la_parser) (struct parser_state *);
 
+    /* Parser error function.  */
+
+    void (*la_error) (const char *);
+
     /* Given an expression *EXPP created by prefixifying the result of
        la_parser, perform any remaining processing necessary to complete
        its translation.  *EXPP may change; la_post_parser is responsible 
        for releasing its previous contents, if necessary.  If 
-       VOID_CONTEXT_P, then no value is expected from the expression.
-       If COMPLETING is non-zero, then the expression has been parsed
-       for completion, not evaluation.  */
+       VOID_CONTEXT_P, then no value is expected from the expression.  */
 
-    void (*la_post_parser) (expression_up *expp, int void_context_p,
-			    int completing, innermost_block_tracker *tracker);
+    void (*la_post_parser) (expression_up *expp, int void_context_p);
 
     void (*la_printchar) (int ch, struct type *chtype,
 			  struct ui_file * stream);
@@ -263,26 +263,6 @@ struct language_defn
        local variable that refers to the current object instance.  */
 
     const char *la_name_of_this;
-
-    /* True if the symbols names should be stored in GDB's data structures
-       for minimal/partial/full symbols using their linkage (aka mangled)
-       form; false if the symbol names should be demangled first.
-
-       Most languages implement symbol lookup by comparing the demangled
-       names, in which case it is advantageous to store that information
-       already demangled, and so would set this field to false.
-
-       On the other hand, some languages have opted for doing symbol
-       lookups by comparing mangled names instead, for reasons usually
-       specific to the language.  Those languages should set this field
-       to true.
-
-       And finally, other languages such as C or Asm do not have
-       the concept of mangled vs demangled name, so those languages
-       should set this field to true as well, to prevent any accidental
-       demangling through an unrelated language's demangler.  */
-
-    const bool la_store_sym_names_in_linkage_form_p;
 
     /* This is a function that lookup_symbol will call when it gets to
        the part of symbol lookup where C looks up static and global
@@ -370,10 +350,8 @@ struct language_defn
        characters, excluding any eventual terminating null character.
        Otherwise *LENGTH will include all characters - including any nulls.
        CHARSET will hold the encoding used in the string.  */
-    void (*la_get_string) (struct value *value,
-			   gdb::unique_xmalloc_ptr<gdb_byte> *buffer,
-			   int *length, struct type **chartype,
-			   const char **charset);
+    void (*la_get_string) (struct value *value, gdb_byte **buffer, int *length,
+			   struct type **chartype, const char **charset);
 
     /* Return an expression that can be used for a location
        watchpoint.  TYPE is a pointer type that points to the memory
@@ -428,7 +406,7 @@ struct language_defn
        instance is owned by its caller and must be deallocated by
        calling its 'destroy' method.  */
 
-    compile_instance *(*la_get_compile_instance) (void);
+    struct compile_instance *(*la_get_compile_instance) (void);
 
     /* This method must be defined if 'la_get_gcc_context' is defined.
        If 'la_get_gcc_context' is not defined, then this method is
@@ -444,21 +422,20 @@ struct language_defn
        parsed.
        EXPR_PC is the PC at which the expression is being parsed.  */
 
-    std::string (*la_compute_program) (compile_instance *inst,
+    std::string (*la_compute_program) (struct compile_instance *inst,
 				       const char *input,
 				       struct gdbarch *gdbarch,
 				       const struct block *expr_block,
 				       CORE_ADDR expr_pc);
 
-    /* Return true if TYPE is a string type.  */
-    bool (*la_is_string_type_p) (struct type *type);
+    /* Add fields above this point, so the magic number is always last.  */
+    /* Magic number for compat checking.  */
 
-    /* This string is used by the 'set print max-depth' setting.  When GDB
-       replaces a struct or union (during value printing) that is "too
-       deep" this string is displayed instead.  */
-    const char *la_struct_too_deep_ellipsis;
+    long la_magic;
 
   };
+
+#define LANG_MAGIC	910823L
 
 /* Pointer to the language_defn for our current language.  This pointer
    always points to *some* valid struct; it can be used without checking
@@ -578,10 +555,6 @@ extern enum language set_language (enum language);
 
 extern int pointer_type (struct type *);
 
-/* Return true if TYPE is a string type, otherwise return false.  This
-   default implementation only detects TYPE_CODE_STRING.  */
-extern bool default_is_string_type_p (struct type *type);
-
 /* Error messages */
 
 extern void range_error (const char *, ...) ATTRIBUTE_PRINTF (1, 2);
@@ -638,10 +611,8 @@ int default_pass_by_reference (struct type *type);
 void default_print_typedef (struct type *type, struct symbol *new_symbol,
 			    struct ui_file *stream);
 
-void default_get_string (struct value *value,
-			 gdb::unique_xmalloc_ptr<gdb_byte> *buffer,
-			 int *length, struct type **char_type,
-			 const char **charset);
+void default_get_string (struct value *value, gdb_byte **buffer, int *length,
+			 struct type **char_type, const char **charset);
 
 /* Default name hashing function.  */
 
@@ -651,10 +622,8 @@ void default_get_string (struct value *value,
    comparison operators hash to the same value.  */
 extern unsigned int default_search_name_hash (const char *search_name);
 
-void c_get_string (struct value *value,
-		   gdb::unique_xmalloc_ptr<gdb_byte> *buffer,
-		   int *length, struct type **char_type,
-		   const char **charset);
+void c_get_string (struct value *value, gdb_byte **buffer, int *length,
+		   struct type **char_type, const char **charset);
 
 /* The default implementation of la_symbol_name_matcher.  Matches with
    strncmp_iw.  */
@@ -713,46 +682,6 @@ public:
 
 private:
 
-  enum language m_lang;
-};
-
-/* If language_mode is language_mode_auto,
-   then switch current language to the language of SYM
-   and restore current language upon destruction.
-
-   Else do nothing.  */
-
-class scoped_switch_to_sym_language_if_auto
-{
-public:
-
-  explicit scoped_switch_to_sym_language_if_auto (const struct symbol *sym)
-  {
-    if (language_mode == language_mode_auto)
-      {
-	m_lang = current_language->la_language;
-	m_switched = true;
-	set_language (SYMBOL_LANGUAGE (sym));
-      }
-    else
-      {
-	m_switched = false;
-	/* Assign to m_lang to silence a GCC warning.  See
-	   https://gcc.gnu.org/bugzilla/show_bug.cgi?id=80635.  */
-	m_lang = language_unknown;
-      }
-  }
-
-  ~scoped_switch_to_sym_language_if_auto ()
-  {
-    if (m_switched)
-      set_language (m_lang);
-  }
-
-  DISABLE_COPY_AND_ASSIGN (scoped_switch_to_sym_language_if_auto);
-
-private:
-  bool m_switched;
   enum language m_lang;
 };
 

@@ -1,5 +1,5 @@
 /* GAS interface for targets using CGEN: Cpu tools GENerator.
-   Copyright (C) 1996-2019 Free Software Foundation, Inc.
+   Copyright (C) 1996-2018 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -26,6 +26,7 @@
 #include "dwarf2dbg.h"
 
 #include "symbols.h"
+#include "struc-symbol.h"
 
 #ifdef OBJ_COMPLEX_RELC
 static expressionS * make_right_shifted_expr
@@ -415,8 +416,6 @@ gas_cgen_parse_operand (CGEN_CPU_DESC cd ATTRIBUTE_UNUSED,
 
       if (! errmsg)
 	{
-	  asymbol *bsym;
-
 	  /* Fragment the expression as necessary, and queue a reloc.  */
 	  memset (& dummy_fixup, 0, sizeof (fixS));
 
@@ -424,12 +423,11 @@ gas_cgen_parse_operand (CGEN_CPU_DESC cd ATTRIBUTE_UNUSED,
 
 	  if (exp.X_op == O_symbol
 	      && reloc_type == BFD_RELOC_RELC
-	      && symbol_constant_p (exp.X_add_symbol)
-	      && (!symbol_symbolS (exp.X_add_symbol)
-		  || (bsym = symbol_get_bfdsym (exp.X_add_symbol)) == NULL
-		  || (bsym->section != expr_section
-		      && bsym->section != absolute_section
-		      && bsym->section != undefined_section)))
+	      && exp.X_add_symbol->sy_value.X_op == O_constant
+	      && (!exp.X_add_symbol->bsym
+		  || (exp.X_add_symbol->bsym->section != expr_section
+		      && exp.X_add_symbol->bsym->section != absolute_section
+		      && exp.X_add_symbol->bsym->section != undefined_section)))
 	    {
 	      /* Local labels will have been (eagerly) turned into constants
 		 by now, due to the inappropriately deep insight of the
@@ -457,15 +455,13 @@ gas_cgen_parse_operand (CGEN_CPU_DESC cd ATTRIBUTE_UNUSED,
 	  if (operand && (operand->hw_type == HW_H_SINT))
 	    signed_p = 1;
 
-	  if (symbol_symbolS (stmp)
-	      && (bsym = symbol_get_bfdsym (stmp)) != NULL
-	      && bsym->section == expr_section
+	  if (stmp->bsym && (stmp->bsym->section == expr_section)
 	      && ! S_IS_LOCAL (stmp))
 	    {
 	      if (signed_p)
-		bsym->flags |= BSF_SRELC;
+		stmp->bsym->flags |= BSF_SRELC;
 	      else
-		bsym->flags |= BSF_RELC;
+		stmp->bsym->flags |= BSF_RELC;
 	    }
 
 	  /* Now package it all up for the fixup emitter.  */
@@ -775,12 +771,12 @@ weak_operand_overflow_check (const expressionS *  exp,
   mask = exp->X_add_number;
 
   if (exp->X_add_symbol
-      && symbol_constant_p (exp->X_add_symbol))
-    mask |= *symbol_X_add_number (exp->X_add_symbol);
+      && exp->X_add_symbol->sy_value.X_op == O_constant)
+    mask |= exp->X_add_symbol->sy_value.X_add_number;
 
   if (exp->X_op_symbol
-      && symbol_constant_p (exp->X_op_symbol))
-    mask |= *symbol_X_add_number (exp->X_op_symbol);
+      && exp->X_op_symbol->sy_value.X_op == O_constant)
+    mask |= exp->X_op_symbol->sy_value.X_add_number;
 
   /* Want to know if mask covers more bits than opmask.
      this is the same as asking if mask has any bits not in opmask,
@@ -804,17 +800,15 @@ make_right_shifted_expr (expressionS * exp,
 {
   symbolS * stmp = 0;
   expressionS * new_exp;
-  asymbol *bsym;
 
   stmp = expr_build_binary (O_right_shift,
 			    make_expr_symbol (exp),
 			    expr_build_uconstant (amount));
-  bsym = symbol_get_bfdsym (stmp);
 
   if (signed_p)
-    bsym->flags |= BSF_SRELC;
+    stmp->bsym->flags |= BSF_SRELC;
   else
-    bsym->flags |= BSF_RELC;
+    stmp->bsym->flags |= BSF_RELC;
 
   /* Then wrap that in a "symbol expr" for good measure.  */
   new_exp = XNEW (expressionS);

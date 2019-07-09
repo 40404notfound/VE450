@@ -1,6 +1,6 @@
 /* OS ABI variant handling for GDB.
 
-   Copyright (C) 2001-2019 Free Software Foundation, Inc.
+   Copyright (C) 2001-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -58,13 +58,12 @@ struct osabi_names
    them in sync.  */
 static const struct osabi_names gdb_osabi_names[] =
 {
-  { "unknown", NULL },
   { "none", NULL },
 
   { "SVR4", NULL },
   { "GNU/Hurd", NULL },
   { "Solaris", NULL },
-  { "GNU/Linux", "linux(-gnu[^-]*)?" },
+  { "GNU/Linux", "linux(-gnu)?" },
   { "FreeBSD", NULL },
   { "NetBSD", NULL },
   { "OpenBSD", NULL },
@@ -80,7 +79,6 @@ static const struct osabi_names gdb_osabi_names[] =
   { "LynxOS178", NULL },
   { "Newlib", NULL },
   { "SDE", NULL },
-  { "PikeOS", NULL },
 
   { "<invalid>", NULL }
 };
@@ -337,7 +335,12 @@ gdbarch_init_osabi (struct gdbarch_info info, struct gdbarch *gdbarch)
 {
   struct gdb_osabi_handler *handler;
 
-  gdb_assert (info.osabi != GDB_OSABI_UNKNOWN);
+  if (info.osabi == GDB_OSABI_UNKNOWN)
+    {
+      /* Don't complain about an unknown OSABI.  Assume the user knows
+	 what they are doing.  */
+      return;
+    }
 
   for (handler = gdb_osabi_handler_list; handler != NULL;
        handler = handler->next)
@@ -370,13 +373,6 @@ gdbarch_init_osabi (struct gdbarch_info info, struct gdbarch *gdbarch)
 	  (*handler->init_osabi) (info, gdbarch);
 	  return;
 	}
-    }
-
-  if (info.osabi == GDB_OSABI_NONE)
-    {
-      /* Don't complain about no OSABI.  Assume the user knows
-	 what they are doing.  */
-      return;
     }
 
   warning
@@ -605,6 +601,11 @@ set_osabi (const char *args, int from_tty, struct cmd_list_element *c)
   else if (strcmp (set_osabi_string, "default") == 0)
     {
       user_selected_osabi = GDB_OSABI_DEFAULT;
+      user_osabi_state = osabi_user;
+    }
+  else if (strcmp (set_osabi_string, "none") == 0)
+    {
+      user_selected_osabi = GDB_OSABI_UNKNOWN;
       user_osabi_state = osabi_user;
     }
   else

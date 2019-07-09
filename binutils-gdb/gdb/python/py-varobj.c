@@ -1,4 +1,4 @@
-/* Copyright (C) 2013-2019 Free Software Foundation, Inc.
+/* Copyright (C) 2013-2018 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -17,6 +17,7 @@
 #include "python-internal.h"
 #include "varobj.h"
 #include "varobj-iter.h"
+#include "py-ref.h"
 
 /* A dynamic varobj iterator "class" for python pretty-printed
    varobjs.  This inherits struct varobj_iter.  */
@@ -69,8 +70,14 @@ py_varobj_iter_next (struct varobj_iter *self)
       /* If we got a memory error, just use the text as the item.  */
       if (PyErr_ExceptionMatches (gdbpy_gdb_memory_error))
 	{
-	  gdbpy_err_fetch fetched_error;
-	  gdb::unique_xmalloc_ptr<char> value_str = fetched_error.to_string ();
+	  PyObject *type, *value, *trace;
+
+	  PyErr_Fetch (&type, &value, &trace);
+	  gdb::unique_xmalloc_ptr<char>
+	    value_str (gdbpy_exception_to_string (type, value));
+	  Py_XDECREF (type);
+	  Py_XDECREF (value);
+	  Py_XDECREF (trace);
 	  if (value_str == NULL)
 	    {
 	      gdbpy_print_stack ();
@@ -123,14 +130,14 @@ static const struct varobj_iter_ops py_varobj_iter_ops =
    whose children the iterator will be iterating over.  PYITER is the
    python iterator actually responsible for the iteration.  */
 
-static void
+static void CPYCHECKER_STEALS_REFERENCE_TO_ARG (3)
 py_varobj_iter_ctor (struct py_varobj_iter *self,
-		     struct varobj *var, gdbpy_ref<> &&pyiter)
+		      struct varobj *var, PyObject *pyiter)
 {
   self->base.var = var;
   self->base.ops = &py_varobj_iter_ops;
   self->base.next_raw_index = 0;
-  self->iter = pyiter.release ();
+  self->iter = pyiter;
 }
 
 /* Allocate and construct a pretty-printed varobj iterator.  VAR is
@@ -138,13 +145,13 @@ py_varobj_iter_ctor (struct py_varobj_iter *self,
    PYITER is the python iterator actually responsible for the
    iteration.  */
 
-static struct py_varobj_iter *
-py_varobj_iter_new (struct varobj *var, gdbpy_ref<> &&pyiter)
+static struct py_varobj_iter * CPYCHECKER_STEALS_REFERENCE_TO_ARG (2)
+py_varobj_iter_new (struct varobj *var, PyObject *pyiter)
 {
   struct py_varobj_iter *self;
 
   self = XNEW (struct py_varobj_iter);
-  py_varobj_iter_ctor (self, var, std::move (pyiter));
+  py_varobj_iter_ctor (self, var, pyiter);
   return self;
 }
 
@@ -154,6 +161,7 @@ py_varobj_iter_new (struct varobj *var, gdbpy_ref<> &&pyiter)
 struct varobj_iter *
 py_varobj_get_iterator (struct varobj *var, PyObject *printer)
 {
+  PyObject *iter;
   struct py_varobj_iter *py_iter;
 
   gdbpy_enter_varobj enter_py (var);
@@ -169,14 +177,14 @@ py_varobj_get_iterator (struct varobj *var, PyObject *printer)
       error (_("Null value returned for children"));
     }
 
-  gdbpy_ref<> iter (PyObject_GetIter (children.get ()));
+  iter = PyObject_GetIter (children.get ());
   if (iter == NULL)
     {
       gdbpy_print_stack ();
       error (_("Could not get children iterator"));
     }
 
-  py_iter = py_varobj_iter_new (var, std::move (iter));
+  py_iter = py_varobj_iter_new (var, iter);
 
   return &py_iter->base;
 }

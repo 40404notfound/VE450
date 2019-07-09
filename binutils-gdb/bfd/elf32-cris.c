@@ -1,5 +1,5 @@
 /* CRIS-specific support for 32-bit ELF.
-   Copyright (C) 2000-2019 Free Software Foundation, Inc.
+   Copyright (C) 2000-2018 Free Software Foundation, Inc.
    Contributed by Axis Communications AB.
    Written by Hans-Peter Nilsson, based on elf32-fr30.c
    PIC and shlib bits based primarily on elf32-m68k.c and elf32-i386.c.
@@ -453,7 +453,7 @@ cris_reloc_name_lookup (bfd *abfd ATTRIBUTE_UNUSED, const char *r_name)
 
 /* Set the howto pointer for an CRIS ELF reloc.  */
 
-static bfd_boolean
+static void
 cris_info_to_howto_rela (bfd * abfd ATTRIBUTE_UNUSED,
 			 arelent * cache_ptr,
 			 Elf_Internal_Rela * dst)
@@ -464,13 +464,10 @@ cris_info_to_howto_rela (bfd * abfd ATTRIBUTE_UNUSED,
   if (r_type >= R_CRIS_max)
     {
       /* xgettext:c-format */
-      _bfd_error_handler (_("%pB: unsupported relocation type %#x"),
-			  abfd, r_type);
-      bfd_set_error (bfd_error_bad_value);
-      return FALSE;
+      _bfd_error_handler (_("%B: invalid CRIS reloc number: %d"), abfd, r_type);
+      r_type = 0;
     }
   cache_ptr->howto = & cris_elf_howto_table [r_type];
-  return TRUE;
 }
 
 bfd_reloc_status_type
@@ -1116,7 +1113,7 @@ cris_elf_relocate_section (bfd *output_bfd ATTRIBUTE_UNUSED,
 		{
 		  _bfd_error_handler
 		    /* xgettext:c-format */
-		    (_("%pB, section %pA: unresolvable relocation %s against symbol `%s'"),
+		    (_("%B, section %A: unresolvable relocation %s against symbol `%s'"),
 		     input_bfd,
 		     input_section,
 		     cris_elf_howto_table[r_type].name,
@@ -1181,10 +1178,10 @@ cris_elf_relocate_section (bfd *output_bfd ATTRIBUTE_UNUSED,
 	      _bfd_error_handler
 		((h->got.offset == (bfd_vma) -1)
 		 /* xgettext:c-format */
-		 ? _("%pB, section %pA: no PLT nor GOT for relocation %s"
+		 ? _("%B, section %A: No PLT nor GOT for relocation %s"
 		     " against symbol `%s'")
 		 /* xgettext:c-format */
-		 : _("%pB, section %pA: no PLT for relocation %s"
+		 : _("%B, section %A: No PLT for relocation %s"
 		     " against symbol `%s'"),
 		 input_bfd,
 		 input_section,
@@ -1308,21 +1305,21 @@ cris_elf_relocate_section (bfd *output_bfd ATTRIBUTE_UNUSED,
 		if (h == NULL)
 		  _bfd_error_handler
 		    /* xgettext:c-format */
-		    (_("%pB, section %pA: relocation %s with non-zero addend"
-		       " %" PRId64 " against local symbol"),
+		    (_("%B, section %A: relocation %s with non-zero addend %Ld"
+		       " against local symbol"),
 		     input_bfd,
 		     input_section,
 		     cris_elf_howto_table[r_type].name,
-		     (int64_t) rel->r_addend);
+		     rel->r_addend);
 		else
 		  _bfd_error_handler
 		    /* xgettext:c-format */
-		    (_("%pB, section %pA: relocation %s with non-zero addend"
-		       " %" PRId64 " against symbol `%s'"),
+		    (_("%B, section %A: relocation %s with non-zero addend %Ld"
+		       " against symbol `%s'"),
 		     input_bfd,
 		     input_section,
 		     cris_elf_howto_table[r_type].name,
-		     (int64_t) rel->r_addend,
+		     rel->r_addend,
 		     symname[0] != '\0' ? symname : _("[whose name is lost]"));
 
 		bfd_set_error (bfd_error_bad_value);
@@ -1344,7 +1341,7 @@ cris_elf_relocate_section (bfd *output_bfd ATTRIBUTE_UNUSED,
 	    {
 	      _bfd_error_handler
 		/* xgettext:c-format */
-		(_("%pB, section %pA: relocation %s is"
+		(_("%B, section %A: relocation %s is"
 		   " not allowed for global symbol: `%s'"),
 		 input_bfd,
 		 input_section,
@@ -1361,7 +1358,7 @@ cris_elf_relocate_section (bfd *output_bfd ATTRIBUTE_UNUSED,
 	    {
 	      _bfd_error_handler
 		/* xgettext:c-format */
-		(_("%pB, section %pA: relocation %s with no GOT created"),
+		(_("%B, section %A: relocation %s with no GOT created"),
 		 input_bfd,
 		 input_section,
 		 cris_elf_howto_table[r_type].name);
@@ -1578,10 +1575,10 @@ cris_elf_relocate_section (bfd *output_bfd ATTRIBUTE_UNUSED,
 		((h->root.type == bfd_link_hash_undefined)
 		 /* We shouldn't get here for GCC-emitted code.  */
 		 /* xgettext:c-format */
-		 ? _("%pB, section %pA: relocation %s has an undefined"
+		 ? _("%B, section %A: relocation %s has an undefined"
 		     " reference to `%s', perhaps a declaration mixup?")
 		 /* xgettext:c-format */
-		 : _("%pB, section %pA: relocation %s is"
+		 : _("%B, section %A: relocation %s is"
 		     " not allowed for `%s', a global symbol with default"
 		     " visibility, perhaps a declaration mixup?"),
 		 input_bfd,
@@ -1665,12 +1662,12 @@ cris_elf_relocate_section (bfd *output_bfd ATTRIBUTE_UNUSED,
 		 to pass us these kinds of things.  */
 	      _bfd_error_handler
 		/* xgettext:c-format */
-		(_("%pB, section %pA: relocation %s with non-zero addend"
-		   " %" PRId64 " against symbol `%s'"),
+		(_("%B, section %A: relocation %s with non-zero addend %Ld"
+		   " against symbol `%s'"),
 		 input_bfd,
 		 input_section,
 		 cris_elf_howto_table[r_type].name,
-		 (int64_t) rel->r_addend,
+		 rel->r_addend,
 		 symname[0] != '\0' ? symname : _("[whose name is lost]"));
 
 	      bfd_set_error (bfd_error_bad_value);
@@ -1818,12 +1815,12 @@ cris_elf_relocate_section (bfd *output_bfd ATTRIBUTE_UNUSED,
 		 things.  */
 	      _bfd_error_handler
 		/* xgettext:c-format */
-		(_("%pB, section %pA: relocation %s with non-zero addend"
-		   " %" PRId64 " against symbol `%s'"),
+		(_("%B, section %A: relocation %s with non-zero addend %Ld"
+		   " against symbol `%s'"),
 		 input_bfd,
 		 input_section,
 		 cris_elf_howto_table[r_type].name,
-		 (int64_t) rel->r_addend,
+		 rel->r_addend,
 		 symname[0] != '\0' ? symname : _("[whose name is lost]"));
 	      bfd_set_error (bfd_error_bad_value);
 	      return FALSE;
@@ -1952,7 +1949,7 @@ cris_elf_relocate_section (bfd *output_bfd ATTRIBUTE_UNUSED,
 	    {
 	      _bfd_error_handler
 		/* xgettext:c-format */
-		(_("%pB, section %pA: relocation %s is"
+		(_("%B, section %A: relocation %s is"
 		   " not allowed for symbol: `%s'"
 		   " which is defined outside the program,"
 		   " perhaps a declaration mixup?"),
@@ -3047,7 +3044,7 @@ cris_elf_check_relocs (bfd *abfd,
 		{
 		  _bfd_error_handler
 		    /* xgettext:c-format */
-		    (_("%pB, section %pA: v10/v32 compatible object"
+		    (_("%B, section %A:\n  v10/v32 compatible object"
 		       " must not contain a PIC relocation"),
 		     abfd, sec);
 		  return FALSE;
@@ -3101,7 +3098,7 @@ cris_elf_check_relocs (bfd *abfd,
 	    {
 	      _bfd_error_handler
 		/* xgettext:c-format */
-		(_("%pB, section %pA:\n  relocation %s not valid"
+		(_("%B, section %A:\n  relocation %s not valid"
 		   " in a shared object;"
 		   " typically an option mixup, recompile with -fPIC"),
 		 abfd,
@@ -3319,7 +3316,7 @@ cris_elf_check_relocs (bfd *abfd,
 	      /* FIXME: How do we make this optionally a warning only?  */
 	      _bfd_error_handler
 		/* xgettext:c-format */
-		(_("%pB, section %pA: relocation %s should not"
+		(_("%B, section %A:\n  relocation %s should not"
 		   " be used in a shared object; recompile with -fPIC"),
 		 abfd,
 		 sec,
@@ -3485,7 +3482,9 @@ cris_elf_check_relocs (bfd *abfd,
 	/* This relocation describes which C++ vtable entries are actually
 	   used.  Record for later use during GC.  */
 	case R_CRIS_GNU_VTENTRY:
-	  if (!bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
+	  BFD_ASSERT (h != NULL);
+	  if (h != NULL
+	      && !bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
 	    return FALSE;
 	  break;
 
@@ -3742,8 +3741,8 @@ elf_cris_discard_excess_dso_dynamics (struct elf_cris_link_hash_entry *h,
 	/* FIXME: How do we make this optionally a warning only?  */
 	_bfd_error_handler
 	  /* xgettext:c-format */
-	  (_("%pB, section `%pA', to symbol `%s':"
-	     " relocation %s should not be used"
+	  (_("%B, section `%A', to symbol `%s':\n"
+	     "  relocation %s should not be used"
 	     " in a shared object; recompile with -fPIC"),
 	   s->section->owner,
 	   s->section,
@@ -3855,7 +3854,7 @@ cris_elf_final_write_processing (bfd *abfd,
 
     default:
       _bfd_abort (__FILE__, __LINE__,
-		  _("unexpected machine number"));
+		  _("Unexpected machine number"));
     }
 
   elf_elfheader (abfd)->e_flags = e_flags;
@@ -3956,8 +3955,8 @@ cris_elf_merge_private_bfd_data (bfd *ibfd, struct bfd_link_info *info)
     {
       _bfd_error_handler
 	(bfd_get_symbol_leading_char (ibfd) == '_'
-	 ? _("%pB: uses _-prefixed symbols, but writing file with non-prefixed symbols")
-	 : _("%pB: uses non-prefixed symbols, but writing file with _-prefixed symbols"),
+	 ? _("%B: uses _-prefixed symbols, but writing file with non-prefixed symbols")
+	 : _("%B: uses non-prefixed symbols, but writing file with _-prefixed symbols"),
 	 ibfd);
       bfd_set_error (bfd_error_bad_value);
       return FALSE;
@@ -3976,9 +3975,9 @@ cris_elf_merge_private_bfd_data (bfd *ibfd, struct bfd_link_info *info)
 	{
 	  _bfd_error_handler
 	    ((imach == bfd_mach_cris_v32)
-	     ? _("%pB contains CRIS v32 code, incompatible"
+	     ? _("%B contains CRIS v32 code, incompatible"
 		 " with previous objects")
-	     : _("%pB contains non-CRIS-v32 code, incompatible"
+	     : _("%B contains non-CRIS-v32 code, incompatible"
 		 " with previous objects"),
 	     ibfd);
 	  bfd_set_error (bfd_error_bad_value);

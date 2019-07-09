@@ -1,6 +1,6 @@
 /* Machine independent support for Solaris /proc (process file system) for GDB.
 
-   Copyright (C) 1999-2019 Free Software Foundation, Inc.
+   Copyright (C) 1999-2018 Free Software Foundation, Inc.
 
    Written by Michael Snyder at Cygnus Solutions.
    Based on work by Fred Fish, Stu Grossman, Geoff Noer, and others.
@@ -35,7 +35,7 @@
 #include <sys/proc.h>	/* for struct proc */
 #include <sys/user.h>	/* for struct user */
 #include <fcntl.h>	/* for O_RDWR etc.  */
-#include "common/gdb_wait.h"
+#include "gdb_wait.h"
 
 #include "proc-utils.h"
 
@@ -419,6 +419,8 @@ proc_prettyfprint_status (long flags, int why, int what, int thread)
 void
 _initialize_proc_api (void)
 {
+  struct cmd_list_element *c;
+
   add_setshow_boolean_cmd ("procfs-trace", no_class, &procfs_trace, _("\
 Set tracing for /proc api calls."), _("\
 Show tracing for /proc api calls."), NULL,

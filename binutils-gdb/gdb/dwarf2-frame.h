@@ -1,6 +1,6 @@
 /* Frame unwinder for frames with DWARF Call Frame Information.
 
-   Copyright (C) 2003-2019 Free Software Foundation, Inc.
+   Copyright (C) 2003-2018 Free Software Foundation, Inc.
 
    Contributed by Mark Kettenis.
 
@@ -98,14 +98,19 @@ struct dwarf2_frame_state_reg_info
   ~dwarf2_frame_state_reg_info ()
   {
     delete prev;
+    xfree (reg);
   }
 
   /* Copy constructor.  */
   dwarf2_frame_state_reg_info (const dwarf2_frame_state_reg_info &src)
-    : reg (src.reg), cfa_offset (src.cfa_offset),
+    : num_regs (src.num_regs), cfa_offset (src.cfa_offset),
       cfa_reg (src.cfa_reg), cfa_how (src.cfa_how), cfa_exp (src.cfa_exp),
       prev (src.prev)
   {
+    size_t size = src.num_regs * sizeof (struct dwarf2_frame_state_reg);
+
+    reg = (struct dwarf2_frame_state_reg *) xmalloc (size);
+    memcpy (reg, src.reg, size);
   }
 
   /* Assignment operator for both move-assignment and copy-assignment.  */
@@ -118,26 +123,33 @@ struct dwarf2_frame_state_reg_info
 
   /* Move constructor.  */
   dwarf2_frame_state_reg_info (dwarf2_frame_state_reg_info &&rhs) noexcept
-    : reg (std::move (rhs.reg)), cfa_offset (rhs.cfa_offset),
+    : reg (rhs.reg), num_regs (rhs.num_regs), cfa_offset (rhs.cfa_offset),
       cfa_reg (rhs.cfa_reg), cfa_how (rhs.cfa_how), cfa_exp (rhs.cfa_exp),
       prev (rhs.prev)
   {
     rhs.prev = nullptr;
+    rhs.reg = nullptr;
   }
 
-  /* If necessary, enlarge the register set to hold NUM_REGS_REQUESTED
-     registers.  */
+/* Assert that the register set RS is large enough to store gdbarch_num_regs
+   columns.  If necessary, enlarge the register set.  */
   void alloc_regs (int num_regs_requested)
   {
-    gdb_assert (num_regs_requested > 0);
-
-    if (num_regs_requested <= reg.size ())
+    if (num_regs_requested <= num_regs)
       return;
 
-    reg.resize (num_regs_requested);
+    size_t size = sizeof (struct dwarf2_frame_state_reg);
+
+    reg = (struct dwarf2_frame_state_reg *)
+      xrealloc (reg, num_regs_requested * size);
+
+    /* Initialize newly allocated registers.  */
+    memset (reg + num_regs, 0, (num_regs_requested - num_regs) * size);
+    num_regs = num_regs_requested;
   }
 
-  std::vector<struct dwarf2_frame_state_reg> reg;
+  struct dwarf2_frame_state_reg *reg = NULL;
+  int num_regs = 0;
 
   LONGEST cfa_offset = 0;
   ULONGEST cfa_reg = 0;
@@ -154,6 +166,7 @@ private:
     using std::swap;
 
     swap (lhs.reg, rhs.reg);
+    swap (lhs.num_regs, rhs.num_regs);
     swap (lhs.cfa_offset, rhs.cfa_offset);
     swap (lhs.cfa_reg, rhs.cfa_reg);
     swap (lhs.cfa_how, rhs.cfa_how);
@@ -196,12 +209,6 @@ struct dwarf2_frame_state
      the CFA is defined as REG - OFFSET rather than REG + OFFSET.  */
   bool armcc_cfa_offsets_reversed = false;
 };
-
-/* When this is true the DWARF frame unwinders can be used if they are
-   registered with the gdbarch.  Not all architectures can or do use the
-   DWARF unwinders.  Setting this to true on a target that does not
-   otherwise support the DWARF unwinders has no effect.  */
-extern int dwarf2_frame_unwinders_enabled_p;
 
 /* Set the architecture-specific register state initialization
    function for GDBARCH to INIT_REG.  */

@@ -1,5 +1,5 @@
 /* Annotation routines for GDB.
-   Copyright (C) 1986-2019 Free Software Foundation, Inc.
+   Copyright (C) 1986-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -22,7 +22,7 @@
 #include "target.h"
 #include "gdbtypes.h"
 #include "breakpoint.h"
-#include "observable.h"
+#include "observer.h"
 #include "inferior.h"
 #include "infrun.h"
 #include "top.h"
@@ -61,10 +61,17 @@ annotate_breakpoints_invalid (void)
       && (!breakpoints_invalid_emitted
 	  || current_ui->prompt_state != PROMPT_BLOCKED))
     {
-      target_terminal::scoped_restore_terminal_state term_state;
+      /* If the inferior owns the terminal (e.g., we're resuming),
+	 make sure to leave with the inferior still owning it.  */
+      int was_inferior = target_terminal::is_inferior ();
+
       target_terminal::ours_for_output ();
 
       printf_unfiltered (("\n\032\032breakpoints-invalid\n"));
+
+      if (was_inferior)
+	target_terminal::inferior ();
+
       breakpoints_invalid_emitted = 1;
     }
 }
@@ -201,10 +208,17 @@ annotate_frames_invalid (void)
       && (!frames_invalid_emitted
 	  || current_ui->prompt_state != PROMPT_BLOCKED))
     {
-      target_terminal::scoped_restore_terminal_state term_state;
+      /* If the inferior owns the terminal (e.g., we're resuming),
+	 make sure to leave with the inferior still owning it.  */
+      int was_inferior = target_terminal::is_inferior ();
+
       target_terminal::ours_for_output ();
 
       printf_unfiltered (("\n\032\032frames-invalid\n"));
+
+      if (was_inferior)
+	target_terminal::inferior ();
+
       frames_invalid_emitted = 1;
     }
 }
@@ -224,19 +238,6 @@ annotate_thread_changed (void)
   if (annotation_level > 1)
     {
       printf_unfiltered (("\n\032\032thread-changed\n"));
-    }
-}
-
-/* Emit notification on thread exit.  */
-
-static void
-annotate_thread_exited (struct thread_info *t, int silent)
-{
-  if (annotation_level > 1)
-    {
-      printf_filtered(("\n\032\032thread-exited,"
-                       "id=\"%d\",group-id=\"i%d\"\n"),
-                      t->global_num, t->inf->num);
     }
 }
 
@@ -418,7 +419,7 @@ annotate_arg_end (void)
 }
 
 void
-annotate_source (const char *filename, int line, int character, int mid,
+annotate_source (char *filename, int line, int character, int mid,
 		 struct gdbarch *gdbarch, CORE_ADDR pc)
 {
   if (annotation_level > 1)
@@ -591,8 +592,7 @@ breakpoint_changed (struct breakpoint *b)
 void
 _initialize_annotate (void)
 {
-  gdb::observers::breakpoint_created.attach (breakpoint_changed);
-  gdb::observers::breakpoint_deleted.attach (breakpoint_changed);
-  gdb::observers::breakpoint_modified.attach (breakpoint_changed);
-  gdb::observers::thread_exit.attach (annotate_thread_exited);
+  observer_attach_breakpoint_created (breakpoint_changed);
+  observer_attach_breakpoint_deleted (breakpoint_changed);
+  observer_attach_breakpoint_modified (breakpoint_changed);
 }

@@ -1,5 +1,5 @@
 /* tc-score7.c -- Assembler for Score7
-   Copyright (C) 2009-2019 Free Software Foundation, Inc.
+   Copyright (C) 2009-2018 Free Software Foundation, Inc.
    Contributed by:
    Brain.lin (brain.lin@sunplusct.com)
    Mei Ligang (ligang@sunnorth.com.cn)
@@ -27,6 +27,7 @@
 #include "subsegs.h"
 #include "safe-ctype.h"
 #include "opcode/score-inst.h"
+#include "struc-symbol.h"
 #include "libiberty.h"
 
 #ifdef OBJ_ELF
@@ -142,6 +143,7 @@ static void s7_do_lw_pic (char *);
 #define s7_GET_INSN_SIZE(type) ((s7_GET_INSN_CLASS (type) == INSN_CLASS_16) \
                              ? s7_INSN16_SIZE : s7_INSN_SIZE)
 
+#define s7_MAX_LITTLENUMS 6
 #define s7_INSN_NAME_LEN 16
 
 /* Relax will need some padding for alignment.  */
@@ -4198,7 +4200,7 @@ s7_build_la_pic (int reg_rd, expressionS exp)
       /* Fix part
          For an external symbol: lw rD, <sym>($gp)
                                  (BFD_RELOC_SCORE_GOT15 or BFD_RELOC_SCORE_CALL15)  */
-      sprintf (tmp, "lw_pic r%d, %s", reg_rd, S_GET_NAME (add_symbol));
+      sprintf (tmp, "lw_pic r%d, %s", reg_rd, add_symbol->bsym->name);
       if (s7_append_insn (tmp, FALSE) == (int) s7_FAIL)
 	return;
 
@@ -4212,7 +4214,7 @@ s7_build_la_pic (int reg_rd, expressionS exp)
 	 addi rD, <sym>       (BFD_RELOC_GOT_LO16) */
       s7_inst.reloc.type = BFD_RELOC_SCORE_GOT15;
       memcpy (&var_insts[0], &s7_inst, sizeof (struct s7_score_it));
-      sprintf (tmp, "addi_s_pic r%d, %s", reg_rd, S_GET_NAME (add_symbol));
+      sprintf (tmp, "addi_s_pic r%d, %s", reg_rd, add_symbol->bsym->name);
       if (s7_append_insn (tmp, FALSE) == (int) s7_FAIL)
 	return;
 
@@ -4222,7 +4224,7 @@ s7_build_la_pic (int reg_rd, expressionS exp)
   else if (add_number >= -0x8000 && add_number <= 0x7fff)
     {
       /* Insn 1: lw rD, <sym>($gp)    (BFD_RELOC_SCORE_GOT15)  */
-      sprintf (tmp, "lw_pic r%d, %s", reg_rd, S_GET_NAME (add_symbol));
+      sprintf (tmp, "lw_pic r%d, %s", reg_rd, add_symbol->bsym->name);
       if (s7_append_insn (tmp, TRUE) == (int) s7_FAIL)
 	return;
 
@@ -4239,8 +4241,7 @@ s7_build_la_pic (int reg_rd, expressionS exp)
 
       /* Var part
  	 For a local symbol: addi rD, <sym>+<constant>    (BFD_RELOC_GOT_LO16)  */
-      sprintf (tmp, "addi_s_pic r%d, %s + %d", reg_rd,
-	       S_GET_NAME (add_symbol), (int) add_number);
+      sprintf (tmp, "addi_s_pic r%d, %s + %d", reg_rd, add_symbol->bsym->name, (int) add_number);
       if (s7_append_insn (tmp, FALSE) == (int) s7_FAIL)
 	return;
 
@@ -4253,7 +4254,7 @@ s7_build_la_pic (int reg_rd, expressionS exp)
       int lo = add_number & 0x0000FFFF;
 
       /* Insn 1: lw rD, <sym>($gp)    (BFD_RELOC_SCORE_GOT15)  */
-      sprintf (tmp, "lw_pic r%d, %s", reg_rd, S_GET_NAME (add_symbol));
+      sprintf (tmp, "lw_pic r%d, %s", reg_rd, add_symbol->bsym->name);
       if (s7_append_insn (tmp, TRUE) == (int) s7_FAIL)
 	return;
 
@@ -4295,7 +4296,7 @@ s7_build_la_pic (int reg_rd, expressionS exp)
 
       /* Var part
   	 For a local symbol: addi r1, <sym>+LO%<constant>    (BFD_RELOC_GOT_LO16)  */
-      sprintf (tmp, "addi_u_pic r1, %s + %d", S_GET_NAME (add_symbol), lo);
+      sprintf (tmp, "addi_u_pic r1, %s + %d", add_symbol->bsym->name, lo);
       if (s7_append_insn (tmp, FALSE) == (int) s7_FAIL)
 	return;
 
@@ -4660,7 +4661,7 @@ s7_build_lwst_pic (int reg_rd, expressionS exp, const char *insn_name)
       /* Fix part
          For an external symbol: lw rD, <sym>($gp)
                                  (BFD_RELOC_SCORE_GOT15)  */
-      sprintf (tmp, "lw_pic r1, %s", S_GET_NAME (add_symbol));
+      sprintf (tmp, "lw_pic r1, %s", add_symbol->bsym->name);
       if (s7_append_insn (tmp, FALSE) == (int) s7_FAIL)
         return;
 
@@ -4672,7 +4673,7 @@ s7_build_lwst_pic (int reg_rd, expressionS exp, const char *insn_name)
 	 addi rD, <sym>       (BFD_RELOC_GOT_LO16) */
       s7_inst.reloc.type = BFD_RELOC_SCORE_GOT15;
       memcpy (&var_insts[0], &s7_inst, sizeof (struct s7_score_it));
-      sprintf (tmp, "addi_s_pic r1, %s", S_GET_NAME (add_symbol));
+      sprintf (tmp, "addi_s_pic r1, %s", add_symbol->bsym->name);
       if (s7_append_insn (tmp, FALSE) == (int) s7_FAIL)
         return;
 
@@ -5262,7 +5263,10 @@ s7_b32_relax_to_b16 (fragS * fragp)
   if (s == NULL)
     frag_addr = 0;
   else
-    symbol_address = (addressT) symbol_get_frag (s)->fr_address;
+    {
+      if (s->bsym != NULL)
+	symbol_address = (addressT) symbol_get_frag (s)->fr_address;
+    }
 
   value = s7_md_chars_to_number (fragp->fr_literal, s7_INSN_SIZE);
 
@@ -5276,7 +5280,7 @@ s7_b32_relax_to_b16 (fragS * fragp)
     abs_value = 0xffffffff - abs_value + 1;
 
   /* Relax branch 32 to branch 16.  */
-  if (relaxable_p && ((abs_value & 0xffffff00) == 0)
+  if (relaxable_p && (s->bsym != NULL) && ((abs_value & 0xffffff00) == 0)
       && (S_IS_DEFINED (s) && !S_IS_COMMON (s) && !S_IS_EXTERNAL (s)))
     {
       /* do nothing.  */
@@ -6073,7 +6077,8 @@ s7_s_score_lcomm (int bytes_p)
   *p = c;
 
   if (
-#if (defined (OBJ_AOUT) || defined (OBJ_MAYBE_AOUT))
+#if (defined (OBJ_AOUT) || defined (OBJ_MAYBE_AOUT) \
+     || defined (OBJ_BOUT) || defined (OBJ_MAYBE_BOUT))
 #ifdef BFD_ASSEMBLER
        (OUTPUT_FLAVOR != bfd_target_aout_flavour
         || (S_GET_OTHER (symbolP) == 0 && S_GET_DESC (symbolP) == 0)) &&
@@ -6208,7 +6213,7 @@ static const char *
 s7_atof (int type, char *litP, int *sizeP)
 {
   int prec;
-  LITTLENUM_TYPE words[MAX_LITTLENUMS];
+  LITTLENUM_TYPE words[s7_MAX_LITTLENUMS];
   char *t;
   int i;
 
@@ -6561,8 +6566,8 @@ s7_convert_frag (bfd * abfd ATTRIBUTE_UNUSED,
 		 segT sec ATTRIBUTE_UNUSED,
 		 fragS * fragp)
 {
-  unsigned int r_old;
-  unsigned int r_new;
+  int r_old;
+  int r_new;
   char backup[20];
   fixS *fixp;
 

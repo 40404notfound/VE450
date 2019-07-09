@@ -1,6 +1,6 @@
 /* Routines for handling XML generic OS data provided by target.
 
-   Copyright (C) 2008-2019 Free Software Foundation, Inc.
+   Copyright (C) 2008-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -19,7 +19,7 @@
 
 #include "defs.h"
 #include "target.h"
-#include "common/vec.h"
+#include "vec.h"
 #include "xml-support.h"
 #include "osdata.h"
 #include "ui-out.h"
@@ -163,11 +163,11 @@ std::unique_ptr<osdata>
 get_osdata (const char *type)
 {
   std::unique_ptr<osdata> osdata;
-  gdb::optional<gdb::char_vector> xml = target_get_osdata (type);
+  gdb::unique_xmalloc_ptr<char> xml = target_get_osdata (type);
 
   if (xml)
     {
-      if ((*xml)[0] == '\0')
+      if (xml.get ()[0] == '\0')
 	{
 	  if (type)
 	    warning (_("Empty data returned by target.  Wrong osdata type?"));
@@ -175,7 +175,7 @@ get_osdata (const char *type)
 	    warning (_("Empty type list returned by target.  No type data?"));
 	}
       else
-	osdata = osdata_parse (xml->data ());
+	osdata = osdata_parse (xml.get ());
     }
 
   if (osdata == NULL)

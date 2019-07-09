@@ -1,6 +1,6 @@
 /* Auxiliary vector support for GDB, the GNU debugger.
 
-   Copyright (C) 2004-2019 Free Software Foundation, Inc.
+   Copyright (C) 2004-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -24,8 +24,8 @@
 #include "inferior.h"
 #include "valprint.h"
 #include "gdbcore.h"
-#include "observable.h"
-#include "common/filestuff.h"
+#include "observer.h"
+#include "filestuff.h"
 #include "objfiles.h"
 
 #include "auxv.h"
@@ -46,11 +46,13 @@ procfs_xfer_auxv (gdb_byte *readbuf,
 		  ULONGEST len,
 		  ULONGEST *xfered_len)
 {
+  char *pathname;
   int fd;
   ssize_t l;
 
-  std::string pathname = string_printf ("/proc/%d/auxv", inferior_ptid.pid ());
+  pathname = xstrprintf ("/proc/%d/auxv", ptid_get_pid (inferior_ptid));
   fd = gdb_open_cloexec (pathname, writebuf != NULL ? O_WRONLY : O_RDONLY, 0);
+  xfree (pathname);
   if (fd < 0)
     return TARGET_XFER_E_IO;
 
@@ -281,35 +283,58 @@ default_auxv_parse (struct target_ops *ops, gdb_byte **readptr,
    Return -1 if there is insufficient buffer for a whole entry.
    Return 1 if an entry was read into *TYPEP and *VALP.  */
 int
-target_auxv_parse (gdb_byte **readptr,
-		   gdb_byte *endptr, CORE_ADDR *typep, CORE_ADDR *valp)
+target_auxv_parse (struct target_ops *ops, gdb_byte **readptr,
+                  gdb_byte *endptr, CORE_ADDR *typep, CORE_ADDR *valp)
 {
   struct gdbarch *gdbarch = target_gdbarch();
 
   if (gdbarch_auxv_parse_p (gdbarch))
     return gdbarch_auxv_parse (gdbarch, readptr, endptr, typep, valp);
 
-  return current_top_target ()->auxv_parse (readptr, endptr, typep, valp);
+  return current_target.to_auxv_parse (&current_target, readptr, endptr,
+				       typep, valp);
 }
 
+
+/* Per-inferior data key for auxv.  */
+static const struct inferior_data *auxv_inferior_data;
 
 /*  Auxiliary Vector information structure.  This is used by GDB
     for caching purposes for each inferior.  This helps reduce the
     overhead of transfering data from a remote target to the local host.  */
 struct auxv_info
 {
-  gdb::optional<gdb::byte_vector> data;
+  LONGEST length;
+  gdb_byte *data;
 };
 
-/* Per-inferior data key for auxv.  */
-static const struct inferior_key<auxv_info> auxv_inferior_data;
+/* Handles the cleanup of the auxv cache for inferior INF.  ARG is ignored.
+   Frees whatever allocated space there is to be freed and sets INF's auxv cache
+   data pointer to NULL.
+
+   This function is called when the following events occur: inferior_appeared,
+   inferior_exit and executable_changed.  */
+
+static void
+auxv_inferior_data_cleanup (struct inferior *inf, void *arg)
+{
+  struct auxv_info *info;
+
+  info = (struct auxv_info *) inferior_data (inf, auxv_inferior_data);
+  if (info != NULL)
+    {
+      xfree (info->data);
+      xfree (info);
+      set_inferior_data (inf, auxv_inferior_data, NULL);
+    }
+}
 
 /* Invalidate INF's auxv cache.  */
 
 static void
 invalidate_auxv_cache_inf (struct inferior *inf)
 {
-  auxv_inferior_data.clear (inf);
+  auxv_inferior_data_cleanup (inf, NULL);
 }
 
 /* Invalidate current inferior's auxv cache.  */
@@ -330,11 +355,13 @@ get_auxv_inferior_data (struct target_ops *ops)
   struct auxv_info *info;
   struct inferior *inf = current_inferior ();
 
-  info = auxv_inferior_data.get (inf);
+  info = (struct auxv_info *) inferior_data (inf, auxv_inferior_data);
   if (info == NULL)
     {
-      info = auxv_inferior_data.emplace (inf);
-      info->data = target_read_alloc (ops, TARGET_OBJECT_AUXV, NULL);
+      info = XCNEW (struct auxv_info);
+      info->length = target_read_alloc (ops, TARGET_OBJECT_AUXV,
+					NULL, &info->data);
+      set_inferior_data (inf, auxv_inferior_data, info);
     }
 
   return info;
@@ -348,17 +375,20 @@ int
 target_auxv_search (struct target_ops *ops, CORE_ADDR match, CORE_ADDR *valp)
 {
   CORE_ADDR type, val;
-  auxv_info *info = get_auxv_inferior_data (ops);
+  gdb_byte *data;
+  gdb_byte *ptr;
+  struct auxv_info *info;
 
-  if (!info->data)
-    return -1;
+  info = get_auxv_inferior_data (ops);
 
-  gdb_byte *data = info->data->data ();
-  gdb_byte *ptr = data;
-  size_t len = info->data->size ();
+  data = info->data;
+  ptr = data;
+
+  if (info->length <= 0)
+    return info->length;
 
   while (1)
-    switch (target_auxv_parse (&ptr, data + len, &type, &val))
+    switch (target_auxv_parse (ops, &ptr, data + info->length, &type, &val))
       {
       case 1:			/* Here's an entry, check it.  */
 	if (type == match)
@@ -472,7 +502,7 @@ default_print_auxv_entry (struct gdbarch *gdbarch, struct ui_file *file,
 	   AUXV_FORMAT_STR);
       TAG (AT_SUN_LPAGESZ, _("Large pagesize"), AUXV_FORMAT_DEC);
       TAG (AT_SUN_PLATFORM, _("Platform name string"), AUXV_FORMAT_STR);
-      TAG (AT_SUN_CAP_HW1, _("Machine-dependent CPU capability hints"),
+      TAG (AT_SUN_HWCAP, _("Machine-dependent CPU capability hints"),
 	   AUXV_FORMAT_HEX);
       TAG (AT_SUN_IFLUSH, _("Should flush icache?"), AUXV_FORMAT_DEC);
       TAG (AT_SUN_CPU, _("CPU name string"), AUXV_FORMAT_STR);
@@ -486,17 +516,6 @@ default_print_auxv_entry (struct gdbarch *gdbarch, struct ui_file *file,
 	   AUXV_FORMAT_HEX);
       TAG (AT_SUN_AUXFLAGS,
 	   _("AF_SUN_ flags passed from the kernel"), AUXV_FORMAT_HEX);
-      TAG (AT_SUN_EMULATOR, _("Name of emulation binary for runtime linker"),
-	   AUXV_FORMAT_STR);
-      TAG (AT_SUN_BRANDNAME, _("Name of brand library"), AUXV_FORMAT_STR);
-      TAG (AT_SUN_BRAND_AUX1, _("Aux vector for brand modules 1"),
-	   AUXV_FORMAT_HEX);
-      TAG (AT_SUN_BRAND_AUX2, _("Aux vector for brand modules 2"),
-	   AUXV_FORMAT_HEX);
-      TAG (AT_SUN_BRAND_AUX3, _("Aux vector for brand modules 3"),
-	   AUXV_FORMAT_HEX);
-      TAG (AT_SUN_CAP_HW2, _("Machine-dependent CPU capability hints 2"),
-	   AUXV_FORMAT_HEX);
     }
 
   fprint_auxv_entry (file, name, description, format, type, val);
@@ -509,17 +528,19 @@ fprint_target_auxv (struct ui_file *file, struct target_ops *ops)
 {
   struct gdbarch *gdbarch = target_gdbarch ();
   CORE_ADDR type, val;
+  gdb_byte *data;
+  gdb_byte *ptr;
+  struct auxv_info *info;
   int ents = 0;
-  auxv_info *info = get_auxv_inferior_data (ops);
 
-  if (!info->data)
-    return -1;
+  info = get_auxv_inferior_data (ops);
 
-  gdb_byte *data = info->data->data ();
-  gdb_byte *ptr = data;
-  size_t len = info->data->size ();
+  data = info->data;
+  ptr = data;
+  if (info->length <= 0)
+    return info->length;
 
-  while (target_auxv_parse (&ptr, data + len, &type, &val) > 0)
+  while (target_auxv_parse (ops, &ptr, data + info->length, &type, &val) > 0)
     {
       gdbarch_print_auxv_entry (gdbarch, file, type, val);
       ++ents;
@@ -537,7 +558,7 @@ info_auxv_command (const char *cmd, int from_tty)
     error (_("The program has no auxiliary information now."));
   else
     {
-      int ents = fprint_target_auxv (gdb_stdout, current_top_target ());
+      int ents = fprint_target_auxv (gdb_stdout, &current_target);
 
       if (ents < 0)
 	error (_("No auxiliary vector found, or failed reading it."));
@@ -553,8 +574,12 @@ _initialize_auxv (void)
 	    _("Display the inferior's auxiliary vector.\n\
 This is information provided by the operating system at program startup."));
 
+  /* Set an auxv cache per-inferior.  */
+  auxv_inferior_data
+    = register_inferior_data_with_cleanup (NULL, auxv_inferior_data_cleanup);
+
   /* Observers used to invalidate the auxv cache when needed.  */
-  gdb::observers::inferior_exit.attach (invalidate_auxv_cache_inf);
-  gdb::observers::inferior_appeared.attach (invalidate_auxv_cache_inf);
-  gdb::observers::executable_changed.attach (invalidate_auxv_cache);
+  observer_attach_inferior_exit (invalidate_auxv_cache_inf);
+  observer_attach_inferior_appeared (invalidate_auxv_cache_inf);
+  observer_attach_executable_changed (invalidate_auxv_cache);
 }

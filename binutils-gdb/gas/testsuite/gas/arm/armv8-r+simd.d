@@ -2,7 +2,7 @@
 #source: armv8-ar+simd.s
 #as: -march=armv8-r
 #objdump: -dr --prefix-addresses --show-raw-insn
-#skip: *-*-pe *-*-wince
+#skip: *-*-*coff *-*-pe *-*-wince *-*-*aout* *-*-netbsd
 
 .*: +file format .*arm.*
 

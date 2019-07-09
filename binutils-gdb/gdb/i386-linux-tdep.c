@@ -1,6 +1,6 @@
 /* Target-dependent code for GNU/Linux i386.
 
-   Copyright (C) 2000-2019 Free Software Foundation, Inc.
+   Copyright (C) 2000-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -38,7 +38,7 @@
 #include "xml-syscall.h"
 
 #include "i387-tdep.h"
-#include "common/x86-xstate.h"
+#include "x86-xstate.h"
 
 /* The syscall's XML filename for i386.  */
 #define XML_SYSCALL_FILENAME_I386 "syscalls/i386-linux.xml"
@@ -402,7 +402,7 @@ i386_linux_handle_segmentation_fault (struct gdbarch *gdbarch,
   if (!i386_mpx_enabled ())
     return;
 
-  try
+  TRY
     {
       /* Sigcode evaluates if the actual segfault is a boundary violation.  */
       sig_code = parse_and_eval_long ("$_siginfo.si_code\n");
@@ -414,10 +414,11 @@ i386_linux_handle_segmentation_fault (struct gdbarch *gdbarch,
       access
         = parse_and_eval_long ("$_siginfo._sifields._sigfault.si_addr");
     }
-  catch (const gdb_exception &exception)
+  CATCH (exception, RETURN_MASK_ALL)
     {
       return;
     }
+  END_CATCH
 
   /* If this is not a boundary violation just return.  */
   if (sig_code != SIG_CODE_BONDARY_FAULT)
@@ -546,7 +547,7 @@ i386_linux_get_syscall_number_from_regcache (struct regcache *regcache)
   /* Getting the system call number from the register.
      When dealing with x86 architecture, this information
      is stored at %eax register.  */
-  regcache->cooked_read (I386_LINUX_ORIG_EAX_REGNUM, buf);
+  regcache_cooked_read (regcache, I386_LINUX_ORIG_EAX_REGNUM, buf);
 
   ret = extract_signed_integer (buf, 4, byte_order);
 
@@ -558,9 +559,9 @@ i386_linux_get_syscall_number_from_regcache (struct regcache *regcache)
 
 static LONGEST
 i386_linux_get_syscall_number (struct gdbarch *gdbarch,
-			       thread_info *thread)
+                               ptid_t ptid)
 {
-  struct regcache *regcache = get_thread_regcache (thread);
+  struct regcache *regcache = get_thread_regcache (ptid);
 
   return i386_linux_get_syscall_number_from_regcache (regcache);
 }
@@ -693,7 +694,7 @@ i386_linux_read_description (uint64_t xcr0)
     [(xcr0 & X86_XSTATE_PKRU) ? 1 : 0];
 
   if (*tdesc == NULL)
-    *tdesc = i386_create_target_description (xcr0, true, false);
+    *tdesc = i386_create_target_description (xcr0, true);
 
   return *tdesc;
 }
@@ -763,17 +764,16 @@ i386_linux_iterate_over_regset_sections (struct gdbarch *gdbarch,
 {
   struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
 
-  cb (".reg", 68, 68, &i386_gregset, NULL, cb_data);
+  cb (".reg", 68, &i386_gregset, NULL, cb_data);
 
   if (tdep->xcr0 & X86_XSTATE_AVX)
     cb (".reg-xstate", X86_XSTATE_SIZE (tdep->xcr0),
-	X86_XSTATE_SIZE (tdep->xcr0), &i386_linux_xstateregset,
-	"XSAVE extended state", cb_data);
+	&i386_linux_xstateregset, "XSAVE extended state", cb_data);
   else if (tdep->xcr0 & X86_XSTATE_SSE)
-    cb (".reg-xfp", 512, 512, &i386_fpregset, "extended floating-point",
+    cb (".reg-xfp", 512, &i386_fpregset, "extended floating-point",
 	cb_data);
   else
-    cb (".reg2", 108, 108, &i386_fpregset, NULL, cb_data);
+    cb (".reg2", 108, &i386_fpregset, NULL, cb_data);
 }
 
 /* Linux kernel shows PC value after the 'int $0x80' instruction even if

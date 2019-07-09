@@ -1,5 +1,5 @@
 /* tc-crx.c -- Assembler code for the CRX CPU core.
-   Copyright (C) 2004-2019 Free Software Foundation, Inc.
+   Copyright (C) 2004-2018 Free Software Foundation, Inc.
 
    Contributed by Tomer Levi, NSC, Israel.
    Originally written for GAS 2.12 by Tomer Levi, NSC, Israel.
@@ -1135,7 +1135,8 @@ getreg_image (reg r)
 /* Issue a error message when register is illegal.  */
 #define IMAGE_ERR \
   as_bad (_("Illegal register (`%s') in instruction: `%s'"), \
-	  reg_name, ins_parse);
+	    reg_name, ins_parse);			     \
+  break;
 
   switch (rreg->type)
   {
@@ -1144,21 +1145,18 @@ getreg_image (reg r)
 	return rreg->image;
       else
 	IMAGE_ERR;
-      break;
 
     case CRX_CFG_REGTYPE:
       if (is_procreg)
 	return rreg->image;
       else
 	IMAGE_ERR;
-      break;
 
     case CRX_R_REGTYPE:
       if (! is_procreg)
 	return rreg->image;
       else
 	IMAGE_ERR;
-      break;
 
     case CRX_C_REGTYPE:
     case CRX_CS_REGTYPE:
@@ -1167,7 +1165,6 @@ getreg_image (reg r)
 
     default:
       IMAGE_ERR;
-      break;
   }
 
   return 0;

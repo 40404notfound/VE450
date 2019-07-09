@@ -1,5 +1,5 @@
 /* Target-dependent code for the 32-bit OpenRISC 1000, for the GDB.
-   Copyright (C) 2008-2019 Free Software Foundation, Inc.
+   Copyright (C) 2008-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -33,6 +33,7 @@
 #include "block.h"
 #include "reggroups.h"
 #include "arch-utils.h"
+#include "frame.h"
 #include "frame-unwind.h"
 #include "frame-base.h"
 #include "dwarf2-frame.h"
@@ -296,7 +297,7 @@ or1k_return_value (struct gdbarch *gdbarch, struct value *functype,
 	  else
 	    memcpy (buf, writebuf, rv_size);
 
-	  regcache->cooked_write (OR1K_RV_REGNUM, buf);
+	  regcache_cooked_write (regcache, OR1K_RV_REGNUM, buf);
 
 	  free (buf);
 	}
@@ -329,8 +330,8 @@ or1k_return_value (struct gdbarch *gdbarch, struct value *functype,
 	  memcpy (buf_hi, writebuf, rv_size - bpw);
 	  memcpy (buf_lo, writebuf + bpw, bpw);
 
-	  regcache->cooked_write (OR1K_RV_REGNUM, buf_hi);
-	  regcache->cooked_write (OR1K_RV_REGNUM + 1, buf_lo);
+	  regcache_cooked_write (regcache, OR1K_RV_REGNUM, buf_hi);
+	  regcache_cooked_write (regcache, OR1K_RV_REGNUM + 1, buf_lo);
 
 	  free (buf_lo);
 	  free (buf_hi);
@@ -594,8 +595,7 @@ static CORE_ADDR
 or1k_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
 		      struct regcache *regcache, CORE_ADDR bp_addr,
 		      int nargs, struct value **args, CORE_ADDR sp,
-		      function_call_return_method return_method,
-		      CORE_ADDR struct_addr)
+		      int struct_return, CORE_ADDR struct_addr)
 {
 
   int argreg;
@@ -617,7 +617,7 @@ or1k_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
 
   /* Location for a returned structure.  This is passed as a silent first
      argument.  */
-  if (return_method == return_method_struct)
+  if (struct_return)
     {
       regcache_cooked_write_unsigned (regcache, OR1K_FIRST_ARG_REGNUM,
 				      struct_addr);
@@ -789,6 +789,14 @@ or1k_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
   return sp;
 }
 
+/* Implement the dummy_id gdbarch method.  */
+
+static struct frame_id
+or1k_dummy_id (struct gdbarch *gdbarch, struct frame_info *this_frame)
+{
+  return frame_id_build (get_frame_sp (this_frame),
+			 get_frame_pc (this_frame));
+}
 
 
 /* Support functions for frame handling.  */
@@ -1176,6 +1184,7 @@ or1k_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_call_dummy_location (gdbarch, ON_STACK);
   set_gdbarch_push_dummy_code (gdbarch, or1k_push_dummy_code);
   set_gdbarch_push_dummy_call (gdbarch, or1k_push_dummy_call);
+  set_gdbarch_dummy_id (gdbarch, or1k_dummy_id);
 
   /* Frame unwinders.  Use DWARF debug info if available, otherwise use our
      own unwinder.  */
@@ -1245,9 +1254,6 @@ or1k_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 
       tdesc_use_registers (gdbarch, tdesc, tdesc_data);
     }
-
-  /* Hook in ABI-specific overrides, if they have been registered.  */
-  gdbarch_init_osabi (info, gdbarch);
 
   return gdbarch;
 }

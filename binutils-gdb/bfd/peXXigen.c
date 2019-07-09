@@ -1,5 +1,5 @@
 /* Support for the generic parts of PE/PEI; the common executable parts.
-   Copyright (C) 1995-2019 Free Software Foundation, Inc.
+   Copyright (C) 1995-2018 Free Software Foundation, Inc.
    Written by Cygnus Solutions.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -154,7 +154,7 @@ _bfd_XXi_swap_sym_in (bfd * abfd, void * ext1, void * in1)
 	  name = _bfd_coff_internal_syment_name (abfd, in, namebuf);
 	  if (name == NULL)
 	    {
-	      _bfd_error_handler (_("%pB: unable to find name for empty section"),
+	      _bfd_error_handler (_("%B: unable to find name for empty section"),
 				  abfd);
 	      bfd_set_error (bfd_error_invalid_target);
 	      return;
@@ -180,7 +180,7 @@ _bfd_XXi_swap_sym_in (bfd * abfd, void * ext1, void * in1)
 	      name = (const char *) bfd_alloc (abfd, strlen (namebuf) + 1);
 	      if (name == NULL)
 		{
-		  _bfd_error_handler (_("%pB: out of memory creating name for empty section"),
+		  _bfd_error_handler (_("%B: out of memory creating name for empty section"),
 				      abfd);
 		  return;
 		}
@@ -191,7 +191,7 @@ _bfd_XXi_swap_sym_in (bfd * abfd, void * ext1, void * in1)
 	  sec = bfd_make_section_anyway_with_flags (abfd, name, flags);
 	  if (sec == NULL)
 	    {
-	      _bfd_error_handler (_("%pB: unable to create fake empty section"),
+	      _bfd_error_handler (_("%B: unable to create fake empty section"),
 				  abfd);
 	      return;
 	    }
@@ -522,15 +522,15 @@ _bfd_XXi_swap_aouthdr_in (bfd * abfd,
   a->NumberOfRvaAndSizes = H_GET_32 (abfd, src->NumberOfRvaAndSizes);
 
   {
-    unsigned idx;
+    int idx;
 
     /* PR 17512: Corrupt PE binaries can cause seg-faults.  */
     if (a->NumberOfRvaAndSizes > IMAGE_NUMBEROF_DIRECTORY_ENTRIES)
       {
 	/* xgettext:c-format */
 	_bfd_error_handler
-	  (_("%pB: aout header specifies an invalid number of"
-	     " data-directory entries: %u"), abfd, a->NumberOfRvaAndSizes);
+	  (_("%B: aout header specifies an invalid number of data-directory entries: %ld"),
+	   abfd, a->NumberOfRvaAndSizes);
 	bfd_set_error (bfd_error_bad_value);
 
 	/* Paranoia: If the number is corrupt, then assume that the
@@ -828,7 +828,7 @@ _bfd_XXi_only_swap_filehdr_out (bfd * abfd, void * in, void * out)
   if (pe_data (abfd)->dll)
     filehdr_in->f_flags |= F_DLL;
 
-  filehdr_in->pe.e_magic    = IMAGE_DOS_SIGNATURE;
+  filehdr_in->pe.e_magic    = DOSMAGIC;
   filehdr_in->pe.e_cblp     = 0x90;
   filehdr_in->pe.e_cp       = 0x3;
   filehdr_in->pe.e_crlc     = 0x0;
@@ -872,13 +872,12 @@ _bfd_XXi_only_swap_filehdr_out (bfd * abfd, void * in, void * out)
   filehdr_in->pe.dos_message[13] = 0x0a0d0d2e;
   filehdr_in->pe.dos_message[14] = 0x24;
   filehdr_in->pe.dos_message[15] = 0x0;
-  filehdr_in->pe.nt_signature = IMAGE_NT_SIGNATURE;
+  filehdr_in->pe.nt_signature = NT_SIGNATURE;
 
   H_PUT_16 (abfd, filehdr_in->f_magic, filehdr_out->f_magic);
   H_PUT_16 (abfd, filehdr_in->f_nscns, filehdr_out->f_nscns);
 
-  /* Use a real timestamp by default, unless the no-insert-timestamp
-     option was chosen.  */
+  /* Only use a real timestamp if the option was chosen.  */
   if ((pe_data (abfd)->insert_timestamp))
     H_PUT_32 (abfd, time (0), filehdr_out->f_timdat);
   else
@@ -1019,7 +1018,7 @@ _bfd_XXi_swap_scnhdr_out (bfd * abfd, void * in, void * out)
 
     typedef struct
     {
-      char section_name[SCNNMLEN];
+      const char *	section_name;
       unsigned long	must_have;
     }
     pe_required_section_flags;
@@ -1038,6 +1037,7 @@ _bfd_XXi_swap_scnhdr_out (bfd * abfd, void * in, void * out)
 	{ ".text" , IMAGE_SCN_MEM_READ | IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE },
 	{ ".tls",   IMAGE_SCN_MEM_READ | IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_WRITE },
 	{ ".xdata", IMAGE_SCN_MEM_READ | IMAGE_SCN_CNT_INITIALIZED_DATA },
+	{ NULL, 0}
       };
 
     pe_required_section_flags * p;
@@ -1050,12 +1050,10 @@ _bfd_XXi_swap_scnhdr_out (bfd * abfd, void * in, void * out)
        by ld --enable-auto-import (if auto-import is actually needed),
        by ld --omagic, or by obcopy --writable-text.  */
 
-    for (p = known_sections;
-	 p < known_sections + ARRAY_SIZE (known_sections);
-	 p++)
-      if (memcmp (scnhdr_int->s_name, p->section_name, SCNNMLEN) == 0)
+    for (p = known_sections; p->section_name; p++)
+      if (strcmp (scnhdr_int->s_name, p->section_name) == 0)
 	{
-	  if (memcmp (scnhdr_int->s_name, ".text", sizeof ".text")
+	  if (strcmp (scnhdr_int->s_name, ".text")
 	      || (bfd_get_file_flags (abfd) & WP_TEXT))
 	    scnhdr_int->s_flags &= ~IMAGE_SCN_MEM_WRITE;
 	  scnhdr_int->s_flags |= p->must_have;
@@ -1068,7 +1066,7 @@ _bfd_XXi_swap_scnhdr_out (bfd * abfd, void * in, void * out)
   if (coff_data (abfd)->link_info
       && ! bfd_link_relocatable (coff_data (abfd)->link_info)
       && ! bfd_link_pic (coff_data (abfd)->link_info)
-      && memcmp (scnhdr_int->s_name, ".text", sizeof ".text") == 0)
+      && strcmp (scnhdr_int->s_name, ".text") == 0)
     {
       /* By inference from looking at MS output, the 32 bit field
 	 which is the combination of the number_of_relocs and
@@ -1088,7 +1086,7 @@ _bfd_XXi_swap_scnhdr_out (bfd * abfd, void * in, void * out)
       else
 	{
 	  /* xgettext:c-format */
-	  _bfd_error_handler (_("%pB: line number overflow: 0x%lx > 0xffff"),
+	  _bfd_error_handler (_("%B: line number overflow: 0x%lx > 0xffff"),
 			      abfd, scnhdr_int->s_nlnno);
 	  bfd_set_error (bfd_error_file_truncated);
 	  H_PUT_16 (abfd, 0xffff, scnhdr_ext->s_nlnno);
@@ -1439,7 +1437,7 @@ pe_print_idata (bfd * abfd, void * vfile)
       if (hint_addr == 0)
 	hint_addr = first_thunk;
 
-      if (hint_addr != 0 && hint_addr - adj < datasize)
+      if (hint_addr != 0)
 	{
 	  bfd_byte *ft_data;
 	  asection *ft_section;
@@ -1662,8 +1660,7 @@ pe_print_edata (bfd * abfd, void * vfile)
 
       dataoff = addr - section->vma;
       datasize = extra->DataDirectory[PE_EXPORT_TABLE].Size;
-      if (dataoff > section->size
-	  || datasize > section->size - dataoff)
+      if (datasize > section->size - dataoff)
 	{
 	  fprintf (file,
 		   _("\nThere is an export table in %s, but it does not fit into that section\n"),
@@ -1673,7 +1670,7 @@ pe_print_edata (bfd * abfd, void * vfile)
     }
 
   /* PR 17512: Handle corrupt PE binaries.  */
-  if (datasize < 40)
+  if (datasize < 36)
     {
       fprintf (file,
 	       /* xgettext:c-format */
@@ -1780,11 +1777,11 @@ pe_print_edata (bfd * abfd, void * vfile)
 	  edt.base);
 
   /* PR 17512: Handle corrupt PE binaries.  */
-  /* PR 17512 file: 140-165018-0.004.  */
-  if (edt.eat_addr - adj >= datasize
+  if (edt.eat_addr + (edt.num_functions * 4) - adj >= datasize
       /* PR 17512: file: 092b1829 */
-      || (edt.num_functions + 1) * 4 < edt.num_functions
-      || edt.eat_addr - adj + (edt.num_functions + 1) * 4 > datasize)
+      || (edt.num_functions * 4) < edt.num_functions
+      /* PR 17512 file: 140-165018-0.004.  */
+      || data + edt.eat_addr - adj < data)
     fprintf (file, _("\tInvalid Export Address Table rva (0x%lx) or entry count (0x%lx)\n"),
 	     (long) edt.eat_addr,
 	     (long) edt.num_functions);
@@ -1906,7 +1903,7 @@ pe_print_pdata (bfd * abfd, void * vfile)
   if ((stop % onaline) != 0)
     fprintf (file,
 	     /* xgettext:c-format */
-	     _("warning, .pdata section size (%ld) is not a multiple of %d\n"),
+	     _("Warning, .pdata section size (%ld) is not a multiple of %d\n"),
 	     (long) stop, onaline);
 
   fprintf (file,
@@ -2103,7 +2100,7 @@ _bfd_XX_print_ce_compressed_pdata (bfd * abfd, void * vfile)
   if ((stop % onaline) != 0)
     fprintf (file,
 	     /* xgettext:c-format */
-	     _("warning, .pdata section size (%ld) is not a multiple of %d\n"),
+	     _("Warning, .pdata section size (%ld) is not a multiple of %d\n"),
 	     (long) stop, onaline);
 
   fprintf (file,
@@ -2806,13 +2803,12 @@ _bfd_XX_print_private_bfd_data_common (bfd * abfd, void * vfile)
     fprintf (file, "\t(%s)",name);
   fprintf (file, "\nMajorLinkerVersion\t%d\n", i->MajorLinkerVersion);
   fprintf (file, "MinorLinkerVersion\t%d\n", i->MinorLinkerVersion);
-  fprintf (file, "SizeOfCode\t\t");
-  bfd_fprintf_vma (abfd, file, i->SizeOfCode);
-  fprintf (file, "\nSizeOfInitializedData\t");
-  bfd_fprintf_vma (abfd, file, i->SizeOfInitializedData);
-  fprintf (file, "\nSizeOfUninitializedData\t");
-  bfd_fprintf_vma (abfd, file, i->SizeOfUninitializedData);
-  fprintf (file, "\nAddressOfEntryPoint\t");
+  fprintf (file, "SizeOfCode\t\t%08lx\n", (unsigned long) i->SizeOfCode);
+  fprintf (file, "SizeOfInitializedData\t%08lx\n",
+	   (unsigned long) i->SizeOfInitializedData);
+  fprintf (file, "SizeOfUninitializedData\t%08lx\n",
+	   (unsigned long) i->SizeOfUninitializedData);
+  fprintf (file, "AddressOfEntryPoint\t");
   bfd_fprintf_vma (abfd, file, i->AddressOfEntryPoint);
   fprintf (file, "\nBaseOfCode\t\t");
   bfd_fprintf_vma (abfd, file, i->BaseOfCode);
@@ -2824,18 +2820,20 @@ _bfd_XX_print_private_bfd_data_common (bfd * abfd, void * vfile)
 
   fprintf (file, "\nImageBase\t\t");
   bfd_fprintf_vma (abfd, file, i->ImageBase);
-  fprintf (file, "\nSectionAlignment\t%08x\n", i->SectionAlignment);
-  fprintf (file, "FileAlignment\t\t%08x\n", i->FileAlignment);
-  fprintf (file, "MajorOSystemVersion\t%d\n", i->MajorOperatingSystemVersion);
+  fprintf (file, "\nSectionAlignment\t");
+  bfd_fprintf_vma (abfd, file, i->SectionAlignment);
+  fprintf (file, "\nFileAlignment\t\t");
+  bfd_fprintf_vma (abfd, file, i->FileAlignment);
+  fprintf (file, "\nMajorOSystemVersion\t%d\n", i->MajorOperatingSystemVersion);
   fprintf (file, "MinorOSystemVersion\t%d\n", i->MinorOperatingSystemVersion);
   fprintf (file, "MajorImageVersion\t%d\n", i->MajorImageVersion);
   fprintf (file, "MinorImageVersion\t%d\n", i->MinorImageVersion);
   fprintf (file, "MajorSubsystemVersion\t%d\n", i->MajorSubsystemVersion);
   fprintf (file, "MinorSubsystemVersion\t%d\n", i->MinorSubsystemVersion);
-  fprintf (file, "Win32Version\t\t%08x\n", i->Reserved1);
-  fprintf (file, "SizeOfImage\t\t%08x\n", i->SizeOfImage);
-  fprintf (file, "SizeOfHeaders\t\t%08x\n", i->SizeOfHeaders);
-  fprintf (file, "CheckSum\t\t%08x\n", i->CheckSum);
+  fprintf (file, "Win32Version\t\t%08lx\n", (unsigned long) i->Reserved1);
+  fprintf (file, "SizeOfImage\t\t%08lx\n", (unsigned long) i->SizeOfImage);
+  fprintf (file, "SizeOfHeaders\t\t%08lx\n", (unsigned long) i->SizeOfHeaders);
+  fprintf (file, "CheckSum\t\t%08lx\n", (unsigned long) i->CheckSum);
 
   switch (i->Subsystem)
     {
@@ -2984,16 +2982,13 @@ _bfd_XX_bfd_copy_private_bfd_data_common (bfd * ibfd, bfd * obfd)
 	    (struct external_IMAGE_DEBUG_DIRECTORY *)(data + (addr - section->vma));
 
 	  /* PR 17512: file: 0f15796a.  */
-	  if ((unsigned long) ope->pe_opthdr.DataDirectory[PE_DEBUG_DATA].Size
-	      > section->size - (addr - section->vma))
+	  if (ope->pe_opthdr.DataDirectory[PE_DEBUG_DATA].Size + (addr - section->vma)
+	      > bfd_get_section_size (section))
 	    {
 	      /* xgettext:c-format */
-	      _bfd_error_handler
-		(_("%pB: Data Directory size (%lx) "
-		   "exceeds space left in section (%" PRIx64 ")"),
-		 obfd, ope->pe_opthdr.DataDirectory[PE_DEBUG_DATA].Size,
-		 (uint64_t) (section->size - (addr - section->vma)));
-	      free (data);
+	      _bfd_error_handler (_("%B: Data Directory size (%lx) exceeds space left in section (%Lx)"),
+				  obfd, ope->pe_opthdr.DataDirectory[PE_DEBUG_DATA].Size,
+				  bfd_get_section_size (section) - (addr - section->vma));
 	      return FALSE;
 	    }
 
@@ -3021,15 +3016,13 @@ _bfd_XX_bfd_copy_private_bfd_data_common (bfd * ibfd, bfd * obfd)
 
 	  if (!bfd_set_section_contents (obfd, section, data, 0, section->size))
 	    {
-	      _bfd_error_handler (_("failed to update file offsets in debug directory"));
-	      free (data);
+	      _bfd_error_handler (_("Failed to update file offsets in debug directory"));
 	      return FALSE;
 	    }
-	  free (data);
 	}
       else if (section)
 	{
-	  _bfd_error_handler (_("%pB: failed to read debug data section"), obfd);
+	  _bfd_error_handler (_("%B: Failed to read debug data section"), obfd);
 	  return FALSE;
 	}
     }
@@ -4108,14 +4101,14 @@ rsrc_merge (struct rsrc_entry * a, struct rsrc_entry * b)
 
   if (adir->characteristics != bdir->characteristics)
     {
-      _bfd_error_handler (_(".rsrc merge failure: dirs with differing characteristics"));
+      _bfd_error_handler (_(".rsrc merge failure: dirs with differing characteristics\n"));
       bfd_set_error (bfd_error_file_truncated);
       return;
     }
 
   if (adir->major != bdir->major || adir->minor != bdir->minor)
     {
-      _bfd_error_handler (_(".rsrc merge failure: differing directory versions"));
+      _bfd_error_handler (_(".rsrc merge failure: differing directory versions\n"));
       bfd_set_error (bfd_error_file_truncated);
       return;
     }
@@ -4232,7 +4225,7 @@ rsrc_process_section (bfd * abfd,
       if (data > dataend)
 	{
 	  /* Corrupted .rsrc section - cannot merge.  */
-	  _bfd_error_handler (_("%pB: .rsrc merge failure: corrupt .rsrc section"),
+	  _bfd_error_handler (_("%B: .rsrc merge failure: corrupt .rsrc section"),
 			      abfd);
 	  bfd_set_error (bfd_error_file_truncated);
 	  goto end;
@@ -4240,7 +4233,7 @@ rsrc_process_section (bfd * abfd,
 
       if ((data - p) > rsrc_sizes [num_resource_sets])
 	{
-	  _bfd_error_handler (_("%pB: .rsrc merge failure: unexpected .rsrc size"),
+	  _bfd_error_handler (_("%B: .rsrc merge failure: unexpected .rsrc size"),
 			      abfd);
 	  bfd_set_error (bfd_error_file_truncated);
 	  goto end;
@@ -4379,7 +4372,7 @@ _bfd_XXi_final_link_postscript (bfd * abfd, struct coff_final_link_info *pfinfo)
       else
 	{
 	  _bfd_error_handler
-	    (_("%pB: unable to fill in DataDictionary[1] because .idata$2 is missing"),
+	    (_("%B: unable to fill in DataDictionary[1] because .idata$2 is missing"),
 	     abfd);
 	  result = FALSE;
 	}
@@ -4399,7 +4392,7 @@ _bfd_XXi_final_link_postscript (bfd * abfd, struct coff_final_link_info *pfinfo)
       else
 	{
 	  _bfd_error_handler
-	    (_("%pB: unable to fill in DataDictionary[1] because .idata$4 is missing"),
+	    (_("%B: unable to fill in DataDictionary[1] because .idata$4 is missing"),
 	     abfd);
 	  result = FALSE;
 	}
@@ -4420,7 +4413,7 @@ _bfd_XXi_final_link_postscript (bfd * abfd, struct coff_final_link_info *pfinfo)
       else
 	{
 	  _bfd_error_handler
-	    (_("%pB: unable to fill in DataDictionary[12] because .idata$5 is missing"),
+	    (_("%B: unable to fill in DataDictionary[12] because .idata$5 is missing"),
 	     abfd);
 	  result = FALSE;
 	}
@@ -4440,7 +4433,7 @@ _bfd_XXi_final_link_postscript (bfd * abfd, struct coff_final_link_info *pfinfo)
       else
 	{
 	  _bfd_error_handler
-	    (_("%pB: unable to fill in DataDictionary[PE_IMPORT_ADDRESS_TABLE (12)] because .idata$6 is missing"),
+	    (_("%B: unable to fill in DataDictionary[PE_IMPORT_ADDRESS_TABLE (12)] because .idata$6 is missing"),
 	     abfd);
 	  result = FALSE;
 	}
@@ -4482,7 +4475,7 @@ _bfd_XXi_final_link_postscript (bfd * abfd, struct coff_final_link_info *pfinfo)
 	  else
 	    {
 	      _bfd_error_handler
-		(_("%pB: unable to fill in DataDictionary[PE_IMPORT_ADDRESS_TABLE(12)]"
+		(_("%B: unable to fill in DataDictionary[PE_IMPORT_ADDRESS_TABLE(12)]"
 		   " because .idata$6 is missing"), abfd);
 	      result = FALSE;
 	    }
@@ -4507,7 +4500,7 @@ _bfd_XXi_final_link_postscript (bfd * abfd, struct coff_final_link_info *pfinfo)
       else
 	{
 	  _bfd_error_handler
-	    (_("%pB: unable to fill in DataDictionary[9] because __tls_used is missing"),
+	    (_("%B: unable to fill in DataDictionary[9] because __tls_used is missing"),
 	     abfd);
 	  result = FALSE;
 	}

@@ -1,7 +1,24 @@
 ; Toshiba MeP FMAX Coprocessor description.  -*- Scheme -*-
-; Copyright (C) 2005 Red Hat, Inc.
-; This file is part of CGEN.
-; See file COPYING.CGEN for details.
+; Copyright 2011 Free Software Foundation, Inc.
+;
+; Contributed by Red Hat Inc;
+;
+; This file is part of the GNU Binutils.
+;
+; This program is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This program is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+; GNU General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this program; if not, write to the Free Software
+; Foundation, Inc., 51 Franklin Street - Fifth Floor, Boston,
+; MA 02110-1301, USA.
 
 ;------------------------------------------------------------------------------
 ; MeP-Integrator will redefine the isa pmacros below to allow the bit widths
@@ -224,7 +241,7 @@
 (fmax-conv fceilws  #xE #x0 fmax-FRd-int fmax-FRn     (set fmax-FRd-int (c-call SI "fmax_fceilws" fmax-FRn)))
 (fmax-conv ffloorws #xF #x0 fmax-FRd-int fmax-FRn     (set fmax-FRd-int (c-call SI "fmax_ffloorws" fmax-FRn)))
 (fmax-conv fcvtws   #x4 #x1 fmax-FRd-int fmax-FRn     (set fmax-FRd-int (c-call SI "fmax_fcvtws" fmax-FRn)))
-(fmax-conv fcvtsw   #x0 #x9 fmax-FRd     fmax-FRn-int (set fmax-FRd (float SF fmax-FRn-int)))
+(fmax-conv fcvtsw   #x0 #x9 fmax-FRd     fmax-FRn-int (set fmax-FRd (float SF FPCONV-DEFAULT fmax-FRn-int)))
 
 ;------------------------------------------------------------------------------
 ; Comparisons

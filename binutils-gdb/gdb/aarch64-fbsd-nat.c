@@ -1,6 +1,6 @@
 /* Native-dependent code for FreeBSD/aarch64.
 
-   Copyright (C) 2017-2019 Free Software Foundation, Inc.
+   Copyright (C) 2017-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -29,14 +29,6 @@
 #include "aarch64-fbsd-tdep.h"
 #include "inf-ptrace.h"
 
-struct aarch64_fbsd_nat_target final : public fbsd_nat_target
-{
-  void fetch_registers (struct regcache *, int) override;
-  void store_registers (struct regcache *, int) override;
-};
-
-static aarch64_fbsd_nat_target the_aarch64_fbsd_nat_target;
-
 /* Determine if PT_GETREGS fetches REGNUM.  */
 
 static bool
@@ -56,11 +48,11 @@ getfpregs_supplies (struct gdbarch *gdbarch, int regnum)
 /* Fetch register REGNUM from the inferior.  If REGNUM is -1, do this
    for all registers.  */
 
-void
-aarch64_fbsd_nat_target::fetch_registers (struct regcache *regcache,
-					  int regnum)
+static void
+aarch64_fbsd_fetch_inferior_registers (struct target_ops *ops,
+				    struct regcache *regcache, int regnum)
 {
-  pid_t pid = get_ptrace_pid (regcache->ptid ());
+  pid_t pid = get_ptrace_pid (regcache_get_ptid (regcache));
 
   struct gdbarch *gdbarch = regcache->arch ();
   if (regnum == -1 || getregs_supplies (gdbarch, regnum))
@@ -89,11 +81,11 @@ aarch64_fbsd_nat_target::fetch_registers (struct regcache *regcache,
 /* Store register REGNUM back into the inferior.  If REGNUM is -1, do
    this for all registers.  */
 
-void
-aarch64_fbsd_nat_target::store_registers (struct regcache *regcache,
-					  int regnum)
+static void
+aarch64_fbsd_store_inferior_registers (struct target_ops *ops,
+				    struct regcache *regcache, int regnum)
 {
-  pid_t pid = get_ptrace_pid (regcache->ptid ());
+  pid_t pid = get_ptrace_pid (regcache_get_ptid (regcache));
 
   struct gdbarch *gdbarch = regcache->arch ();
   if (regnum == -1 || getregs_supplies (gdbarch, regnum))
@@ -128,5 +120,10 @@ aarch64_fbsd_nat_target::store_registers (struct regcache *regcache,
 void
 _initialize_aarch64_fbsd_nat (void)
 {
-  add_inf_child_target (&the_aarch64_fbsd_nat_target);
+  struct target_ops *t;
+
+  t = inf_ptrace_target ();
+  t->to_fetch_registers = aarch64_fbsd_fetch_inferior_registers;
+  t->to_store_registers = aarch64_fbsd_store_inferior_registers;
+  fbsd_nat_add_target (t);
 }

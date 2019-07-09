@@ -1,6 +1,6 @@
 /* CLI Definitions for GDB, the GNU debugger.
 
-   Copyright (C) 2002-2019 Free Software Foundation, Inc.
+   Copyright (C) 2002-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -24,11 +24,11 @@
 #include "ui-out.h"
 #include "cli-out.h"
 #include "top.h"		/* for "execute_command" */
+#include "event-top.h"
 #include "infrun.h"
-#include "observable.h"
+#include "observer.h"
 #include "gdbthread.h"
 #include "thread-fsm.h"
-#include "inferior.h"
 
 cli_interp_base::cli_interp_base (const char *name)
   : interp (name)
@@ -43,7 +43,6 @@ class cli_interp final : public cli_interp_base
 {
  public:
   explicit cli_interp (const char *name);
-  ~cli_interp ();
 
   void init (bool top_level) override;
   void resume () override;
@@ -62,11 +61,6 @@ cli_interp::cli_interp (const char *name)
   this->cli_uiout = cli_out_new (gdb_stdout);
 }
 
-cli_interp::~cli_interp ()
-{
-  delete cli_uiout;
-}
-
 /* Suppress notification struct.  */
 struct cli_suppress_notification cli_suppress_notification =
   {
@@ -79,7 +73,9 @@ struct cli_suppress_notification cli_suppress_notification =
 static struct cli_interp *
 as_cli_interp (struct interp *interp)
 {
-  return dynamic_cast<cli_interp *> (interp);
+  if (strcmp (interp_name (interp), INTERP_CONSOLE) == 0)
+    return (struct cli_interp *) interp;
+  return NULL;
 }
 
 /* Longjmp-safe wrapper for "execute_command".  */
@@ -113,7 +109,7 @@ should_print_stop_to_console (struct interp *console_interp,
        == BPSTAT_WHAT_STOP_NOISY)
       || tp->thread_fsm == NULL
       || tp->thread_fsm->command_interp == console_interp
-      || !tp->thread_fsm->finished_p ())
+      || !thread_fsm_finished_p (tp->thread_fsm))
     return 1;
   return 0;
 }
@@ -256,11 +252,13 @@ cli_on_command_error (void)
 static void
 cli_on_user_selected_context_changed (user_selected_what selection)
 {
+  struct thread_info *tp;
+
   /* This event is suppressed.  */
   if (cli_suppress_notification.user_selected_context)
     return;
 
-  thread_info *tp = inferior_ptid != null_ptid ? inferior_thread () : NULL;
+  tp = find_thread_ptid (inferior_ptid);
 
   SWITCH_THRU_ALL_UIS ()
     {
@@ -357,20 +355,25 @@ static struct gdb_exception
 safe_execute_command (struct ui_out *command_uiout, const char *command,
 		      int from_tty)
 {
-  struct gdb_exception e;
+  struct gdb_exception e = exception_none;
+  struct ui_out *saved_uiout;
 
   /* Save and override the global ``struct ui_out'' builder.  */
-  scoped_restore saved_uiout = make_scoped_restore (&current_uiout,
-						    command_uiout);
+  saved_uiout = current_uiout;
+  current_uiout = command_uiout;
 
-  try
+  TRY
     {
       execute_command (command, from_tty);
     }
-  catch (gdb_exception &exception)
+  CATCH (exception, RETURN_MASK_ALL)
     {
-      e = std::move (exception);
+      e = exception;
     }
+  END_CATCH
+
+  /* Restore the global builder.  */
+  current_uiout = saved_uiout;
 
   /* FIXME: cagney/2005-01-13: This shouldn't be needed.  Instead the
      caller should print the exception.  */
@@ -395,17 +398,15 @@ struct saved_output_files
   ui_file *log;
   ui_file *targ;
   ui_file *targerr;
-  ui_file *file_to_delete;
 };
 static saved_output_files saved_output;
 
 /* See cli-interp.h.  */
 
 void
-cli_interp_base::set_logging (ui_file_up logfile, bool logging_redirect,
-			      bool debug_redirect)
+cli_interp_base::set_logging (ui_file_up logfile, bool logging_redirect)
 {
-  if (logfile != nullptr)
+  if (logfile != NULL)
     {
       saved_output.out = gdb_stdout;
       saved_output.err = gdb_stderr;
@@ -413,34 +414,22 @@ cli_interp_base::set_logging (ui_file_up logfile, bool logging_redirect,
       saved_output.targ = gdb_stdtarg;
       saved_output.targerr = gdb_stdtargerr;
 
-      /* If something is being redirected, then grab logfile.  */
-      ui_file *logfile_p = nullptr;
-      if (logging_redirect || debug_redirect)
-	{
-	  logfile_p = logfile.get ();
-	  saved_output.file_to_delete = logfile_p;
-	}
-
-      /* If something is not being redirected, then a tee containing both the
-	 logfile and stdout.  */
-      ui_file *tee = nullptr;
-      if (!logging_redirect || !debug_redirect)
-	{
-	  tee = new tee_file (gdb_stdout, std::move (logfile));
-	  saved_output.file_to_delete = tee;
-	}
-
-      gdb_stdout = logging_redirect ? logfile_p : tee;
-      gdb_stdlog = debug_redirect ? logfile_p : tee;
-      gdb_stderr = logging_redirect ? logfile_p : tee;
-      gdb_stdtarg = logging_redirect ? logfile_p : tee;
-      gdb_stdtargerr = logging_redirect ? logfile_p : tee;
+      /* A raw pointer since ownership is transferred to
+	 gdb_stdout.  */
+      ui_file *output = make_logging_output (gdb_stdout,
+					     std::move (logfile),
+					     logging_redirect);
+      gdb_stdout = output;
+      gdb_stdlog = output;
+      gdb_stderr = output;
+      gdb_stdtarg = output;
+      gdb_stdtargerr = output;
     }
   else
     {
-      /* Delete the correct file.  If it's the tee then the logfile will also
-	 be deleted.  */
-      delete saved_output.file_to_delete;
+      /* Only delete one of the files -- they are all set to the same
+	 value.  */
+      delete gdb_stdout;
 
       gdb_stdout = saved_output.out;
       gdb_stderr = saved_output.err;
@@ -448,12 +437,11 @@ cli_interp_base::set_logging (ui_file_up logfile, bool logging_redirect,
       gdb_stdtarg = saved_output.targ;
       gdb_stdtargerr = saved_output.targerr;
 
-      saved_output.out = nullptr;
-      saved_output.err = nullptr;
-      saved_output.log = nullptr;
-      saved_output.targ = nullptr;
-      saved_output.targerr = nullptr;
-      saved_output.file_to_delete = nullptr;
+      saved_output.out = NULL;
+      saved_output.err = NULL;
+      saved_output.log = NULL;
+      saved_output.targ = NULL;
+      saved_output.targerr = NULL;
     }
 }
 
@@ -473,14 +461,14 @@ _initialize_cli_interp (void)
   interp_factory_register (INTERP_CONSOLE, cli_interp_factory);
 
   /* If changing this, remember to update tui-interp.c as well.  */
-  gdb::observers::normal_stop.attach (cli_on_normal_stop);
-  gdb::observers::end_stepping_range.attach (cli_on_end_stepping_range);
-  gdb::observers::signal_received.attach (cli_on_signal_received);
-  gdb::observers::signal_exited.attach (cli_on_signal_exited);
-  gdb::observers::exited.attach (cli_on_exited);
-  gdb::observers::no_history.attach (cli_on_no_history);
-  gdb::observers::sync_execution_done.attach (cli_on_sync_execution_done);
-  gdb::observers::command_error.attach (cli_on_command_error);
-  gdb::observers::user_selected_context_changed.attach
+  observer_attach_normal_stop (cli_on_normal_stop);
+  observer_attach_end_stepping_range (cli_on_end_stepping_range);
+  observer_attach_signal_received (cli_on_signal_received);
+  observer_attach_signal_exited (cli_on_signal_exited);
+  observer_attach_exited (cli_on_exited);
+  observer_attach_no_history (cli_on_no_history);
+  observer_attach_sync_execution_done (cli_on_sync_execution_done);
+  observer_attach_command_error (cli_on_command_error);
+  observer_attach_user_selected_context_changed
     (cli_on_user_selected_context_changed);
 }

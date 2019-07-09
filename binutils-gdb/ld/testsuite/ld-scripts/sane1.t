@@ -20,7 +20,6 @@ SECTIONS
     s4 = ABSOLUTE (d1) - 2;
     s5 = ABSOLUTE (d2) % 5;
     s6 = ABSOLUTE (d2) / 5;
-    *(.data)
   }
   /DISCARD/ : {*(*)}
 

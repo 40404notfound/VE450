@@ -1,5 +1,5 @@
 /* DWARF 2 support.
-   Copyright (C) 1994-2019 Free Software Foundation, Inc.
+   Copyright (C) 1994-2018 Free Software Foundation, Inc.
 
    Adapted from gdb/dwarf2read.c by Gavin Koch of Cygnus Solutions
    (gavin@cygnus.com).
@@ -169,8 +169,6 @@ struct dwarf2_debug
 
   /* Section VMAs at the time the stash was built.  */
   bfd_vma *sec_vma;
-  /* Number of sections in the SEC_VMA table.  */
-  unsigned int sec_vma_count;
 
   /* Number of sections whose VMA we must adjust.  */
   int adjusted_section_count;
@@ -347,7 +345,7 @@ const struct dwarf_debug_section dwarf_debug_sections[] =
   { NULL,			NULL },
 };
 
-/* NB/ Numbers in this enum must match up with indices
+/* NB/ Numbers in this enum must match up with indicies
    into the dwarf_debug_sections[] array above.  */
 enum dwarf_debug_section_enum
 {
@@ -529,7 +527,6 @@ read_section (bfd *	      abfd,
   asection *msec;
   const char *section_name = sec->uncompressed_name;
   bfd_byte *contents = *section_buffer;
-  bfd_size_type amt;
 
   /* The section may have already been read.  */
   if (contents == NULL)
@@ -543,7 +540,7 @@ read_section (bfd *	      abfd,
 	}
       if (! msec)
 	{
-	  _bfd_error_handler (_("DWARF error: can't find %s section."),
+	  _bfd_error_handler (_("Dwarf Error: Can't find %s section."),
 			      sec->uncompressed_name);
 	  bfd_set_error (bfd_error_bad_value);
 	  return FALSE;
@@ -552,13 +549,7 @@ read_section (bfd *	      abfd,
       *section_size = msec->rawsize ? msec->rawsize : msec->size;
       /* Paranoia - alloc one extra so that we can make sure a string
 	 section is NUL terminated.  */
-      amt = *section_size + 1;
-      if (amt == 0)
-	{
-	  bfd_set_error (bfd_error_no_memory);
-	  return FALSE;
-	}
-      contents = (bfd_byte *) bfd_malloc (amt);
+      contents = (bfd_byte *) bfd_malloc (*section_size + 1);
       if (contents == NULL)
 	return FALSE;
       if (syms
@@ -578,10 +569,9 @@ read_section (bfd *	      abfd,
   if (offset != 0 && offset >= *section_size)
     {
       /* xgettext: c-format */
-      _bfd_error_handler (_("DWARF error: offset (%" PRIu64 ")"
-			    " greater than or equal to %s size (%" PRIu64 ")"),
-			  (uint64_t) offset, section_name,
-			  (uint64_t) *section_size);
+      _bfd_error_handler (_("Dwarf Error: Offset (%llu)"
+			    " greater than or equal to %s size (%Lu)."),
+			  (long long) offset, section_name, *section_size);
       bfd_set_error (bfd_error_bad_value);
       return FALSE;
     }
@@ -632,24 +622,14 @@ read_8_bytes (bfd *abfd, bfd_byte *buf, bfd_byte *end)
 }
 
 static bfd_byte *
-read_n_bytes (bfd_byte *           buf,
-	      bfd_byte *           end,
-	      struct dwarf_block * block)
+read_n_bytes (bfd *abfd ATTRIBUTE_UNUSED,
+	      bfd_byte *buf,
+	      bfd_byte *end,
+	      unsigned int size ATTRIBUTE_UNUSED)
 {
-  unsigned int  size = block->size;
-  bfd_byte *    block_end = buf + size;
-
-  if (block_end > end || block_end < buf)
-    {
-      block->data = NULL;
-      block->size = 0;
-      return end;
-    }
-  else
-    {
-      block->data = buf;
-      return block_end;
-    }
+  if (buf + size > end)
+    return NULL;
+  return buf;
 }
 
 /* Scans a NUL terminated string starting at BUF, returning a pointer to it.
@@ -1106,7 +1086,7 @@ read_attribute_value (struct attribute *  attr,
 
   if (info_ptr >= info_ptr_end && form != DW_FORM_flag_present)
     {
-      _bfd_error_handler (_("DWARF error: info pointer extends beyond end of attributes"));
+      _bfd_error_handler (_("Dwarf Error: Info pointer extends beyond end of attributes"));
       bfd_set_error (bfd_error_bad_value);
       return info_ptr;
     }
@@ -1147,7 +1127,8 @@ read_attribute_value (struct attribute *  attr,
 	return NULL;
       blk->size = read_2_bytes (abfd, info_ptr, info_ptr_end);
       info_ptr += 2;
-      info_ptr = read_n_bytes (info_ptr, info_ptr_end, blk);
+      blk->data = read_n_bytes (abfd, info_ptr, info_ptr_end, blk->size);
+      info_ptr += blk->size;
       attr->u.blk = blk;
       break;
     case DW_FORM_block4:
@@ -1157,7 +1138,8 @@ read_attribute_value (struct attribute *  attr,
 	return NULL;
       blk->size = read_4_bytes (abfd, info_ptr, info_ptr_end);
       info_ptr += 4;
-      info_ptr = read_n_bytes (info_ptr, info_ptr_end, blk);
+      blk->data = read_n_bytes (abfd, info_ptr, info_ptr_end, blk->size);
+      info_ptr += blk->size;
       attr->u.blk = blk;
       break;
     case DW_FORM_data2:
@@ -1197,7 +1179,8 @@ read_attribute_value (struct attribute *  attr,
       blk->size = _bfd_safe_read_leb128 (abfd, info_ptr, &bytes_read,
 					 FALSE, info_ptr_end);
       info_ptr += bytes_read;
-      info_ptr = read_n_bytes (info_ptr, info_ptr_end, blk);
+      blk->data = read_n_bytes (abfd, info_ptr, info_ptr_end, blk->size);
+      info_ptr += blk->size;
       attr->u.blk = blk;
       break;
     case DW_FORM_block1:
@@ -1207,7 +1190,8 @@ read_attribute_value (struct attribute *  attr,
 	return NULL;
       blk->size = read_1_byte (abfd, info_ptr, info_ptr_end);
       info_ptr += 1;
-      info_ptr = read_n_bytes (info_ptr, info_ptr_end, blk);
+      blk->data = read_n_bytes (abfd, info_ptr, info_ptr_end, blk->size);
+      info_ptr += blk->size;
       attr->u.blk = blk;
       break;
     case DW_FORM_data1:
@@ -1274,7 +1258,7 @@ read_attribute_value (struct attribute *  attr,
       attr->u.sval = implicit_const;
       break;
     default:
-      _bfd_error_handler (_("DWARF error: invalid or unhandled FORM value: %#x"),
+      _bfd_error_handler (_("Dwarf Error: Invalid or unhandled FORM value: %#x."),
 			  form);
       bfd_set_error (bfd_error_bad_value);
       return NULL;
@@ -1575,12 +1559,12 @@ concat_filename (struct line_info_table *table, unsigned int file)
 {
   char *filename;
 
-  if (table == NULL || file - 1 >= table->num_files)
+  if (file - 1 >= table->num_files)
     {
       /* FILE == 0 means unknown.  */
       if (file)
 	_bfd_error_handler
-	  (_("DWARF error: mangled line number section (bad file number)"));
+	  (_("Dwarf Error: mangled line number section (bad file number)."));
       return strdup ("<unknown>");
     }
 
@@ -1925,7 +1909,7 @@ read_formatted_entries (struct comp_unit *unit, bfd_byte **bufp,
   buf += bytes_read;
   if (format_count == 0 && data_count != 0)
     {
-      _bfd_error_handler (_("DWARF error: zero format count"));
+      _bfd_error_handler (_("Dwarf Error: Zero format count."));
       bfd_set_error (bfd_error_bad_value);
       return FALSE;
     }
@@ -1934,9 +1918,8 @@ read_formatted_entries (struct comp_unit *unit, bfd_byte **bufp,
      if we know that we are going to run out of buffer.  */
   if (data_count > (bfd_vma) (buf_end - buf))
     {
-      _bfd_error_handler
-	(_("DWARF error: data count (%" PRIx64 ") larger than buffer size"),
-	 (uint64_t) data_count);
+      _bfd_error_handler (_("Dwarf Error: data count (%Lx) larger than buffer size."),
+			  data_count);
       bfd_set_error (bfd_error_bad_value);
       return FALSE;
     }
@@ -1976,8 +1959,8 @@ read_formatted_entries (struct comp_unit *unit, bfd_byte **bufp,
 	      break;
 	    default:
 	      _bfd_error_handler
-		(_("DWARF error: unknown format content type %" PRIu64),
-		 (uint64_t) content_type);
+		(_("Dwarf Error: Unknown format content type %Lu."),
+		 content_type);
 	      bfd_set_error (bfd_error_bad_value);
 	      return FALSE;
 	    }
@@ -2056,8 +2039,8 @@ decode_line_info (struct comp_unit *unit, struct dwarf2_debug *stash)
   if (stash->dwarf_line_size < 16)
     {
       _bfd_error_handler
-	(_("DWARF error: line info section is too small (%" PRId64 ")"),
-	 (int64_t) stash->dwarf_line_size);
+	(_("Dwarf Error: Line info section is too small (%Ld)"),
+	 stash->dwarf_line_size);
       bfd_set_error (bfd_error_bad_value);
       return NULL;
     }
@@ -2086,9 +2069,9 @@ decode_line_info (struct comp_unit *unit, struct dwarf2_debug *stash)
     {
       _bfd_error_handler
 	/* xgettext: c-format */
-	(_("DWARF error: line info data is bigger (%#" PRIx64 ")"
+	(_("Dwarf Error: Line info data is bigger (%#Lx)"
 	   " than the space remaining in the section (%#lx)"),
-	 (uint64_t) lh.total_length, (unsigned long) (line_end - line_ptr));
+	 lh.total_length, (unsigned long) (line_end - line_ptr));
       bfd_set_error (bfd_error_bad_value);
       return NULL;
     }
@@ -2099,7 +2082,7 @@ decode_line_info (struct comp_unit *unit, struct dwarf2_debug *stash)
   if (lh.version < 2 || lh.version > 5)
     {
       _bfd_error_handler
-	(_("DWARF error: unhandled .debug_line version %d"), lh.version);
+	(_("Dwarf Error: Unhandled .debug_line version %d."), lh.version);
       bfd_set_error (bfd_error_bad_value);
       return NULL;
     }
@@ -2109,7 +2092,7 @@ decode_line_info (struct comp_unit *unit, struct dwarf2_debug *stash)
       >= line_end)
     {
       _bfd_error_handler
-	(_("DWARF error: ran out of room reading prologue"));
+	(_("Dwarf Error: Ran out of room reading prologue"));
       bfd_set_error (bfd_error_bad_value);
       return NULL;
     }
@@ -2127,7 +2110,7 @@ decode_line_info (struct comp_unit *unit, struct dwarf2_debug *stash)
       if (segment_selector_size != 0)
 	{
 	  _bfd_error_handler
-	    (_("DWARF error: line info unsupported segment selector size %u"),
+	    (_("Dwarf Error: Line info unsupported segment selector size %u."),
 	     segment_selector_size);
 	  bfd_set_error (bfd_error_bad_value);
 	  return NULL;
@@ -2154,7 +2137,7 @@ decode_line_info (struct comp_unit *unit, struct dwarf2_debug *stash)
   if (lh.maximum_ops_per_insn == 0)
     {
       _bfd_error_handler
-	(_("DWARF error: invalid maximum operations per instruction"));
+	(_("Dwarf Error: Invalid maximum operations per instruction."));
       bfd_set_error (bfd_error_bad_value);
       return NULL;
     }
@@ -2173,7 +2156,7 @@ decode_line_info (struct comp_unit *unit, struct dwarf2_debug *stash)
 
   if (line_ptr + (lh.opcode_base - 1) >= line_end)
     {
-      _bfd_error_handler (_("DWARF error: ran out of room reading opcodes"));
+      _bfd_error_handler (_("Dwarf Error: Ran out of room reading opcodes"));
       bfd_set_error (bfd_error_bad_value);
       return NULL;
     }
@@ -2346,7 +2329,7 @@ decode_line_info (struct comp_unit *unit, struct dwarf2_debug *stash)
 		  break;
 		default:
 		  _bfd_error_handler
-		    (_("DWARF error: mangled line number section"));
+		    (_("Dwarf Error: mangled line number section."));
 		  bfd_set_error (bfd_error_bad_value);
 		line_fail:
 		  if (filename != NULL)
@@ -2805,13 +2788,11 @@ lookup_symbol_in_variable_table (struct comp_unit *unit,
 }
 
 static bfd_boolean
-find_abstract_instance (struct comp_unit *   unit,
-			bfd_byte *           orig_info_ptr,
-			struct attribute *   attr_ptr,
-			const char **        pname,
-			bfd_boolean *        is_linkage,
-			char **              filename_ptr,
-			int *                linenumber_ptr)
+find_abstract_instance_name (struct comp_unit *unit,
+			     bfd_byte *orig_info_ptr,
+			     struct attribute *attr_ptr,
+			     const char **pname,
+			     bfd_boolean *is_linkage)
 {
   bfd *abfd = unit->abfd;
   bfd_byte *info_ptr;
@@ -2846,12 +2827,10 @@ find_abstract_instance (struct comp_unit *   unit,
       info_ptr = unit->stash->info_ptr_memory;
       info_ptr_end = unit->stash->info_ptr_end;
       total = info_ptr_end - info_ptr;
-      if (!die_ref)
-	return TRUE;
-      else if (die_ref >= total)
+      if (!die_ref || die_ref >= total)
 	{
 	  _bfd_error_handler
-	    (_("DWARF error: invalid abstract instance DIE ref"));
+	    (_("Dwarf Error: Invalid abstract instance DIE ref."));
 	  bfd_set_error (bfd_error_bad_value);
 	  return FALSE;
 	}
@@ -2888,8 +2867,8 @@ find_abstract_instance (struct comp_unit *   unit,
       if (info_ptr == NULL)
 	{
 	  _bfd_error_handler
-	    (_("DWARF error: unable to read alt ref %" PRIu64),
-	     (uint64_t) die_ref);
+	    (_("Dwarf Error: Unable to read alt ref %llu."),
+	     (long long) die_ref);
 	  bfd_set_error (bfd_error_bad_value);
 	  return FALSE;
 	}
@@ -2912,7 +2891,7 @@ find_abstract_instance (struct comp_unit *   unit,
       if (!die_ref || die_ref >= total)
 	{
 	  _bfd_error_handler
-	    (_("DWARF error: invalid abstract instance DIE ref"));
+	    (_("Dwarf Error: Invalid abstract instance DIE ref."));
 	  bfd_set_error (bfd_error_bad_value);
 	  return FALSE;
 	}
@@ -2929,7 +2908,7 @@ find_abstract_instance (struct comp_unit *   unit,
       if (! abbrev)
 	{
 	  _bfd_error_handler
-	    (_("DWARF error: could not find abbrev number %u"), abbrev_number);
+	    (_("Dwarf Error: Could not find abbrev number %u."), abbrev_number);
 	  bfd_set_error (bfd_error_bad_value);
 	  return FALSE;
 	}
@@ -2946,7 +2925,7 @@ find_abstract_instance (struct comp_unit *   unit,
 	      if (info_ptr == orig_info_ptr)
 		{
 		  _bfd_error_handler
-		    (_("DWARF error: abstract instance recursion detected"));
+		    (_("Dwarf Error: Abstract instance recursion detected."));
 		  bfd_set_error (bfd_error_bad_value);
 		  return FALSE;
 		}
@@ -2963,9 +2942,8 @@ find_abstract_instance (struct comp_unit *   unit,
 		    }
 		  break;
 		case DW_AT_specification:
-		  if (!find_abstract_instance (unit, info_ptr, &attr,
-					       &name, is_linkage,
-					       filename_ptr, linenumber_ptr))
+		  if (!find_abstract_instance_name (unit, info_ptr, &attr,
+						    pname, is_linkage))
 		    return FALSE;
 		  break;
 		case DW_AT_linkage_name:
@@ -2977,13 +2955,6 @@ find_abstract_instance (struct comp_unit *   unit,
 		      name = attr.u.str;
 		      *is_linkage = TRUE;
 		    }
-		  break;
-		case DW_AT_decl_file:
-		  *filename_ptr = concat_filename (unit->line_table,
-						   attr.u.val);
-		  break;
-		case DW_AT_decl_line:
-		  *linenumber_ptr = attr.u.val;
 		  break;
 		default:
 		  break;
@@ -3102,7 +3073,7 @@ scan_unit_for_symbols (struct comp_unit *unit)
 	  if (abbrev_number != previous_failed_abbrev)
 	    {
 	      _bfd_error_handler
-		(_("DWARF error: could not find abbrev number %u"),
+		(_("Dwarf Error: Could not find abbrev number %u."),
 		 abbrev_number);
 	      previous_failed_abbrev = abbrev_number;
 	    }
@@ -3177,11 +3148,9 @@ scan_unit_for_symbols (struct comp_unit *unit)
 
 		case DW_AT_abstract_origin:
 		case DW_AT_specification:
-		  if (!find_abstract_instance (unit, info_ptr, &attr,
-					       &func->name,
-					       &func->is_linkage,
-					       &func->file,
-					       &func->line))
+		  if (!find_abstract_instance_name (unit, info_ptr, &attr,
+						    &func->name,
+						    &func->is_linkage))
 		    goto fail;
 		  break;
 
@@ -3375,8 +3344,8 @@ parse_comp_unit (struct dwarf2_debug *stash,
       if (version)
 	{
 	  _bfd_error_handler
-	    (_("DWARF error: found dwarf version '%u', this reader"
-	       " only handles version 2, 3, 4 and 5 information"), version);
+	    (_("Dwarf Error: found dwarf version '%u', this reader"
+	       " only handles version 2, 3, 4 and 5 information."), version);
 	  bfd_set_error (bfd_error_bad_value);
 	}
       return NULL;
@@ -3419,8 +3388,8 @@ parse_comp_unit (struct dwarf2_debug *stash,
     {
       _bfd_error_handler
 	/* xgettext: c-format */
-	(_("DWARF error: found address size '%u', this reader"
-	   " can not handle sizes greater than '%u'"),
+	(_("Dwarf Error: found address size '%u', this reader"
+	   " can not handle sizes greater than '%u'."),
 	 addr_size,
 	 (unsigned int) sizeof (bfd_vma));
       bfd_set_error (bfd_error_bad_value);
@@ -3430,8 +3399,8 @@ parse_comp_unit (struct dwarf2_debug *stash,
   if (addr_size != 2 && addr_size != 4 && addr_size != 8)
     {
       _bfd_error_handler
-	("DWARF error: found address size '%u', this reader"
-	 " can only handle address sizes '2', '4' and '8'", addr_size);
+	("Dwarf Error: found address size '%u', this reader"
+	 " can only handle address sizes '2', '4' and '8'.", addr_size);
       bfd_set_error (bfd_error_bad_value);
       return NULL;
     }
@@ -3456,7 +3425,7 @@ parse_comp_unit (struct dwarf2_debug *stash,
   abbrev = lookup_abbrev (abbrev_number, abbrevs);
   if (! abbrev)
     {
-      _bfd_error_handler (_("DWARF error: could not find abbrev number %u"),
+      _bfd_error_handler (_("Dwarf Error: Could not find abbrev number %u."),
 			  abbrev_number);
       bfd_set_error (bfd_error_bad_value);
       return NULL;
@@ -3522,7 +3491,7 @@ parse_comp_unit (struct dwarf2_debug *stash,
 	    if (! is_str_attr (attr.form))
 	      {
 		_bfd_error_handler
-		  (_("DWARF error: DW_AT_comp_dir attribute encountered with a non-string form"));
+		  (_("Dwarf Error: DW_AT_comp_dir attribute encountered with a non-string form."));
 		comp_dir = NULL;
 	      }
 
@@ -4271,10 +4240,7 @@ save_section_vma (const bfd *abfd, struct dwarf2_debug *stash)
   stash->sec_vma = bfd_malloc (sizeof (*stash->sec_vma) * abfd->section_count);
   if (stash->sec_vma == NULL)
     return FALSE;
-  stash->sec_vma_count = abfd->section_count;
-  for (i = 0, s = abfd->sections;
-       s != NULL && i < abfd->section_count;
-       i++, s = s->next)
+  for (i = 0, s = abfd->sections; i < abfd->section_count; i++, s = s->next)
     {
       if (s->output_section != NULL)
 	stash->sec_vma[i] = s->output_section->vma + s->output_offset;
@@ -4297,15 +4263,7 @@ section_vma_same (const bfd *abfd, const struct dwarf2_debug *stash)
   asection *s;
   unsigned int i;
 
-  /* PR 24334: If the number of sections in ABFD has changed between
-     when the stash was created and now, then we cannot trust the
-     stashed vma information.  */
-  if (abfd->section_count != stash->sec_vma_count)
-    return FALSE;
-
-  for (i = 0, s = abfd->sections;
-       s != NULL && i < abfd->section_count;
-       i++, s = s->next)
+  for (i = 0, s = abfd->sections; i < abfd->section_count; i++, s = s->next)
     {
       bfd_vma vma;
 
@@ -4485,7 +4443,7 @@ _bfd_dwarf2_find_symbol_bias (asymbol ** symbols, void ** pinfo)
 
   stash = (struct dwarf2_debug *) *pinfo;
 
-  if (stash == NULL || symbols == NULL)
+  if (stash == NULL)
     return 0;
 
   for (unit = stash->all_comp_units; unit; unit = unit->next_unit)

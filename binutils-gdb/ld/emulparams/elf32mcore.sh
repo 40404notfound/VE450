@@ -3,6 +3,7 @@ OUTPUT_FORMAT="elf32-mcore-little"
 BIG_OUTPUT_FORMAT="elf32-mcore-big"
 LITTLE_OUTPUT_FORMAT="elf32-mcore-little"
 NO_REL_RELOCS=yes
+PAGE_SIZE=0x1000
 TARGET_PAGE_SIZE=0x400
 MAXPAGESIZE="CONSTANT (MAXPAGESIZE)"
 TEXT_START_ADDR=0
@@ -20,8 +21,8 @@ EMBEDDED=yes
 # not matter.
 NOP=0x0e0e0e0e
 
-OTHER_BSS_SYMBOLS="${CREATE_SHLIB+PROVIDE (}__bss_start__ = .${CREATE_SHLIB+)};"
-OTHER_BSS_END_SYMBOLS="${CREATE_SHLIB+PROVIDE (}__bss_end__ = .${CREATE_SHLIB+)};"
+OTHER_BSS_SYMBOLS="__bss_start__ = . ;"
+OTHER_BSS_END_SYMBOLS="__bss_end__ = . ;"
 
 # This sets the stack to the top of the simulator memory (2^19 bytes).
 STACK_ADDR=0x80000
@@ -39,7 +40,8 @@ PARSE_AND_LIST_LONGOPTS='
 '
 
 PARSE_AND_LIST_OPTIONS='
-  fprintf (file, _("  --base_file <basefile>      Generate a base file for relocatable DLLs\n"));
+  fprintf (file, _("  --base_file <basefile>\n"));
+  fprintf (file, _("\t\t\tGenerate a base file for relocatable DLLs\n"));
 '
 
 PARSE_AND_LIST_ARGS_CASES='

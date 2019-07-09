@@ -1,6 +1,6 @@
 /* Scheme interface to architecture.
 
-   Copyright (C) 2014-2019 Free Software Foundation, Inc.
+   Copyright (C) 2014-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -247,8 +247,7 @@ gdbscm_arch_disassemble (SCM self, SCM start_scm, SCM rest)
       int insn_len = 0;
       string_file buf;
 
-      gdbscm_gdb_exception exc {};
-      try
+      TRY
 	{
 	  if (using_port)
 	    {
@@ -258,12 +257,12 @@ gdbscm_arch_disassemble (SCM self, SCM start_scm, SCM rest)
 	  else
 	    insn_len = gdb_print_insn (gdbarch, pc, &buf, NULL);
 	}
-      catch (const gdb_exception &except)
+      CATCH (except, RETURN_MASK_ALL)
 	{
-	  exc = unpack (except);
+	  GDBSCM_HANDLE_GDB_EXCEPTION (except);
 	}
+      END_CATCH
 
-      GDBSCM_HANDLE_GDB_EXCEPTION (exc);
       result = scm_cons (dascm_make_insn (pc, buf.c_str (), insn_len),
 			 result);
 

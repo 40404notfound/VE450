@@ -1,6 +1,6 @@
 /* Target-dependent code for GNU/Linux UltraSPARC.
 
-   Copyright (C) 2003-2019 Free Software Foundation, Inc.
+   Copyright (C) 2003-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -64,9 +64,9 @@ static const struct tramp_frame sparc64_linux_rt_sigframe =
   SIGTRAMP_FRAME,
   4,
   {
-    { 0x82102065, ULONGEST_MAX },		/* mov __NR_rt_sigreturn, %g1 */
-    { 0x91d0206d, ULONGEST_MAX },		/* ta  0x6d */
-    { TRAMP_SENTINEL_INSN, ULONGEST_MAX }
+    { 0x82102065, -1 },		/* mov __NR_rt_sigreturn, %g1 */
+    { 0x91d0206d, -1 },		/* ta  0x6d */
+    { TRAMP_SENTINEL_INSN, -1 }
   },
   sparc64_linux_sigframe_init
 };
@@ -130,7 +130,7 @@ sparc64_linux_handle_segmentation_fault (struct gdbarch *gdbarch,
   CORE_ADDR addr = 0;
   long si_code = 0;
 
-  try
+  TRY
     {
       /* Evaluate si_code to see if the segfault is ADI related.  */
       si_code = parse_and_eval_long ("$_siginfo.si_code\n");
@@ -138,10 +138,11 @@ sparc64_linux_handle_segmentation_fault (struct gdbarch *gdbarch,
       if (si_code >= SEGV_ACCADI && si_code <= SEGV_ADIPERR)
         addr = parse_and_eval_long ("$_siginfo._sifields._sigfault.si_addr");
     }
-  catch (const gdb_exception &exception)
+  CATCH (exception, RETURN_MASK_ALL)
     {
       return;
     }
+  END_CATCH
 
   /* Print out ADI event based on sig_code value */
   switch (si_code)
@@ -281,9 +282,9 @@ sparc64_linux_write_pc (struct regcache *regcache, CORE_ADDR pc)
 
 static LONGEST
 sparc64_linux_get_syscall_number (struct gdbarch *gdbarch,
-				  thread_info *thread)
+				  ptid_t ptid)
 {
-  struct regcache *regcache = get_thread_regcache (thread);
+  struct regcache *regcache = get_thread_regcache (ptid);
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
   /* The content of a register.  */
   gdb_byte buf[8];
@@ -293,7 +294,7 @@ sparc64_linux_get_syscall_number (struct gdbarch *gdbarch,
   /* Getting the system call number from the register.
      When dealing with the sparc architecture, this information
      is stored at the %g1 register.  */
-  regcache->cooked_read (SPARC_G1_REGNUM, buf);
+  regcache_cooked_read (regcache, SPARC_G1_REGNUM, buf);
 
   ret = extract_signed_integer (buf, 8, byte_order);
 

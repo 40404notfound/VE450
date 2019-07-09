@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#   Copyright (C) 1990-2018 Free Software Foundation
+#   Copyright (C) 1990-2017 Free Software Foundation
 #
 # This file is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -37,14 +37,16 @@ MAKEINFOFLAGS=--split-size=5000000
 #
 # Support for building net releases
 
-# Files in root used in any net release.
-DEVO_SUPPORT="ar-lib ChangeLog compile config config-ml.in config.guess \
-	config.rpath config.sub configure configure.ac COPYING COPYING.LIB \
-	COPYING3 COPYING3.LIB depcomp install-sh libtool.m4 ltgcc.m4 \
-	ltmain.sh ltoptions.m4 ltsugar.m4 ltversion.m4 lt~obsolete.m4 \
-	MAINTAINERS Makefile.def Makefile.in Makefile.tpl missing mkdep \
-	mkinstalldirs move-if-change README README-maintainer-mode \
-	src-release.sh symlink-tree test-driver ylwrap"
+# Files in devo used in any net release.
+DEVO_SUPPORT="README Makefile.in configure configure.ac \
+	config.guess config.sub config move-if-change \
+	COPYING COPYING.LIB install-sh config-ml.in symlink-tree \
+	mkinstalldirs ltmain.sh missing ylwrap \
+	libtool.m4 ltsugar.m4 ltversion.m4 ltoptions.m4 \
+	Makefile.def Makefile.tpl src-release.sh config.rpath \
+	ChangeLog MAINTAINERS README-maintainer-mode \
+	lt~obsolete.m4 ltgcc.m4 depcomp mkdep compile \
+	COPYING3 COPYING3.LIB"
 
 # Files in devo/etc used in any net release.
 ETC_SUPPORT="Makefile.in configure configure.in standards.texi \
@@ -75,10 +77,6 @@ do_proto_toplev()
     ver=$2
     tool=$3
     support_files=$4
-
-    echo "==> Cleaning sources."
-    find \( -name "*.orig" -o  -name "*.rej" -o -name "*~" -o -name ".#*" -o -name "*~$bkpat" \) -exec rm {} \;
-    
     echo "==> Making $package-$ver/"
     # Take out texinfo from a few places.
     sed -e '/^all\.normal: /s/\all-texinfo //' \
@@ -89,7 +87,7 @@ do_proto_toplev()
     # built in the gold dir.  The disables speed the build a little.
     enables=
     disables=
-    for dir in binutils gas gdb gold gprof ld libctf libdecnumber readline sim; do
+    for dir in binutils gas gdb gold gprof ld libdecnumber readline sim; do
 	case " $tool $support_files " in
 	    *" $dir "*) enables="$enables --enable-$dir" ;;
 	    *) disables="$disables --disable-$dir" ;;
@@ -293,7 +291,7 @@ gdb_tar_compress()
 }
 
 # The FSF "binutils" release includes gprof and ld.
-BINUTILS_SUPPORT_DIRS="bfd gas include libiberty libctf opcodes ld elfcpp gold gprof intl setup.com makefile.vms cpu zlib"
+BINUTILS_SUPPORT_DIRS="bfd gas include libiberty opcodes ld elfcpp gold gprof intl setup.com makefile.vms cpu zlib"
 binutils_release()
 {
     compressors=$1
@@ -311,7 +309,7 @@ gas_release()
     tar_compress $package $tool "$GAS_SUPPORT_DIRS" "$compressors"
 }
 
-GDB_SUPPORT_DIRS="bfd include libiberty opcodes readline sim intl libdecnumber cpu zlib contrib"
+GDB_SUPPORT_DIRS="bfd include libiberty opcodes readline sim intl libdecnumber cpu zlib"
 gdb_release()
 {
     compressors=$1

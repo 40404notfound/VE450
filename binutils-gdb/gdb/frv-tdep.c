@@ -1,6 +1,6 @@
 /* Target-dependent code for the Fujitsu FR-V, for GDB, the GNU Debugger.
 
-   Copyright (C) 2002-2019 Free Software Foundation, Inc.
+   Copyright (C) 2002-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -29,7 +29,7 @@
 #include "dis-asm.h"
 #include "sim-regno.h"
 #include "gdb/sim-frv.h"
-#include "../opcodes/frv-desc.h"	/* for the H_SPR_... enums */
+#include "opcodes/frv-desc.h"	/* for the H_SPR_... enums */
 #include "symtab.h"
 #include "elf-bfd.h"
 #include "elf/frv.h"
@@ -295,16 +295,16 @@ frv_register_type (struct gdbarch *gdbarch, int reg)
 }
 
 static enum register_status
-frv_pseudo_register_read (struct gdbarch *gdbarch, readable_regcache *regcache,
+frv_pseudo_register_read (struct gdbarch *gdbarch, struct regcache *regcache,
                           int reg, gdb_byte *buffer)
 {
   enum register_status status;
 
   if (reg == iacc0_regnum)
     {
-      status = regcache->raw_read (iacc0h_regnum, buffer);
+      status = regcache_raw_read (regcache, iacc0h_regnum, buffer);
       if (status == REG_VALID)
-	status = regcache->raw_read (iacc0l_regnum, (bfd_byte *) buffer + 4);
+	status = regcache_raw_read (regcache, iacc0l_regnum, (bfd_byte *) buffer + 4);
     }
   else if (accg0_regnum <= reg && reg <= accg7_regnum)
     {
@@ -315,7 +315,7 @@ frv_pseudo_register_read (struct gdbarch *gdbarch, readable_regcache *regcache,
       int byte_num = (reg - accg0_regnum) % 4;
       gdb_byte buf[4];
 
-      status = regcache->raw_read (raw_regnum, buf);
+      status = regcache_raw_read (regcache, raw_regnum, buf);
       if (status == REG_VALID)
 	{
 	  memset (buffer, 0, 4);
@@ -337,8 +337,8 @@ frv_pseudo_register_write (struct gdbarch *gdbarch, struct regcache *regcache,
 {
   if (reg == iacc0_regnum)
     {
-      regcache->raw_write (iacc0h_regnum, buffer);
-      regcache->raw_write (iacc0l_regnum, (bfd_byte *) buffer + 4);
+      regcache_raw_write (regcache, iacc0h_regnum, buffer);
+      regcache_raw_write (regcache, iacc0l_regnum, (bfd_byte *) buffer + 4);
     }
   else if (accg0_regnum <= reg && reg <= accg7_regnum)
     {
@@ -349,9 +349,9 @@ frv_pseudo_register_write (struct gdbarch *gdbarch, struct regcache *regcache,
       int byte_num = (reg - accg0_regnum) % 4;
       gdb_byte buf[4];
 
-      regcache->raw_read (raw_regnum, buf);
+      regcache_raw_read (regcache, raw_regnum, buf);
       buf[byte_num] = ((bfd_byte *) buffer)[0];
-      regcache->raw_write (raw_regnum, buf);
+      regcache_raw_write (regcache, raw_regnum, buf);
     }
 }
 
@@ -1193,8 +1193,7 @@ static CORE_ADDR
 frv_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
                      struct regcache *regcache, CORE_ADDR bp_addr,
                      int nargs, struct value **args, CORE_ADDR sp,
-		     function_call_return_method return_method,
-		     CORE_ADDR struct_addr)
+		     int struct_return, CORE_ADDR struct_addr)
 {
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
   int argreg;
@@ -1231,7 +1230,7 @@ frv_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
 
   argreg = 8;
 
-  if (return_method == return_method_struct)
+  if (struct_return)
     regcache_cooked_write_unsigned (regcache, struct_return_regnum,
                                     struct_addr);
 
@@ -1328,12 +1327,12 @@ frv_store_return_value (struct type *type, struct regcache *regcache,
       bfd_byte val[4];
       memset (val, 0, sizeof (val));
       memcpy (val + (4 - len), valbuf, len);
-      regcache->cooked_write (8, val);
+      regcache_cooked_write (regcache, 8, val);
     }
   else if (len == 8)
     {
-      regcache->cooked_write (8, valbuf);
-      regcache->cooked_write (9, (bfd_byte *) valbuf + 4);
+      regcache_cooked_write (regcache, 8, valbuf);
+      regcache_cooked_write (regcache, 9, (bfd_byte *) valbuf + 4);
     }
   else
     internal_error (__FILE__, __LINE__,
@@ -1365,6 +1364,12 @@ frv_return_value (struct gdbarch *gdbarch, struct value *function,
     return RETURN_VALUE_STRUCT_CONVENTION;
   else
     return RETURN_VALUE_REGISTER_CONVENTION;
+}
+
+static CORE_ADDR
+frv_unwind_pc (struct gdbarch *gdbarch, struct frame_info *next_frame)
+{
+  return frame_unwind_register_unsigned (next_frame, pc_regnum);
 }
 
 /* Given a GDB frame, determine the address of the calling function's
@@ -1432,6 +1437,24 @@ static const struct frame_base frv_frame_base = {
   frv_frame_base_address,
   frv_frame_base_address
 };
+
+static CORE_ADDR
+frv_unwind_sp (struct gdbarch *gdbarch, struct frame_info *next_frame)
+{
+  return frame_unwind_register_unsigned (next_frame, sp_regnum);
+}
+
+
+/* Assuming THIS_FRAME is a dummy, return the frame ID of that dummy
+   frame.  The frame ID's base needs to match the TOS value saved by
+   save_dummy_frame_tos(), and the PC match the dummy frame's breakpoint.  */
+
+static struct frame_id
+frv_dummy_id (struct gdbarch *gdbarch, struct frame_info *this_frame)
+{
+  CORE_ADDR sp = get_frame_register_unsigned (this_frame, sp_regnum);
+  return frame_id_build (sp, get_frame_pc (this_frame));
+}
 
 static struct gdbarch *
 frv_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
@@ -1516,6 +1539,8 @@ frv_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_return_value (gdbarch, frv_return_value);
 
   /* Frame stuff.  */
+  set_gdbarch_unwind_pc (gdbarch, frv_unwind_pc);
+  set_gdbarch_unwind_sp (gdbarch, frv_unwind_sp);
   set_gdbarch_frame_align (gdbarch, frv_frame_align);
   frame_base_set_default (gdbarch, &frv_frame_base);
   /* We set the sniffer lower down after the OSABI hooks have been
@@ -1523,6 +1548,7 @@ frv_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 
   /* Settings for calling functions in the inferior.  */
   set_gdbarch_push_dummy_call (gdbarch, frv_push_dummy_call);
+  set_gdbarch_dummy_id (gdbarch, frv_dummy_id);
 
   /* Settings that should be unnecessary.  */
   set_gdbarch_inner_than (gdbarch, core_addr_lessthan);

@@ -1,6 +1,6 @@
 /* Target waitstatus implementations.
 
-   Copyright (C) 1990-2019 Free Software Foundation, Inc.
+   Copyright (C) 1990-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,10 +17,11 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#include "common/common-defs.h"
+#include "common-defs.h"
 #include "waitstatus.h"
 
-/* Return a pretty printed form of target_waitstatus.  */
+/* Return a pretty printed form of target_waitstatus.
+   Space for the result is malloc'd, caller must free.  */
 
 std::string
 target_waitstatus_to_string (const struct target_waitstatus *ws)

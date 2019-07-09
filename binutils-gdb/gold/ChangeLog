@@ -1,68 +1,114 @@
-2019-06-10  Martin Liska  <mliska@suse.cz>
+2018-04-18  Nick Clifton  <nickc@redhat.com>
 
-	* errors.h: Include string.
+	* po/es.po: Updated Spanish translation.
 
-2019-05-10  Joshua Oreman  <oremanj@hudson-trading.com>
+2018-03-27  Roland McGrath  <mcgrathr@google.com>
 
-	PR gold/21066
-	* gc.h (gc_process_relocs): Track relocations in .eh_frame sections
-	when ICF is enabled, even though the .eh_frame sections themselves
-	are not foldable.
-	* icf.cc (get_section_contents): Change arguments to permit operation
-	on just part of a section. Include extra identity regions in the
-	referring section's contents recursively.
-	(match_sections): Lock object here instead of in get_section_contents
-	so that get_section_contents can operate recursively.
-	(Icf::add_ehframe_links): New method.
-	(Icf::find_identical_sections): Pass .eh_frame sections to
-	add_ehframe_links(). Increase default iteration count from 2 to 3
-	because handling exception info typically requires one extra iteration.
-	* icf.h (Icf::extra_identity_list_): New data member with accessor.
-	(is_section_foldable_candidate): Include .gcc_except_table sections.
-	* options.h: Update documentation for new default ICF iteration count.
-	* testsuite/Makefile.am (icf_test_pr21066): New test case.
-	* testsuite/Makefile.in: Regenerate.
-	* testsuite/icf_test_pr21066.cc: New source file.
-	* testsuite/icf_test_pr21066.sh: New test script.
+	* testsuite/split_x86_64.sh: Fix bad regexp.
 
-2019-02-19  Egeyar Bagcioglu  <egeyar.bagcioglu@oracle.com>
+2018-03-26  Cary Coutant  <ccoutant@gmail.com>
 
-     PR gold/23870
-     * aarch64.cc (Target_aarch64::Scan::global): Check if a symbol with
-     R_AARCH64_MOVW_.ABS_* relocations requires a PLT entry.
-     * testsuite/Makefile.am: Add aarch64_pr23870 test case.
-     * testsuite/Makefile.in: Regenerate.
-     * testsuite/aarch64_pr23870_bar.c: New file.
-     * testsuite/aarch64_pr23870_foo.c: New file.
-     * testsuite/aarch64_pr23870_main.S: New file.
+	PR gold/22868
+	* plugin.cc (Sized_pluginobj::do_add_symbols): Use a real section
+	index instead of SHN_ABS for defined symbols.
+	* testsuite/Makefile.am (plugin_pr22868): New test case.
+	* testsuite/Makefile.in: Regenerate
+	* testsuite/plugin_pr22868.sh: New test script.
+	* testsuite/plugin_pr22868_a.c: New source file.
+	* testsuite/plugin_pr22868_b.c: New source file.
 
-2019-02-12  Nick Clifton  <nickc@redhat.com>
+2018-02-07  Alan Modra  <amodra@gmail.com>
 
-	* po/fr.po: Updated French translation.
+	Revert 2018-01-17  Alan Modra  <amodra@gmail.com>
+	* options.h: Remove --speculate-indirect-jumps support.
+	* powerpc.cc: Likewise.
 
-2019-01-21  Nick Clifton  <nickc@redhat.com>
+2018-02-02  Cary Coutant  <ccoutant@gmail.com>
+
+	* PR gold/22776
+	* dwarf_reader.cc (Sized_dwarf_line_info::read_header_prolog): Add
+	support for DWARF-4 line number tables.
+	* dwarf_reader.h (Sized_dwarf_line_info::max_ops_per_insn): New field.
+
+2018-01-27  Nick Clifton  <nickc@redhat.com>
+
+	This is the 2.30 release:
+
+	* configure: Regenerate.
+	* po/gold.pot: Regenerate.
+
+2018-01-24  Franz Sirl  <franz.sirl-kernel@lauterbach.com>
+
+	* main.cc: Print m.arena as long long.
+
+2018-01-18  Alan Modra  <amodra@gmail.com>
+
+	* powerpc.cc (param_plt_align): New function supplying default
+	--plt-align values.  Use it..
+	(Stub_table::plt_call_align): ..here, and..
+	(Output_data_glink::global_entry_align): ..here.
+	(Stub_table::stub_align): Correct 32-bit minimum alignment.
+
+2018-01-18  Alan Modra  <amodra@gmail.com>
+
+	* options.h (speculate_indirect_jumps): New option.
+	* powerpc.cc (beqctrm, beqctrlm, crseteq): New insn constants.
+	(output_bctr): New function.
+	(Stub_table::plt_call_size): Add space for speculation barrier.
+	(Stub_table::branch_stub_size): Likewise.
+	(Output_data_glink::pltresolve_size): Likewise.
+	(Stub_table::do_write): Output speculation barriers.
+
+2018-01-18  Alan Modra  <amodra@gmail.com>
+
+	* options.h (plt_align): Support for PowerPC32 too.
+	* powerpc.cc (Stub_table::stub_align): Heed --plt-align for 32-bit.
+	(Stub_table::plt_call_size, branch_stub_size): Tidy.
+	(Stub_table::plt_call_align): Implement using stub_align.
+	(Output_data_glink::global_entry_align): New function.
+	(Output_data_glink::global_entry_off): New function.
+	(Output_data_glink::global_entry_address): Use global_entry_off.
+	(Output_data_glink::pltresolve_size): New function, replacing
+	pltresolve_size_ constant.  Update all uses.
+	(Output_data_glink::add_global_entry): Align offset.
+	(Output_data_glink::set_final_data_size): Use global_entry_align.
+	(Stub_table::do_write): Don't pad __glink_PLTrelsolve with nops.
+	Tidy stub output.  Use global_entry_off.
+
+2018-01-15  Cary Coutant  <ccoutant@gmail.com>
+
+	PR gold/22694
+	* options.h (-fuse-ld): Add correct helparg.
+
+2018-01-15  Nick Clifton  <nickc@redhat.com>
 
 	* po/uk.po: Updated Ukranian translation.
 
-2019-01-19  Nick Clifton  <nickc@redhat.com>
+2018-01-13  Nick Clifton  <nickc@redhat.com>
 
-	* po/gold.pot: Regenerate.
+	* po/gold.pot: Regenerated.
 
-2018-06-24  Nick Clifton  <nickc@redhat.com>
+2018-01-13  Nick Clifton  <nickc@redhat.com>
 
-	2.32 branch created.
+	2.30 branch created.
 
-2019-01-09  Andrew Paprocki  <andrew@ishiboo.com>
+2018-01-12  Cary Coutant  <ccoutant@gmail.com>
 
-	* configure: Regenerate.
+	* NEWS: Add new features in 1.15.
+	* version.cc (version_string): Bump to 1.15.
 
-2019-01-01  Alan Modra  <amodra@gmail.com>
+2018-01-12  Sterling Augustine  <saugustine@google.com>
+
+	* cref.cc (Cref_inputs::Cref_table_compare::operator): Add
+	conditionals and calls to is_forwarder.
+
+2018-01-03  Alan Modra  <amodra@gmail.com>
 
 	Update year range in copyright notice of all files.
 
-For older changes see ChangeLog-2018
+For older changes see ChangeLog-2017
 
-Copyright (C) 2019 Free Software Foundation, Inc.
+Copyright (C) 2018 Free Software Foundation, Inc.
 
 Copying and distribution of this file, with or without modification,
 are permitted in any medium without royalty provided the copyright

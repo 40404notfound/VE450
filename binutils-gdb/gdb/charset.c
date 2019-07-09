@@ -1,6 +1,6 @@
 /* Character set conversion support for GDB.
 
-   Copyright (C) 2001-2019 Free Software Foundation, Inc.
+   Copyright (C) 2001-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -21,12 +21,12 @@
 #include "charset.h"
 #include "gdbcmd.h"
 #include "gdb_obstack.h"
-#include "common/gdb_wait.h"
+#include "gdb_wait.h"
 #include "charset-list.h"
-#include "common/vec.h"
-#include "common/environ.h"
+#include "vec.h"
+#include "environ.h"
 #include "arch-utils.h"
-#include "common/gdb_vecs.h"
+#include "gdb_vecs.h"
 #include <ctype.h>
 
 #ifdef USE_WIN32API
@@ -295,6 +295,9 @@ static struct gdbarch *be_le_arch;
 static void
 set_be_le_names (struct gdbarch *gdbarch)
 {
+  int i, len;
+  const char *target_wide;
+
   if (be_le_arch == gdbarch)
     return;
   be_le_arch = gdbarch;
@@ -304,9 +307,6 @@ set_be_le_names (struct gdbarch *gdbarch)
   target_wide_charset_le_name = "UTF-32LE";
   target_wide_charset_be_name = "UTF-32BE";
 #else
-  int i, len;
-  const char *target_wide;
-
   target_wide_charset_le_name = NULL;
   target_wide_charset_be_name = NULL;
 
@@ -548,7 +548,7 @@ convert_between_encodings (const char *from, const char *to,
 
       /* Now make sure that the object on the obstack only includes
 	 bytes we have converted.  */
-      obstack_blank_fast (output, -(ssize_t) outleft);
+      obstack_blank_fast (output, -outleft);
 
       if (r == (size_t) -1)
 	{
@@ -705,33 +705,21 @@ wchar_iterator::iterate (enum wchar_iterate_result *out_result,
   return -1;
 }
 
-struct charset_vector
-{
-  ~charset_vector ()
-  {
-    clear ();
-  }
+/* The charset.c module initialization function.  */
 
-  void clear ()
-  {
-    for (char *c : charsets)
-      xfree (c);
-
-    charsets.clear ();
-  }
-
-  std::vector<char *> charsets;
-};
-
-static charset_vector charsets;
+static VEC (char_ptr) *charsets;
 
 #ifdef PHONY_ICONV
 
 static void
 find_charset_names (void)
 {
-  charsets.charsets.push_back (xstrdup (GDB_DEFAULT_HOST_CHARSET));
-  charsets.charsets.push_back (NULL);
+  /* Cast is fine here, because CHARSETS is never released.  Note that
+     the vec does not hold "const char *" pointers instead of "char *"
+     because the non-phony version stores heap-allocated strings in
+     it.  */
+  VEC_safe_push (char_ptr, charsets, (char *) GDB_DEFAULT_HOST_CHARSET);
+  VEC_safe_push (char_ptr, charsets, NULL);
 }
 
 #else /* PHONY_ICONV */
@@ -752,7 +740,7 @@ add_one (unsigned int count, const char *const *names, void *data)
   unsigned int i;
 
   for (i = 0; i < count; ++i)
-    charsets.charsets.push_back (xstrdup (names[i]));
+    VEC_safe_push (char_ptr, charsets, xstrdup (names[i]));
 
   return 0;
 }
@@ -761,8 +749,7 @@ static void
 find_charset_names (void)
 {
   iconvlist (add_one, NULL);
-
-  charsets.charsets.push_back (NULL);
+  VEC_safe_push (char_ptr, charsets, NULL);
 }
 
 #else
@@ -892,7 +879,7 @@ find_charset_names (void)
 		break;
 	      keep_going = *p;
 	      *p = '\0';
-	      charsets.charsets.push_back (xstrdup (start));
+	      VEC_safe_push (char_ptr, charsets, xstrdup (start));
 	      if (!keep_going)
 		break;
 	      /* Skip any extra spaces.  */
@@ -913,10 +900,11 @@ find_charset_names (void)
   if (fail)
     {
       /* Some error occurred, so drop the vector.  */
-      charsets.clear ();
+      free_char_ptr_vec (charsets);
+      charsets = NULL;
     }
   else
-    charsets.charsets.push_back (NULL);
+    VEC_safe_push (char_ptr, charsets, NULL);
 }
 
 #endif /* HAVE_ICONVLIST || HAVE_LIBICONVLIST */
@@ -1006,11 +994,11 @@ void
 _initialize_charset (void)
 {
   /* The first element is always "auto".  */
-  charsets.charsets.push_back (xstrdup ("auto"));
+  VEC_safe_push (char_ptr, charsets, xstrdup ("auto"));
   find_charset_names ();
 
-  if (charsets.charsets.size () > 1)
-    charset_enum = (const char **) charsets.charsets.data ();
+  if (VEC_length (char_ptr, charsets) > 1)
+    charset_enum = (const char **) VEC_address (char_ptr, charsets);
   else
     charset_enum = default_charset_names;
 

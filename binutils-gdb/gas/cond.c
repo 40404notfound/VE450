@@ -1,5 +1,5 @@
 /* cond.c - conditional assembly pseudo-ops, and .include
-   Copyright (C) 1990-2019 Free Software Foundation, Inc.
+   Copyright (C) 1990-2018 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -28,8 +28,7 @@
    scanned.  */
 struct obstack cond_obstack;
 
-struct file_line
-{
+struct file_line {
   const char *file;
   unsigned int line;
 };
@@ -37,8 +36,7 @@ struct file_line
 /* We push one of these structures for each .if, and pop it at the
    .endif.  */
 
-struct conditional_frame
-{
+struct conditional_frame {
   /* The source file & line number of the "if".  */
   struct file_line if_file_line;
   /* The source file & line of the "else".  */
@@ -110,9 +108,9 @@ s_ifdef (int test_defined)
       cframe.ignoring = ! (test_defined ^ is_defined);
     }
 
-  current_cframe =
-    (struct conditional_frame *) obstack_alloc (&cond_obstack, sizeof cframe);
-  memcpy (current_cframe, &cframe, sizeof cframe);
+  current_cframe = ((struct conditional_frame *)
+		    obstack_copy (&cond_obstack, &cframe,
+				  sizeof (cframe)));
 
   if (LISTING_SKIP_COND ()
       && cframe.ignoring
@@ -168,9 +166,8 @@ s_if (int arg)
      using an undefined result.  No big deal.  */
   initialize_cframe (&cframe);
   cframe.ignoring = cframe.dead_tree || ! t;
-  current_cframe =
-    (struct conditional_frame *) obstack_alloc (&cond_obstack, sizeof cframe);
-  memcpy (current_cframe, & cframe, sizeof cframe);
+  current_cframe = ((struct conditional_frame *)
+		    obstack_copy (&cond_obstack, &cframe, sizeof (cframe)));
 
   if (LISTING_SKIP_COND ()
       && cframe.ignoring
@@ -205,9 +202,9 @@ s_ifb (int test_blank)
       cframe.ignoring = (test_blank == !is_eol);
     }
 
-  current_cframe =
-    (struct conditional_frame *) obstack_alloc (&cond_obstack, sizeof cframe);
-  memcpy (current_cframe, &cframe, sizeof cframe);
+  current_cframe = ((struct conditional_frame *)
+		    obstack_copy (&cond_obstack, &cframe,
+				  sizeof (cframe)));
 
   if (LISTING_SKIP_COND ()
       && cframe.ignoring
@@ -286,11 +283,10 @@ s_ifc (int arg)
 
   initialize_cframe (&cframe);
   cframe.ignoring = cframe.dead_tree || ! (res ^ arg);
-  current_cframe =
-    (struct conditional_frame *) obstack_alloc (&cond_obstack, sizeof cframe);
-  memcpy (current_cframe, &cframe, sizeof cframe);
-  
- if (LISTING_SKIP_COND ()
+  current_cframe = ((struct conditional_frame *)
+		    obstack_copy (&cond_obstack, &cframe, sizeof (cframe)));
+
+  if (LISTING_SKIP_COND ()
       && cframe.ignoring
       && (cframe.previous_cframe == NULL
 	  || ! cframe.previous_cframe->ignoring))
@@ -481,9 +477,8 @@ s_ifeqs (int arg)
 
   initialize_cframe (&cframe);
   cframe.ignoring = cframe.dead_tree || ! (res ^ arg);
-  current_cframe =
-    (struct conditional_frame *) obstack_alloc (&cond_obstack, sizeof cframe);
-  memcpy (current_cframe, &cframe, sizeof cframe);
+  current_cframe = ((struct conditional_frame *)
+		    obstack_copy (&cond_obstack, &cframe, sizeof (cframe)));
 
   if (LISTING_SKIP_COND ()
       && cframe.ignoring
@@ -553,7 +548,6 @@ cond_finish_check (int nest)
 	as_bad (_("end of macro inside conditional"));
       else
 	as_bad (_("end of file inside conditional"));
-
       as_bad_where (current_cframe->if_file_line.file,
 		    current_cframe->if_file_line.line,
 		    _("here is the start of the unterminated conditional"));

@@ -1,6 +1,6 @@
 /* Target-dependent code for the ALPHA architecture, for GDB, the GNU Debugger.
 
-   Copyright (C) 1993-2019 Free Software Foundation, Inc.
+   Copyright (C) 1993-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -252,6 +252,7 @@ alpha_register_to_value (struct frame_info *frame, int regnum,
   if (*optimizedp || *unavailablep)
     {
       release_value (value);
+      value_free (value);
       return 0;
     }
 
@@ -261,6 +262,7 @@ alpha_register_to_value (struct frame_info *frame, int regnum,
   alpha_sts (gdbarch, out, value_contents_all (value));
 
   release_value (value);
+  value_free (value);
   return 1;
 }
 
@@ -295,12 +297,11 @@ static CORE_ADDR
 alpha_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
 		       struct regcache *regcache, CORE_ADDR bp_addr,
 		       int nargs, struct value **args, CORE_ADDR sp,
-		       function_call_return_method return_method,
-		       CORE_ADDR struct_addr)
+		       int struct_return, CORE_ADDR struct_addr)
 {
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
   int i;
-  int accumulate_size = (return_method == return_method_struct) ? 8 : 0;
+  int accumulate_size = struct_return ? 8 : 0;
   struct alpha_arg
     {
       const gdb_byte *contents;
@@ -447,17 +448,17 @@ alpha_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
       /* Everything else goes to the stack.  */
       write_memory (sp + offset - sizeof(arg_reg_buffer), contents, len);
     }
-  if (return_method == return_method_struct)
+  if (struct_return)
     store_unsigned_integer (arg_reg_buffer, ALPHA_REGISTER_SIZE,
 			    byte_order, struct_addr);
 
   /* Load the argument registers.  */
   for (i = 0; i < required_arg_regs; i++)
     {
-      regcache->cooked_write (ALPHA_A0_REGNUM + i,
-			      arg_reg_buffer + i * ALPHA_REGISTER_SIZE);
-      regcache->cooked_write (ALPHA_FPA0_REGNUM + i,
-			      arg_reg_buffer + i * ALPHA_REGISTER_SIZE);
+      regcache_cooked_write (regcache, ALPHA_A0_REGNUM + i,
+			     arg_reg_buffer + i*ALPHA_REGISTER_SIZE);
+      regcache_cooked_write (regcache, ALPHA_FPA0_REGNUM + i,
+			     arg_reg_buffer + i*ALPHA_REGISTER_SIZE);
     }
 
   /* Finally, update the stack pointer.  */
@@ -484,12 +485,12 @@ alpha_extract_return_value (struct type *valtype, struct regcache *regcache,
       switch (TYPE_LENGTH (valtype))
 	{
 	case 4:
-	  regcache->cooked_read (ALPHA_FP0_REGNUM, raw_buffer);
+	  regcache_cooked_read (regcache, ALPHA_FP0_REGNUM, raw_buffer);
 	  alpha_sts (gdbarch, valbuf, raw_buffer);
 	  break;
 
 	case 8:
-	  regcache->cooked_read (ALPHA_FP0_REGNUM, valbuf);
+	  regcache_cooked_read (regcache, ALPHA_FP0_REGNUM, valbuf);
 	  break;
 
 	case 16:
@@ -508,12 +509,12 @@ alpha_extract_return_value (struct type *valtype, struct regcache *regcache,
 	{
 	case 8:
 	  /* ??? This isn't correct wrt the ABI, but it's what GCC does.  */
-	  regcache->cooked_read (ALPHA_FP0_REGNUM, valbuf);
+	  regcache_cooked_read (regcache, ALPHA_FP0_REGNUM, valbuf);
 	  break;
 
 	case 16:
-	  regcache->cooked_read (ALPHA_FP0_REGNUM, valbuf);
-	  regcache->cooked_read (ALPHA_FP0_REGNUM + 1, valbuf + 8);
+	  regcache_cooked_read (regcache, ALPHA_FP0_REGNUM, valbuf);
+	  regcache_cooked_read (regcache, ALPHA_FP0_REGNUM + 1, valbuf + 8);
 	  break;
 
 	case 32:
@@ -553,11 +554,11 @@ alpha_store_return_value (struct type *valtype, struct regcache *regcache,
 	{
 	case 4:
 	  alpha_lds (gdbarch, raw_buffer, valbuf);
-	  regcache->cooked_write (ALPHA_FP0_REGNUM, raw_buffer);
+	  regcache_cooked_write (regcache, ALPHA_FP0_REGNUM, raw_buffer);
 	  break;
 
 	case 8:
-	  regcache->cooked_write (ALPHA_FP0_REGNUM, valbuf);
+	  regcache_cooked_write (regcache, ALPHA_FP0_REGNUM, valbuf);
 	  break;
 
 	case 16:
@@ -577,12 +578,12 @@ alpha_store_return_value (struct type *valtype, struct regcache *regcache,
 	{
 	case 8:
 	  /* ??? This isn't correct wrt the ABI, but it's what GCC does.  */
-	  regcache->cooked_write (ALPHA_FP0_REGNUM, valbuf);
+	  regcache_cooked_write (regcache, ALPHA_FP0_REGNUM, valbuf);
 	  break;
 
 	case 16:
-	  regcache->cooked_write (ALPHA_FP0_REGNUM, valbuf);
-	  regcache->cooked_write (ALPHA_FP0_REGNUM + 1, valbuf + 8);
+	  regcache_cooked_write (regcache, ALPHA_FP0_REGNUM, valbuf);
+	  regcache_cooked_write (regcache, ALPHA_FP0_REGNUM + 1, valbuf + 8);
 	  break;
 
 	case 32:
@@ -768,7 +769,7 @@ static const int stq_c_opcode = 0x2f;
 static std::vector<CORE_ADDR>
 alpha_deal_with_atomic_sequence (struct gdbarch *gdbarch, CORE_ADDR pc)
 {
-  CORE_ADDR breaks[2] = {CORE_ADDR_MAX, CORE_ADDR_MAX};
+  CORE_ADDR breaks[2] = {-1, -1};
   CORE_ADDR loc = pc;
   CORE_ADDR closing_insn; /* Instruction that closes the atomic sequence.  */
   unsigned int insn = alpha_read_insn (gdbarch, loc);
@@ -1463,6 +1464,29 @@ reinit_frame_cache_sfunc (const char *args,
 {
   reinit_frame_cache ();
 }
+
+
+/* Assuming NEXT_FRAME->prev is a dummy, return the frame ID of that
+   dummy frame.  The frame ID's base needs to match the TOS value
+   saved by save_dummy_frame_tos(), and the PC match the dummy frame's
+   breakpoint.  */
+
+static struct frame_id
+alpha_dummy_id (struct gdbarch *gdbarch, struct frame_info *this_frame)
+{
+  ULONGEST base;
+  base = get_frame_register_unsigned (this_frame, ALPHA_SP_REGNUM);
+  return frame_id_build (base, get_frame_pc (this_frame));
+}
+
+static CORE_ADDR
+alpha_unwind_pc (struct gdbarch *gdbarch, struct frame_info *next_frame)
+{
+  ULONGEST pc;
+  pc = frame_unwind_register_unsigned (next_frame, ALPHA_PC_REGNUM);
+  return pc;
+}
+
 
 /* Helper routines for alpha*-nat.c files to move register sets to and
    from core files.  The UNIQUE pointer is allowed to be NULL, as most
@@ -1477,20 +1501,20 @@ alpha_supply_int_regs (struct regcache *regcache, int regno,
 
   for (i = 0; i < 31; ++i)
     if (regno == i || regno == -1)
-      regcache->raw_supply (i, regs + i * 8);
+      regcache_raw_supply (regcache, i, regs + i * 8);
 
   if (regno == ALPHA_ZERO_REGNUM || regno == -1)
     {
       const gdb_byte zero[8] = { 0 };
 
-      regcache->raw_supply (ALPHA_ZERO_REGNUM, zero);
+      regcache_raw_supply (regcache, ALPHA_ZERO_REGNUM, zero);
     }
 
   if (regno == ALPHA_PC_REGNUM || regno == -1)
-    regcache->raw_supply (ALPHA_PC_REGNUM, pc);
+    regcache_raw_supply (regcache, ALPHA_PC_REGNUM, pc);
 
   if (regno == ALPHA_UNIQUE_REGNUM || regno == -1)
-    regcache->raw_supply (ALPHA_UNIQUE_REGNUM, unique);
+    regcache_raw_supply (regcache, ALPHA_UNIQUE_REGNUM, unique);
 }
 
 void
@@ -1502,13 +1526,13 @@ alpha_fill_int_regs (const struct regcache *regcache,
 
   for (i = 0; i < 31; ++i)
     if (regno == i || regno == -1)
-      regcache->raw_collect (i, regs + i * 8);
+      regcache_raw_collect (regcache, i, regs + i * 8);
 
   if (regno == ALPHA_PC_REGNUM || regno == -1)
-    regcache->raw_collect (ALPHA_PC_REGNUM, pc);
+    regcache_raw_collect (regcache, ALPHA_PC_REGNUM, pc);
 
   if (unique && (regno == ALPHA_UNIQUE_REGNUM || regno == -1))
-    regcache->raw_collect (ALPHA_UNIQUE_REGNUM, unique);
+    regcache_raw_collect (regcache, ALPHA_UNIQUE_REGNUM, unique);
 }
 
 void
@@ -1520,10 +1544,11 @@ alpha_supply_fp_regs (struct regcache *regcache, int regno,
 
   for (i = ALPHA_FP0_REGNUM; i < ALPHA_FP0_REGNUM + 31; ++i)
     if (regno == i || regno == -1)
-      regcache->raw_supply (i, regs + (i - ALPHA_FP0_REGNUM) * 8);
+      regcache_raw_supply (regcache, i,
+			   regs + (i - ALPHA_FP0_REGNUM) * 8);
 
   if (regno == ALPHA_FPCR_REGNUM || regno == -1)
-    regcache->raw_supply (ALPHA_FPCR_REGNUM, fpcr);
+    regcache_raw_supply (regcache, ALPHA_FPCR_REGNUM, fpcr);
 }
 
 void
@@ -1535,10 +1560,11 @@ alpha_fill_fp_regs (const struct regcache *regcache,
 
   for (i = ALPHA_FP0_REGNUM; i < ALPHA_FP0_REGNUM + 31; ++i)
     if (regno == i || regno == -1)
-      regcache->raw_collect (i, regs + (i - ALPHA_FP0_REGNUM) * 8);
+      regcache_raw_collect (regcache, i,
+			    regs + (i - ALPHA_FP0_REGNUM) * 8);
 
   if (regno == ALPHA_FPCR_REGNUM || regno == -1)
-    regcache->raw_collect (ALPHA_FPCR_REGNUM, fpcr);
+    regcache_raw_collect (regcache, ALPHA_FPCR_REGNUM, fpcr);
 }
 
 
@@ -1783,6 +1809,12 @@ alpha_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 
   /* Settings for calling functions in the inferior.  */
   set_gdbarch_push_dummy_call (gdbarch, alpha_push_dummy_call);
+
+  /* Methods for saving / extracting a dummy frame's ID.  */
+  set_gdbarch_dummy_id (gdbarch, alpha_dummy_id);
+
+  /* Return the unwound PC value.  */
+  set_gdbarch_unwind_pc (gdbarch, alpha_unwind_pc);
 
   set_gdbarch_inner_than (gdbarch, core_addr_lessthan);
   set_gdbarch_skip_trampoline_code (gdbarch, find_solib_trampoline_target);

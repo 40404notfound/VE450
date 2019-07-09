@@ -1,6 +1,6 @@
 /* User visible, per-frame registers, for GDB, the GNU debugger.
 
-   Copyright (C) 2002-2019 Free Software Foundation, Inc.
+   Copyright (C) 2002-2018 Free Software Foundation, Inc.
 
    Contributed by Red Hat.
 
@@ -138,7 +138,8 @@ user_reg_map_name_to_regnum (struct gdbarch *gdbarch, const char *name,
      specific register override the user registers.  */
   {
     int i;
-    int maxregs = gdbarch_num_cooked_regs (gdbarch);
+    int maxregs = (gdbarch_num_regs (gdbarch)
+		   + gdbarch_num_pseudo_regs (gdbarch));
 
     for (i = 0; i < maxregs; i++)
       {
@@ -164,7 +165,8 @@ user_reg_map_name_to_regnum (struct gdbarch *gdbarch, const char *name,
 	if ((len < 0 && strcmp (reg->name, name))
 	    || (len == strlen (reg->name)
 		&& strncmp (reg->name, name, len) == 0))
-	  return gdbarch_num_cooked_regs (gdbarch) + nr;
+	  return gdbarch_num_regs (gdbarch)
+		 + gdbarch_num_pseudo_regs (gdbarch) + nr;
       }
   }
 
@@ -190,7 +192,8 @@ usernum_to_user_reg (struct gdbarch *gdbarch, int usernum)
 const char *
 user_reg_map_regnum_to_name (struct gdbarch *gdbarch, int regnum)
 {
-  int maxregs = gdbarch_num_cooked_regs (gdbarch);
+  int maxregs = (gdbarch_num_regs (gdbarch)
+		 + gdbarch_num_pseudo_regs (gdbarch));
 
   if (regnum < 0)
     return NULL;
@@ -210,7 +213,8 @@ struct value *
 value_of_user_reg (int regnum, struct frame_info *frame)
 {
   struct gdbarch *gdbarch = get_frame_arch (frame);
-  int maxregs = gdbarch_num_cooked_regs (gdbarch);
+  int maxregs = (gdbarch_num_regs (gdbarch)
+		 + gdbarch_num_pseudo_regs (gdbarch));
   struct user_reg *reg = usernum_to_user_reg (gdbarch, regnum - maxregs);
 
   gdb_assert (reg != NULL);
@@ -226,7 +230,7 @@ maintenance_print_user_registers (const char *args, int from_tty)
   int regnum;
 
   regs = (struct gdb_user_regs *) gdbarch_data (gdbarch, user_regs_data);
-  regnum = gdbarch_num_cooked_regs (gdbarch);
+  regnum = gdbarch_num_regs (gdbarch) + gdbarch_num_pseudo_regs (gdbarch);
 
   fprintf_unfiltered (gdb_stdout, " %-11s %3s\n", "Name", "Nr");
   for (reg = regs->first; reg != NULL; reg = reg->next, ++regnum)
@@ -240,6 +244,6 @@ _initialize_user_regs (void)
 
   add_cmd ("user-registers", class_maintenance,
 	   maintenance_print_user_registers,
-	   _("List the names of the current user registers."),
+	   _("List the names of the current user registers.\n"),
 	   &maintenanceprintlist);
 }

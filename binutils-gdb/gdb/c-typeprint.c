@@ -1,5 +1,5 @@
 /* Support for printing C and C++ types for GDB, the GNU debugger.
-   Copyright (C) 1986-2019 Free Software Foundation, Inc.
+   Copyright (C) 1986-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -28,10 +28,17 @@
 #include "language.h"
 #include "demangle.h"
 #include "c-lang.h"
-#include "cli/cli-style.h"
 #include "typeprint.h"
 #include "cp-abi.h"
 #include "cp-support.h"
+
+/* When printing the offsets of a struct and its fields (i.e., 'ptype
+   /o'; type_print_options::print_offsets), we use this many
+   characters when printing the offset information at the beginning of
+   the line.  This is needed in order to generate the correct amount
+   of whitespaces when no offset info should be printed for a certain
+   field.  */
+#define OFFSET_SPC_LEN 23
 
 /* A list of access specifiers used for printing.  */
 
@@ -43,15 +50,9 @@ enum access_specifier
   s_protected
 };
 
-static void c_type_print_varspec_suffix (struct type *, struct ui_file *, int,
-					 int, int,
-					 enum language,
-					 const struct type_print_options *);
-
 static void c_type_print_varspec_prefix (struct type *,
 					 struct ui_file *,
 					 int, int, int,
-					 enum language,
 					 const struct type_print_options *,
 					 struct print_offset_data *);
 
@@ -61,19 +62,18 @@ static void c_type_print_modifier (struct type *,
 				   int, int);
 
 static void c_type_print_base_1 (struct type *type, struct ui_file *stream,
-				 int show, int level, enum language language,
+				 int show, int level,
 				 const struct type_print_options *flags,
 				 struct print_offset_data *podata);
 
 
 /* A callback function for cp_canonicalize_string_full that uses
-   typedef_hash_table::find_typedef.  */
+   find_typedef_in_hash.  */
 
 static const char *
 find_typedef_for_canonicalize (struct type *t, void *data)
 {
-  return typedef_hash_table::find_typedef
-    ((const struct type_print_options *) data, t);
+  return find_typedef_in_hash ((const struct type_print_options *) data, t);
 }
 
 /* Print NAME on STREAM.  If the 'raw' field of FLAGS is not set,
@@ -103,7 +103,6 @@ c_print_type_1 (struct type *type,
 		const char *varstring,
 		struct ui_file *stream,
 		int show, int level,
-		enum language language,
 		const struct type_print_options *flags,
 		struct print_offset_data *podata)
 {
@@ -115,8 +114,7 @@ c_print_type_1 (struct type *type,
   if (show > 0)
     type = check_typedef (type);
 
-  local_name = typedef_hash_table::find_typedef (flags, type);
-  code = TYPE_CODE (type);
+  local_name = find_typedef_in_hash (flags, type);
   if (local_name != NULL)
     {
       fputs_filtered (local_name, stream);
@@ -125,7 +123,8 @@ c_print_type_1 (struct type *type,
     }
   else
     {
-      c_type_print_base_1 (type, stream, show, level, language, flags, podata);
+      c_type_print_base_1 (type, stream, show, level, flags, podata);
+      code = TYPE_CODE (type);
       if ((varstring != NULL && *varstring != '\0')
 	  /* Need a space if going to print stars or brackets;
 	     but not if we will print just a type name.  */
@@ -140,15 +139,12 @@ c_print_type_1 (struct type *type,
 	fputs_filtered (" ", stream);
       need_post_space = (varstring != NULL && strcmp (varstring, "") != 0);
       c_type_print_varspec_prefix (type, stream, show, 0, need_post_space,
-				   language, flags, podata);
+				   flags, podata);
     }
 
   if (varstring != NULL)
     {
-      if (code == TYPE_CODE_FUNC || code == TYPE_CODE_METHOD)
-	fputs_styled (varstring, function_name_style.style (), stream);
-      else
-	fputs_filtered (varstring, stream);
+      fputs_filtered (varstring, stream);
 
       /* For demangled function names, we have the arglist as part of
          the name, so don't print an additional pair of ()'s.  */
@@ -157,7 +153,7 @@ c_print_type_1 (struct type *type,
 	  demangled_args = strchr (varstring, '(') != NULL;
 	  c_type_print_varspec_suffix (type, stream, show,
 				       0, demangled_args,
-				       language, flags);
+				       flags);
 	}
     }
 }
@@ -173,25 +169,7 @@ c_print_type (struct type *type,
 {
   struct print_offset_data podata;
 
-  c_print_type_1 (type, varstring, stream, show, level,
-		  current_language->la_language, flags, &podata);
-}
-
-
-/* See c-lang.h.  */
-
-void
-c_print_type (struct type *type,
-	      const char *varstring,
-	      struct ui_file *stream,
-	      int show, int level,
-	      enum language language,
-	      const struct type_print_options *flags)
-{
-  struct print_offset_data podata;
-
-  c_print_type_1 (type, varstring, stream, show, level, language, flags,
-		  &podata);
+  c_print_type_1 (type, varstring, stream, show, level, flags, &podata);
 }
 
 /* Print a typedef using C syntax.  TYPE is the underlying type.
@@ -256,7 +234,7 @@ cp_type_print_derivation_info (struct ui_file *stream,
 			? "public" : (TYPE_FIELD_PROTECTED (type, i)
 				      ? "protected" : "private"),
 			BASETYPE_VIA_VIRTUAL (type, i) ? " virtual" : "");
-      name = TYPE_NAME (TYPE_BASECLASS (type, i));
+      name = type_name_no_tag (TYPE_BASECLASS (type, i));
       if (name)
 	print_name_maybe_canonical (name, flags, stream);
       else
@@ -274,7 +252,6 @@ static void
 cp_type_print_method_args (struct type *mtype, const char *prefix,
 			   const char *varstring, int staticp,
 			   struct ui_file *stream,
-			   enum language language,
 			   const struct type_print_options *flags)
 {
   struct field *args = TYPE_FIELDS (mtype);
@@ -315,7 +292,7 @@ cp_type_print_method_args (struct type *mtype, const char *prefix,
     }
   else if (varargs)
     fprintf_filtered (stream, "...");
-  else if (language == language_cplus)
+  else if (current_language->la_language == language_cplus)
     fprintf_filtered (stream, "void");
 
   fprintf_filtered (stream, ")");
@@ -362,7 +339,6 @@ c_type_print_varspec_prefix (struct type *type,
 			     struct ui_file *stream,
 			     int show, int passed_a_ptr,
 			     int need_post_space,
-			     enum language language,
 			     const struct type_print_options *flags,
 			     struct print_offset_data *podata)
 {
@@ -380,45 +356,40 @@ c_type_print_varspec_prefix (struct type *type,
     {
     case TYPE_CODE_PTR:
       c_type_print_varspec_prefix (TYPE_TARGET_TYPE (type),
-				   stream, show, 1, 1, language, flags,
-				   podata);
+				   stream, show, 1, 1, flags, podata);
       fprintf_filtered (stream, "*");
       c_type_print_modifier (type, stream, 1, need_post_space);
       break;
 
     case TYPE_CODE_MEMBERPTR:
       c_type_print_varspec_prefix (TYPE_TARGET_TYPE (type),
-				   stream, show, 0, 0, language, flags, podata);
-      name = TYPE_NAME (TYPE_SELF_TYPE (type));
+				   stream, show, 0, 0, flags, podata);
+      name = type_name_no_tag (TYPE_SELF_TYPE (type));
       if (name)
 	print_name_maybe_canonical (name, flags, stream);
       else
 	c_type_print_base_1 (TYPE_SELF_TYPE (type),
-			     stream, -1, passed_a_ptr, language, flags,
-			     podata);
+			     stream, -1, passed_a_ptr, flags, podata);
       fprintf_filtered (stream, "::*");
       break;
 
     case TYPE_CODE_METHODPTR:
       c_type_print_varspec_prefix (TYPE_TARGET_TYPE (type),
-				   stream, show, 0, 0, language, flags,
-				   podata);
+				   stream, show, 0, 0, flags, podata);
       fprintf_filtered (stream, "(");
-      name = TYPE_NAME (TYPE_SELF_TYPE (type));
+      name = type_name_no_tag (TYPE_SELF_TYPE (type));
       if (name)
 	print_name_maybe_canonical (name, flags, stream);
       else
 	c_type_print_base_1 (TYPE_SELF_TYPE (type),
-			     stream, -1, passed_a_ptr, language, flags,
-			     podata);
+			     stream, -1, passed_a_ptr, flags, podata);
       fprintf_filtered (stream, "::*");
       break;
 
     case TYPE_CODE_REF:
     case TYPE_CODE_RVALUE_REF:
       c_type_print_varspec_prefix (TYPE_TARGET_TYPE (type),
-				   stream, show, 1, 0, language, flags,
-				   podata);
+				   stream, show, 1, 0, flags, podata);
       fprintf_filtered (stream, TYPE_CODE(type) == TYPE_CODE_REF ? "&" : "&&");
       c_type_print_modifier (type, stream, 1, need_post_space);
       break;
@@ -426,24 +397,22 @@ c_type_print_varspec_prefix (struct type *type,
     case TYPE_CODE_METHOD:
     case TYPE_CODE_FUNC:
       c_type_print_varspec_prefix (TYPE_TARGET_TYPE (type),
-				   stream, show, 0, 0, language, flags,
-				   podata);
+				   stream, show, 0, 0, flags, podata);
       if (passed_a_ptr)
 	fprintf_filtered (stream, "(");
       break;
 
     case TYPE_CODE_ARRAY:
       c_type_print_varspec_prefix (TYPE_TARGET_TYPE (type),
-				   stream, show, 0, 0, language, flags,
-				   podata);
+				   stream, show, 0, 0, flags, podata);
       if (passed_a_ptr)
 	fprintf_filtered (stream, "(");
       break;
 
     case TYPE_CODE_TYPEDEF:
       c_type_print_varspec_prefix (TYPE_TARGET_TYPE (type),
-				   stream, show, passed_a_ptr, 0,
-				   language, flags, podata);
+				   stream, show, passed_a_ptr, 0, flags,
+				   podata);
       break;
 
     case TYPE_CODE_UNDEF:
@@ -582,7 +551,7 @@ c_type_print_args (struct type *type, struct ui_file *stream,
 	  param_type = make_cv_type (0, 0, param_type, NULL);
 	}
 
-      c_print_type (param_type, "", stream, -1, 0, language, flags);
+      c_print_type (param_type, "", stream, -1, 0, flags);
       printed_any = 1;
     }
 
@@ -746,12 +715,11 @@ remove_qualifiers (char *qid)
    needed after the variable name (to describe its type).
    Args work like c_type_print_varspec_prefix.  */
 
-static void
+void
 c_type_print_varspec_suffix (struct type *type,
 			     struct ui_file *stream,
 			     int show, int passed_a_ptr,
 			     int demangled_args,
-			     enum language language,
 			     const struct type_print_options *flags)
 {
   if (type == 0)
@@ -784,26 +752,26 @@ c_type_print_varspec_suffix (struct type *type,
 	fprintf_filtered (stream, (is_vector ? ")))" : "]"));
 
 	c_type_print_varspec_suffix (TYPE_TARGET_TYPE (type), stream,
-				     show, 0, 0, language, flags);
+				     show, 0, 0, flags);
       }
       break;
 
     case TYPE_CODE_MEMBERPTR:
       c_type_print_varspec_suffix (TYPE_TARGET_TYPE (type), stream,
-				   show, 0, 0, language, flags);
+				   show, 0, 0, flags);
       break;
 
     case TYPE_CODE_METHODPTR:
       fprintf_filtered (stream, ")");
       c_type_print_varspec_suffix (TYPE_TARGET_TYPE (type), stream,
-				   show, 0, 0, language, flags);
+				   show, 0, 0, flags);
       break;
 
     case TYPE_CODE_PTR:
     case TYPE_CODE_REF:
     case TYPE_CODE_RVALUE_REF:
       c_type_print_varspec_suffix (TYPE_TARGET_TYPE (type), stream,
-				   show, 1, 0, language, flags);
+				   show, 1, 0, flags);
       break;
 
     case TYPE_CODE_METHOD:
@@ -811,14 +779,15 @@ c_type_print_varspec_suffix (struct type *type,
       if (passed_a_ptr)
 	fprintf_filtered (stream, ")");
       if (!demangled_args)
-	c_type_print_args (type, stream, 0, language, flags);
+	c_type_print_args (type, stream, 0, current_language->la_language,
+			   flags);
       c_type_print_varspec_suffix (TYPE_TARGET_TYPE (type), stream,
-				   show, passed_a_ptr, 0, language, flags);
+				   show, passed_a_ptr, 0, flags);
       break;
 
     case TYPE_CODE_TYPEDEF:
       c_type_print_varspec_suffix (TYPE_TARGET_TYPE (type), stream,
-				   show, passed_a_ptr, 0, language, flags);
+				   show, passed_a_ptr, 0, flags);
       break;
 
     case TYPE_CODE_UNDEF:
@@ -909,7 +878,7 @@ print_spaces_filtered_with_print_options
   if (!flags->print_offsets)
     print_spaces_filtered (level, stream);
   else
-    print_spaces_filtered (level + print_offset_data::indentation, stream);
+    print_spaces_filtered (level + OFFSET_SPC_LEN, stream);
 }
 
 /* Output an access specifier to STREAM, if needed.  LAST_ACCESS is the
@@ -950,6 +919,112 @@ output_access_specifier (struct ui_file *stream,
     }
 
   return last_access;
+}
+
+/* Print information about field at index FIELD_IDX of the union type
+   TYPE.  Since union fields don't have the concept of offsets, we
+   just print their sizes.
+
+   The output is strongly based on pahole(1).  */
+
+static void
+c_print_type_union_field_offset (struct type *type, unsigned int field_idx,
+				 struct ui_file *stream)
+{
+  struct type *ftype = check_typedef (TYPE_FIELD_TYPE (type, field_idx));
+
+  fprintf_filtered (stream, "/*              %4u */", TYPE_LENGTH (ftype));
+}
+
+/* Print information about field at index FIELD_IDX of the struct type
+   TYPE.
+
+   PODATA->END_BITPOS is the one-past-the-end bit position of the
+   previous field (where we expect this field to be if there is no
+   hole).  At the end, ENDPOS is updated to the one-past-the-end bit
+   position of the current field.
+
+   PODATA->OFFSET_BITPOS is the offset value we carry over when we are
+   printing a struct that is inside another struct; this is useful so
+   that the offset is constantly incremented (if we didn't carry it
+   over, the offset would be reset to zero when printing the inner
+   struct).
+
+   The output is strongly based on pahole(1).  */
+
+static void
+c_print_type_struct_field_offset (struct type *type, unsigned int field_idx,
+				  struct ui_file *stream,
+				  struct print_offset_data *podata)
+{
+  struct type *ftype = check_typedef (TYPE_FIELD_TYPE (type, field_idx));
+  unsigned int bitpos = TYPE_FIELD_BITPOS (type, field_idx);
+  unsigned int fieldsize_byte = TYPE_LENGTH (ftype);
+  unsigned int fieldsize_bit = fieldsize_byte * TARGET_CHAR_BIT;
+
+  /* We check for PODATA->END_BITPOS > 0 because there is a specific
+     scenario when PODATA->END_BITPOS can be zero and BITPOS can be >
+     0: when we are dealing with a struct/class with a virtual method.
+     Because of the vtable, the first field of the struct/class will
+     have an offset of sizeof (void *) (the size of the vtable).  If
+     we do not check for PODATA->END_BITPOS > 0 here, GDB will report
+     a hole before the first field, which is not accurate.  */
+  if (podata->end_bitpos > 0 && podata->end_bitpos < bitpos)
+    {
+      /* If PODATA->END_BITPOS is smaller than the current type's
+	 bitpos, it means there's a hole in the struct, so we report
+	 it here.  */
+      unsigned int hole = bitpos - podata->end_bitpos;
+      unsigned int hole_byte = hole / TARGET_CHAR_BIT;
+      unsigned int hole_bit = hole % TARGET_CHAR_BIT;
+
+      if (hole_bit > 0)
+	fprintf_filtered (stream, "/* XXX %2u-bit hole   */\n", hole_bit);
+
+      if (hole_byte > 0)
+	fprintf_filtered (stream, "/* XXX %2u-byte hole  */\n", hole_byte);
+    }
+
+  if (TYPE_FIELD_PACKED (type, field_idx))
+    {
+      /* We're dealing with a bitfield.  Print how many bits are left
+	 to be used.  */
+      unsigned int bitsize = TYPE_FIELD_BITSIZE (type, field_idx);
+      /* The bitpos relative to the beginning of our container
+	 field.  */
+      unsigned int relative_bitpos;
+
+      /* The following was copied from
+	 value.c:value_primitive_field.  */
+      if ((bitpos % fieldsize_bit) + bitsize <= fieldsize_bit)
+	relative_bitpos = bitpos % fieldsize_bit;
+      else
+	relative_bitpos = bitpos % TARGET_CHAR_BIT;
+
+      /* This is the exact offset (in bits) of this bitfield.  */
+      unsigned int bit_offset
+	= (bitpos - relative_bitpos) + podata->offset_bitpos;
+
+      /* The position of the field, relative to the beginning of the
+	 struct, and how many bits are left to be used in this
+	 container.  */
+      fprintf_filtered (stream, "/* %4u:%2u", bit_offset / TARGET_CHAR_BIT,
+			fieldsize_bit - (relative_bitpos + bitsize));
+      fieldsize_bit = bitsize;
+    }
+  else
+    {
+      /* The position of the field, relative to the beginning of the
+	 struct.  */
+      fprintf_filtered (stream, "/* %4u",
+			(bitpos + podata->offset_bitpos) / TARGET_CHAR_BIT);
+
+      fprintf_filtered (stream, "   ");
+    }
+
+  fprintf_filtered (stream, "   |  %4u */", fieldsize_byte);
+
+  podata->end_bitpos = bitpos + fieldsize_bit;
 }
 
 /* Return true if an access label (i.e., "public:", "private:",
@@ -1012,7 +1087,6 @@ c_print_type_no_offsets (struct type *type,
 			 const char *varstring,
 			 struct ui_file *stream,
 			 int show, int level,
-			 enum language language,
 			 struct type_print_options *flags,
 			 struct print_offset_data *podata)
 {
@@ -1021,8 +1095,7 @@ c_print_type_no_offsets (struct type *type,
   /* Temporarily disable print_offsets, because it would mess with
      indentation.  */
   flags->print_offsets = 0;
-  c_print_type_1 (type, varstring, stream, show, level, language, flags,
-		  podata);
+  c_print_type_1 (type, varstring, stream, show, level, flags, podata);
   flags->print_offsets = old_po;
 }
 
@@ -1032,23 +1105,25 @@ c_print_type_no_offsets (struct type *type,
 static void
 c_type_print_base_struct_union (struct type *type, struct ui_file *stream,
 				int show, int level,
-				enum language language,
 				const struct type_print_options *flags,
 				struct print_offset_data *podata)
 {
   struct type_print_options local_flags = *flags;
-  local_flags.local_typedefs = NULL;
+  struct type_print_options semi_local_flags = *flags;
+  struct cleanup *local_cleanups = make_cleanup (null_cleanup, NULL);
 
-  std::unique_ptr<typedef_hash_table> hash_holder;
+  local_flags.local_typedefs = NULL;
+  semi_local_flags.local_typedefs = NULL;
+
   if (!flags->raw)
     {
       if (flags->local_typedefs)
 	local_flags.local_typedefs
-	  = new typedef_hash_table (*flags->local_typedefs);
+	  = copy_typedef_hash (flags->local_typedefs);
       else
-	local_flags.local_typedefs = new typedef_hash_table ();
+	local_flags.local_typedefs = create_typedef_hash ();
 
-      hash_holder.reset (local_flags.local_typedefs);
+      make_cleanup_free_typedef_hash (local_flags.local_typedefs);
     }
 
   c_type_print_modifier (type, stream, 0, 1);
@@ -1063,13 +1138,13 @@ c_type_print_base_struct_union (struct type *type, struct ui_file *stream,
      spurious "{unnamed struct}"/"{unnamed union}"/"{unnamed
      enum}" tag for unnamed struct/union/enum's, which we don't
      want to print.  */
-  if (TYPE_NAME (type) != NULL
-      && !startswith (TYPE_NAME (type), "{unnamed"))
+  if (TYPE_TAG_NAME (type) != NULL
+      && !startswith (TYPE_TAG_NAME (type), "{unnamed"))
     {
       /* When printing the tag name, we are still effectively
 	 printing in the outer context, hence the use of FLAGS
 	 here.  */
-      print_name_maybe_canonical (TYPE_NAME (type), flags, stream);
+      print_name_maybe_canonical (TYPE_TAG_NAME (type), flags, stream);
       if (show > 0)
 	fputs_filtered (" ", stream);
     }
@@ -1078,10 +1153,10 @@ c_type_print_base_struct_union (struct type *type, struct ui_file *stream,
     {
       /* If we just printed a tag name, no need to print anything
 	 else.  */
-      if (TYPE_NAME (type) == NULL)
+      if (TYPE_TAG_NAME (type) == NULL)
 	fprintf_filtered (stream, "{...}");
     }
-  else if (show > 0 || TYPE_NAME (type) == NULL)
+  else if (show > 0 || TYPE_TAG_NAME (type) == NULL)
     {
       struct type *basetype;
       int vptr_fieldno;
@@ -1089,25 +1164,18 @@ c_type_print_base_struct_union (struct type *type, struct ui_file *stream,
       c_type_print_template_args (&local_flags, type, stream);
 
       /* Add in template parameters when printing derivation info.  */
-      if (local_flags.local_typedefs != NULL)
-	local_flags.local_typedefs->add_template_parameters (type);
+      add_template_parameters (local_flags.local_typedefs, type);
       cp_type_print_derivation_info (stream, type, &local_flags);
 
       /* This holds just the global typedefs and the template
 	 parameters.  */
-      struct type_print_options semi_local_flags = *flags;
-      semi_local_flags.local_typedefs = NULL;
+      semi_local_flags.local_typedefs
+	= copy_typedef_hash (local_flags.local_typedefs);
+      if (semi_local_flags.local_typedefs)
+	make_cleanup_free_typedef_hash (semi_local_flags.local_typedefs);
 
-      std::unique_ptr<typedef_hash_table> semi_holder;
-      if (local_flags.local_typedefs != nullptr)
-	{
-	  semi_local_flags.local_typedefs
-	    = new typedef_hash_table (*local_flags.local_typedefs);
-	  semi_holder.reset (semi_local_flags.local_typedefs);
-
-	  /* Now add in the local typedefs.  */
-	  local_flags.local_typedefs->recursively_update (type);
-	}
+      /* Now add in the local typedefs.  */
+      recursively_update_typedef_hash (local_flags.local_typedefs, type);
 
       fprintf_filtered (stream, "{\n");
 
@@ -1164,7 +1232,20 @@ c_type_print_base_struct_union (struct type *type, struct ui_file *stream,
 	  bool is_static = field_is_static (&TYPE_FIELD (type, i));
 
 	  if (flags->print_offsets)
-	    podata->update (type, i, stream);
+	    {
+	      if (!is_static)
+		{
+		  if (TYPE_CODE (type) == TYPE_CODE_STRUCT)
+		    {
+		      c_print_type_struct_field_offset
+			(type, i, stream, podata);
+		    }
+		  else if (TYPE_CODE (type) == TYPE_CODE_UNION)
+		    c_print_type_union_field_offset (type, i, stream);
+		}
+	      else
+		print_spaces_filtered (OFFSET_SPC_LEN, stream);
+	    }
 
 	  print_spaces_filtered (level + 4, stream);
 	  if (is_static)
@@ -1172,7 +1253,7 @@ c_type_print_base_struct_union (struct type *type, struct ui_file *stream,
 
 	  int newshow = show - 1;
 
-	  if (!is_static && flags->print_offsets
+	  if (flags->print_offsets
 	      && (TYPE_CODE (TYPE_FIELD_TYPE (type, i)) == TYPE_CODE_STRUCT
 		  || TYPE_CODE (TYPE_FIELD_TYPE (type, i)) == TYPE_CODE_UNION))
 	    {
@@ -1200,7 +1281,7 @@ c_type_print_base_struct_union (struct type *type, struct ui_file *stream,
 	  c_print_type_1 (TYPE_FIELD_TYPE (type, i),
 			  TYPE_FIELD_NAME (type, i),
 			  stream, newshow, level + 4,
-			  language, &local_flags, &local_podata);
+			  &local_flags, &local_podata);
 
 	  if (!is_static && TYPE_FIELD_PACKED (type, i))
 	    {
@@ -1241,7 +1322,7 @@ c_type_print_base_struct_union (struct type *type, struct ui_file *stream,
 	  struct fn_field *f = TYPE_FN_FIELDLIST1 (type, i);
 	  int j, len2 = TYPE_FN_FIELDLIST_LENGTH (type, i);
 	  const char *method_name = TYPE_FN_FIELDLIST_NAME (type, i);
-	  const char *name = TYPE_NAME (type);
+	  const char *name = type_name_no_tag (type);
 	  int is_constructor = name && strcmp (method_name,
 					       name) == 0;
 
@@ -1289,7 +1370,7 @@ c_type_print_base_struct_union (struct type *type, struct ui_file *stream,
 		{
 		  c_print_type_no_offsets
 		    (TYPE_TARGET_TYPE (TYPE_FN_FIELD_TYPE (f, j)),
-		     "", stream, -1, 0, language, &local_flags, podata);
+		     "", stream, -1, 0, &local_flags, podata);
 
 		  fputs_filtered (" ", stream);
 		}
@@ -1321,8 +1402,7 @@ c_type_print_base_struct_union (struct type *type, struct ui_file *stream,
 						 "",
 						 method_name,
 						 staticp,
-						 stream, language,
-						 &local_flags);
+						 stream, &local_flags);
 		    }
 		  else
 		    fprintf_filtered (stream,
@@ -1376,7 +1456,7 @@ c_type_print_base_struct_union (struct type *type, struct ui_file *stream,
 							flags);
 	      c_print_type_no_offsets (TYPE_NESTED_TYPES_FIELD_TYPE (type, i),
 				       "", stream, show, level + 4,
-				       language, &semi_local_flags, podata);
+				       &semi_local_flags, podata);
 	      fprintf_filtered (stream, ";\n");
 	    }
 	}
@@ -1414,7 +1494,7 @@ c_type_print_base_struct_union (struct type *type, struct ui_file *stream,
 	      c_print_type_no_offsets (target,
 				       TYPE_TYPEDEF_FIELD_NAME (type, i),
 				       stream, show - 1, level + 4,
-				       language, &semi_local_flags, podata);
+				       &semi_local_flags, podata);
 	      fprintf_filtered (stream, ";\n");
 	    }
 	}
@@ -1422,15 +1502,24 @@ c_type_print_base_struct_union (struct type *type, struct ui_file *stream,
       if (flags->print_offsets)
 	{
 	  if (show > 0)
-	    podata->finish (type, level, stream);
+	    {
+	      fputs_filtered ("\n", stream);
+	      print_spaces_filtered_with_print_options (level + 4,
+							stream,
+							flags);
+	      fprintf_filtered (stream, "/* total size (bytes): %4u */\n",
+				TYPE_LENGTH (type));
+	    }
 
-	  print_spaces_filtered (print_offset_data::indentation, stream);
+	  print_spaces_filtered (OFFSET_SPC_LEN, stream);
 	  if (level == 0)
 	    print_spaces_filtered (2, stream);
 	}
 
       fprintfi_filtered (level, stream, "}");
     }
+
+  do_cleanups (local_cleanups);
 }
 
 /* Print the name of the type (or the ultimate pointer target,
@@ -1454,7 +1543,6 @@ c_type_print_base_struct_union (struct type *type, struct ui_file *stream,
 static void
 c_type_print_base_1 (struct type *type, struct ui_file *stream,
 		     int show, int level,
-		     enum language language,
 		     const struct type_print_options *flags,
 		     struct print_offset_data *podata)
 {
@@ -1471,33 +1559,15 @@ c_type_print_base_1 (struct type *type, struct ui_file *stream,
 
   /* When SHOW is zero or less, and there is a valid type name, then
      always just print the type name directly from the type.  */
+  /* If we have "typedef struct foo {. . .} bar;" do we want to print
+     it as "struct foo" or as "bar"?  Pick the latter, because C++
+     folk tend to expect things like "class5 *foo" rather than "struct
+     class5 *foo".  */
 
   if (show <= 0
       && TYPE_NAME (type) != NULL)
     {
       c_type_print_modifier (type, stream, 0, 1);
-
-      /* If we have "typedef struct foo {. . .} bar;" do we want to
-	 print it as "struct foo" or as "bar"?  Pick the latter for
-	 C++, because C++ folk tend to expect things like "class5
-	 *foo" rather than "struct class5 *foo".  We rather
-	 arbitrarily choose to make language_minimal work in a C-like
-	 way. */
-      if (language == language_c || language == language_minimal)
-	{
-	  if (TYPE_CODE (type) == TYPE_CODE_UNION)
-	    fprintf_filtered (stream, "union ");
-	  else if (TYPE_CODE (type) == TYPE_CODE_STRUCT)
-	    {
-	      if (TYPE_DECLARED_CLASS (type))
-		fprintf_filtered (stream, "class ");
-	      else
-		fprintf_filtered (stream, "struct ");
-	    }
-	  else if (TYPE_CODE (type) == TYPE_CODE_ENUM)
-	    fprintf_filtered (stream, "enum ");
-	}
-
       print_name_maybe_canonical (TYPE_NAME (type), flags, stream);
       return;
     }
@@ -1520,7 +1590,7 @@ c_type_print_base_1 (struct type *type, struct ui_file *stream,
 	type_print_unknown_return_type (stream);
       else
 	c_type_print_base_1 (TYPE_TARGET_TYPE (type),
-			     stream, show, level, language, flags, podata);
+			     stream, show, level, flags, podata);
       break;
     case TYPE_CODE_ARRAY:
     case TYPE_CODE_PTR:
@@ -1529,13 +1599,13 @@ c_type_print_base_1 (struct type *type, struct ui_file *stream,
     case TYPE_CODE_RVALUE_REF:
     case TYPE_CODE_METHODPTR:
       c_type_print_base_1 (TYPE_TARGET_TYPE (type),
-			   stream, show, level, language, flags, podata);
+			   stream, show, level, flags, podata);
       break;
 
     case TYPE_CODE_STRUCT:
     case TYPE_CODE_UNION:
-      c_type_print_base_struct_union (type, stream, show, level,
-				      language, flags, podata);
+      c_type_print_base_struct_union (type, stream, show, level, flags,
+				      podata);
       break;
 
     case TYPE_CODE_ENUM:
@@ -1548,10 +1618,10 @@ c_type_print_base_1 (struct type *type, struct ui_file *stream,
          "{unnamed struct}"/"{unnamed union}"/"{unnamed enum}"
          tag for unnamed struct/union/enum's, which we don't
          want to print.  */
-      if (TYPE_NAME (type) != NULL
-	  && !startswith (TYPE_NAME (type), "{unnamed"))
+      if (TYPE_TAG_NAME (type) != NULL
+	  && !startswith (TYPE_TAG_NAME (type), "{unnamed"))
 	{
-	  print_name_maybe_canonical (TYPE_NAME (type), flags, stream);
+	  print_name_maybe_canonical (TYPE_TAG_NAME (type), flags, stream);
 	  if (show > 0)
 	    fputs_filtered (" ", stream);
 	}
@@ -1561,10 +1631,10 @@ c_type_print_base_1 (struct type *type, struct ui_file *stream,
 	{
 	  /* If we just printed a tag name, no need to print anything
 	     else.  */
-	  if (TYPE_NAME (type) == NULL)
+	  if (TYPE_TAG_NAME (type) == NULL)
 	    fprintf_filtered (stream, "{...}");
 	}
-      else if (show > 0 || TYPE_NAME (type) == NULL)
+      else if (show > 0 || TYPE_TAG_NAME (type) == NULL)
 	{
 	  LONGEST lastval = 0;
 
@@ -1576,7 +1646,8 @@ c_type_print_base_1 (struct type *type, struct ui_file *stream,
 	     print too much than too little; but conversely not to
 	     print something egregiously outside the current
 	     language's syntax.  */
-	  if (language == language_cplus && TYPE_TARGET_TYPE (type) != NULL)
+	  if (current_language->la_language == language_cplus
+	      && TYPE_TARGET_TYPE (type) != NULL)
 	    {
 	      struct type *underlying = check_typedef (TYPE_TARGET_TYPE (type));
 
@@ -1637,7 +1708,7 @@ c_type_print_base_1 (struct type *type, struct ui_file *stream,
 		c_print_type_1 (TYPE_FIELD_TYPE (type, i),
 				TYPE_FIELD_NAME (type, i),
 				stream, show, level + 4,
-				language, &local_flags, podata);
+				&local_flags, podata);
 		fprintf_filtered (stream, " @%s",
 				  plongest (TYPE_FIELD_BITPOS (type, i)));
 		if (TYPE_FIELD_BITSIZE (type, i) > 1)
@@ -1673,7 +1744,7 @@ c_type_print_base_1 (struct type *type, struct ui_file *stream,
 
     case TYPE_CODE_NAMESPACE:
       fputs_filtered ("namespace ", stream);
-      fputs_filtered (TYPE_NAME (type), stream);
+      fputs_filtered (TYPE_TAG_NAME (type), stream);
       break;
 
     default:
@@ -1706,6 +1777,5 @@ c_type_print_base (struct type *type, struct ui_file *stream,
 {
   struct print_offset_data podata;
 
-  c_type_print_base_1 (type, stream, show, level,
-		       current_language->la_language, flags, &podata);
+  c_type_print_base_1 (type, stream, show, level, flags, &podata);
 }

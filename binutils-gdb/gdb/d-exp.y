@@ -1,6 +1,6 @@
 /* YACC parser for D expressions, for GDB.
 
-   Copyright (C) 2014-2019 Free Software Foundation, Inc.
+   Copyright (C) 2014-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -51,10 +51,9 @@
 #include "objfiles.h" /* For have_full_symbols and have_partial_symbols */
 #include "charset.h"
 #include "block.h"
-#include "type-stack.h"
 
-#define parse_type(ps) builtin_type (ps->gdbarch ())
-#define parse_d_type(ps) builtin_d_type (ps->gdbarch ())
+#define parse_type(ps) builtin_type (parse_gdbarch (ps))
+#define parse_d_type(ps) builtin_d_type (parse_gdbarch (ps))
 
 /* Remap normal yacc parser interface names (yyparse, yylex, yyerror,
    etc).  */
@@ -66,14 +65,11 @@
 
 static struct parser_state *pstate = NULL;
 
-/* The current type stack.  */
-static struct type_stack *type_stack;
-
 int yyparse (void);
 
 static int yylex (void);
 
-static void yyerror (const char *);
+void yyerror (const char *);
 
 static int type_aggregate_p (struct type *);
 
@@ -101,6 +97,7 @@ static int type_aggregate_p (struct type *);
     struct symtoken ssym;
     int ival;
     int voidval;
+    struct block *bval;
     enum exp_opcode opcode;
     struct stoken_vector svec;
   }
@@ -342,7 +339,7 @@ PostfixExpression:
 	PrimaryExpression
 |	PostfixExpression '.' COMPLETE
 		{ struct stoken s;
-		  pstate->mark_struct_expression ();
+		  mark_struct_expression (pstate);
 		  write_exp_elt_opcode (pstate, STRUCTOP_STRUCT);
 		  s.ptr = "";
 		  s.length = 0;
@@ -353,7 +350,7 @@ PostfixExpression:
 		  write_exp_string (pstate, $3);
 		  write_exp_elt_opcode (pstate, STRUCTOP_STRUCT); }
 |	PostfixExpression '.' IDENTIFIER COMPLETE
-		{ pstate->mark_struct_expression ();
+		{ mark_struct_expression (pstate);
 		  write_exp_elt_opcode (pstate, STRUCTOP_STRUCT);
 		  write_exp_string (pstate, $3);
 		  write_exp_elt_opcode (pstate, STRUCTOP_STRUCT); }
@@ -370,32 +367,32 @@ PostfixExpression:
 
 ArgumentList:
 	AssignExpression
-		{ pstate->arglist_len = 1; }
+		{ arglist_len = 1; }
 |	ArgumentList ',' AssignExpression
-		{ pstate->arglist_len++; }
+		{ arglist_len++; }
 ;
 
 ArgumentList_opt:
 	/* EMPTY */
-		{ pstate->arglist_len = 0; }
+		{ arglist_len = 0; }
 |	ArgumentList
 ;
 
 CallExpression:
 	PostfixExpression '('
-		{ pstate->start_arglist (); }
+		{ start_arglist (); }
 	ArgumentList_opt ')'
 		{ write_exp_elt_opcode (pstate, OP_FUNCALL);
-		  write_exp_elt_longcst (pstate, pstate->end_arglist ());
+		  write_exp_elt_longcst (pstate, (LONGEST) end_arglist ());
 		  write_exp_elt_opcode (pstate, OP_FUNCALL); }
 ;
 
 IndexExpression:
 	PostfixExpression '[' ArgumentList ']'
-		{ if (pstate->arglist_len > 0)
+		{ if (arglist_len > 0)
 		    {
 		      write_exp_elt_opcode (pstate, MULTI_SUBSCRIPT);
-		      write_exp_elt_longcst (pstate, pstate->arglist_len);
+		      write_exp_elt_longcst (pstate, (LONGEST) arglist_len);
 		      write_exp_elt_opcode (pstate, MULTI_SUBSCRIPT);
 		    }
 		  else
@@ -415,18 +412,22 @@ PrimaryExpression:
 		{ /* Do nothing.  */ }
 |	IdentifierExp
 		{ struct bound_minimal_symbol msymbol;
-		  std::string copy = copy_name ($1);
+		  char *copy = copy_name ($1);
 		  struct field_of_this_result is_a_field_of_this;
 		  struct block_symbol sym;
 
 		  /* Handle VAR, which could be local or global.  */
-		  sym = lookup_symbol (copy.c_str (),
-				       pstate->expression_context_block,
-				       VAR_DOMAIN, &is_a_field_of_this);
+		  sym = lookup_symbol (copy, expression_context_block, VAR_DOMAIN,
+				       &is_a_field_of_this);
 		  if (sym.symbol && SYMBOL_CLASS (sym.symbol) != LOC_TYPEDEF)
 		    {
 		      if (symbol_read_needs_frame (sym.symbol))
-			pstate->block_tracker->update (sym);
+			{
+			  if (innermost_block == 0
+			      || contained_in (sym.block, innermost_block))
+			    innermost_block = sym.block;
+			}
+
 		      write_exp_elt_opcode (pstate, OP_VAR_VALUE);
 		      write_exp_elt_block (pstate, sym.block);
 		      write_exp_elt_sym (pstate, sym.symbol);
@@ -436,7 +437,9 @@ PrimaryExpression:
 		     {
 		      /* It hangs off of `this'.  Must not inadvertently convert from a
 			 method call to data ref.  */
-		      pstate->block_tracker->update (sym);
+		      if (innermost_block == 0
+			  || contained_in (sym.block, innermost_block))
+			innermost_block = sym.block;
 		      write_exp_elt_opcode (pstate, OP_THIS);
 		      write_exp_elt_opcode (pstate, OP_THIS);
 		      write_exp_elt_opcode (pstate, STRUCTOP_PTR);
@@ -446,14 +449,13 @@ PrimaryExpression:
 		  else
 		    {
 		      /* Lookup foreign name in global static symbols.  */
-		      msymbol = lookup_bound_minimal_symbol (copy.c_str ());
+		      msymbol = lookup_bound_minimal_symbol (copy);
 		      if (msymbol.minsym != NULL)
 			write_exp_msymbol (pstate, msymbol);
 		      else if (!have_full_symbols () && !have_partial_symbols ())
 			error (_("No symbol table is loaded.  Use the \"file\" command"));
 		      else
-			error (_("No symbol \"%s\" in current context."),
-			       copy.c_str ());
+			error (_("No symbol \"%s\" in current context."), copy);
 		    }
 		  }
 |	TypeExp '.' IdentifierExp
@@ -564,7 +566,7 @@ PrimaryExpression:
 
 ArrayLiteral:
 	'[' ArgumentList_opt ']'
-		{ $$ = pstate->arglist_len; }
+		{ $$ = arglist_len; }
 ;
 
 IdentifierExp:
@@ -612,7 +614,7 @@ TypeExp:
 		  write_exp_elt_type (pstate, $1);
 		  write_exp_elt_opcode (pstate, OP_TYPE); }
 |	BasicType BasicType2
-		{ $$ = type_stack->follow_types ($1);
+		{ $$ = follow_types ($1);
 		  write_exp_elt_opcode (pstate, OP_TYPE);
 		  write_exp_elt_type (pstate, $$);
 		  write_exp_elt_opcode (pstate, OP_TYPE);
@@ -621,15 +623,15 @@ TypeExp:
 
 BasicType2:
 	'*'
-		{ type_stack->push (tp_pointer); }
+		{ push_type (tp_pointer); }
 |	'*' BasicType2
-		{ type_stack->push (tp_pointer); }
+		{ push_type (tp_pointer); }
 |	'[' INTEGER_LITERAL ']'
-		{ type_stack->push ($2.val);
-		  type_stack->push (tp_array); }
+		{ push_type_int ($2.val);
+		  push_type (tp_array); }
 |	'[' INTEGER_LITERAL ']' BasicType2
-		{ type_stack->push ($2.val);
-		  type_stack->push (tp_array); }
+		{ push_type_int ($2.val);
+		  push_type (tp_array); }
 ;
 
 BasicType:
@@ -1026,9 +1028,6 @@ static int saw_name_at_eof;
    This is used only when parsing to do field name completion.  */
 static int last_was_structop;
 
-/* Depth of parentheses.  */
-static int paren_depth;
-
 /* Read one token, getting characters through lexptr.  */
 
 static int
@@ -1039,19 +1038,20 @@ lex_one_token (struct parser_state *par_state)
   unsigned int i;
   const char *tokstart;
   int saw_structop = last_was_structop;
+  char *copy;
 
   last_was_structop = 0;
 
  retry:
 
-  pstate->prev_lexptr = pstate->lexptr;
+  prev_lexptr = lexptr;
 
-  tokstart = pstate->lexptr;
+  tokstart = lexptr;
   /* See if it is a special token of length 3.  */
   for (i = 0; i < sizeof tokentab3 / sizeof tokentab3[0]; i++)
     if (strncmp (tokstart, tokentab3[i].oper, 3) == 0)
       {
-	pstate->lexptr += 3;
+	lexptr += 3;
 	yylval.opcode = tokentab3[i].opcode;
 	return tokentab3[i].token;
       }
@@ -1060,7 +1060,7 @@ lex_one_token (struct parser_state *par_state)
   for (i = 0; i < sizeof tokentab2 / sizeof tokentab2[0]; i++)
     if (strncmp (tokstart, tokentab2[i].oper, 2) == 0)
       {
-	pstate->lexptr += 2;
+	lexptr += 2;
 	yylval.opcode = tokentab2[i].opcode;
 	return tokentab2[i].token;
       }
@@ -1085,13 +1085,13 @@ lex_one_token (struct parser_state *par_state)
     case ' ':
     case '\t':
     case '\n':
-      pstate->lexptr++;
+      lexptr++;
       goto retry;
 
     case '[':
     case '(':
       paren_depth++;
-      pstate->lexptr++;
+      lexptr++;
       return c;
 
     case ']':
@@ -1099,24 +1099,24 @@ lex_one_token (struct parser_state *par_state)
       if (paren_depth == 0)
 	return 0;
       paren_depth--;
-      pstate->lexptr++;
+      lexptr++;
       return c;
 
     case ',':
-      if (pstate->comma_terminates && paren_depth == 0)
+      if (comma_terminates && paren_depth == 0)
 	return 0;
-      pstate->lexptr++;
+      lexptr++;
       return c;
 
     case '.':
       /* Might be a floating point number.  */
-      if (pstate->lexptr[1] < '0' || pstate->lexptr[1] > '9')
+      if (lexptr[1] < '0' || lexptr[1] > '9')
 	{
-	  if (pstate->parse_completion)
+	  if (parse_completion)
 	    last_was_structop = 1;
 	  goto symbol;		/* Nope, must be a symbol.  */
 	}
-      /* FALL THRU.  */
+      /* FALL THRU into number case.  */
 
     case '0':
     case '1':
@@ -1175,7 +1175,7 @@ lex_one_token (struct parser_state *par_state)
 	    err_copy[p - tokstart] = 0;
 	    error (_("Invalid number \"%s\"."), err_copy);
 	  }
-	pstate->lexptr = p;
+	lexptr = p;
 	return toktype;
       }
 
@@ -1189,7 +1189,7 @@ lex_one_token (struct parser_state *par_state)
 	if (strncmp (p, "entry", len) == 0 && !isalnum (p[len])
 	    && p[len] != '_')
 	  {
-	    pstate->lexptr = &p[len];
+	    lexptr = &p[len];
 	    return ENTRY;
 	  }
       }
@@ -1212,7 +1212,7 @@ lex_one_token (struct parser_state *par_state)
     case '{':
     case '}':
     symbol:
-      pstate->lexptr++;
+      lexptr++;
       return c;
 
     case '\'':
@@ -1220,8 +1220,8 @@ lex_one_token (struct parser_state *par_state)
     case '`':
       {
 	int host_len;
-	int result = parse_string_or_char (tokstart, &pstate->lexptr,
-					   &yylval.tsval, &host_len);
+	int result = parse_string_or_char (tokstart, &lexptr, &yylval.tsval,
+					   &host_len);
 	if (result == CHARACTER_LITERAL)
 	  {
 	    if (host_len == 0)
@@ -1229,7 +1229,7 @@ lex_one_token (struct parser_state *par_state)
 	    else if (host_len > 2 && c == '\'')
 	      {
 		++tokstart;
-		namelen = pstate->lexptr - tokstart - 1;
+		namelen = lexptr - tokstart - 1;
 		goto tryname;
 	      }
 	    else if (host_len > 1)
@@ -1274,7 +1274,7 @@ lex_one_token (struct parser_state *par_state)
         return 0;
     }
 
-  pstate->lexptr += namelen;
+  lexptr += namelen;
 
  tryname:
 
@@ -1282,9 +1282,9 @@ lex_one_token (struct parser_state *par_state)
   yylval.sval.length = namelen;
 
   /* Catch specific keywords.  */
-  std::string copy = copy_name (yylval.sval);
+  copy = copy_name (yylval.sval);
   for (i = 0; i < sizeof ident_tokens / sizeof ident_tokens[0]; i++)
-    if (copy == ident_tokens[i].oper)
+    if (strcmp (copy, ident_tokens[i].oper) == 0)
       {
 	/* It is ok to always set this, even though we don't always
 	   strictly need to.  */
@@ -1296,8 +1296,8 @@ lex_one_token (struct parser_state *par_state)
     return DOLLAR_VARIABLE;
 
   yylval.tsym.type
-    = language_lookup_primitive_type (par_state->language (),
-				      par_state->gdbarch (), copy.c_str ());
+    = language_lookup_primitive_type (parse_language (par_state),
+				      parse_gdbarch (par_state), copy);
   if (yylval.tsym.type != NULL)
     return TYPENAME;
 
@@ -1313,23 +1313,24 @@ lex_one_token (struct parser_state *par_state)
 	return NAME_OR_INT;
     }
 
-  if (pstate->parse_completion && *pstate->lexptr == '\0')
+  if (parse_completion && *lexptr == '\0')
     saw_name_at_eof = 1;
 
   return IDENTIFIER;
 }
 
 /* An object of this type is pushed on a FIFO by the "outer" lexer.  */
-struct token_and_value
+typedef struct
 {
   int token;
   YYSTYPE value;
-};
+} token_and_value;
 
+DEF_VEC_O (token_and_value);
 
 /* A FIFO of tokens that have been read but not yet returned to the
    parser.  */
-static std::vector<token_and_value> token_fifo;
+static VEC (token_and_value) *token_fifo;
 
 /* Non-zero if the lexer should return tokens from the FIFO.  */
 static int popping;
@@ -1346,11 +1347,12 @@ static int
 classify_name (struct parser_state *par_state, const struct block *block)
 {
   struct block_symbol sym;
+  char *copy;
   struct field_of_this_result is_a_field_of_this;
 
-  std::string copy = copy_name (yylval.sval);
+  copy = copy_name (yylval.sval);
 
-  sym = lookup_symbol (copy.c_str (), block, VAR_DOMAIN, &is_a_field_of_this);
+  sym = lookup_symbol (copy, block, VAR_DOMAIN, &is_a_field_of_this);
   if (sym.symbol && SYMBOL_CLASS (sym.symbol) == LOC_TYPEDEF)
     {
       yylval.tsym.type = SYMBOL_TYPE (sym.symbol);
@@ -1359,9 +1361,9 @@ classify_name (struct parser_state *par_state, const struct block *block)
   else if (sym.symbol == NULL)
     {
       /* Look-up first for a module name, then a type.  */
-      sym = lookup_symbol (copy.c_str (), block, MODULE_DOMAIN, NULL);
+      sym = lookup_symbol (copy, block, MODULE_DOMAIN, NULL);
       if (sym.symbol == NULL)
-	sym = lookup_symbol (copy.c_str (), block, STRUCT_DOMAIN, NULL);
+	sym = lookup_symbol (copy, block, STRUCT_DOMAIN, NULL);
 
       if (sym.symbol != NULL)
 	{
@@ -1384,6 +1386,7 @@ classify_inner_name (struct parser_state *par_state,
 		     const struct block *block, struct type *context)
 {
   struct type *type;
+  char *copy;
 
   if (context == NULL)
     return classify_name (par_state, block);
@@ -1392,8 +1395,8 @@ classify_inner_name (struct parser_state *par_state,
   if (!type_aggregate_p (type))
     return ERROR;
 
-  std::string copy = copy_name (yylval.ssym.stoken);
-  yylval.ssym.sym = d_lookup_nested_symbol (type, copy.c_str (), block);
+  copy = copy_name (yylval.ssym.stoken);
+  yylval.ssym.sym = d_lookup_nested_symbol (type, copy, block);
 
   if (yylval.ssym.sym.symbol == NULL)
     return ERROR;
@@ -1423,7 +1426,7 @@ yylex (void)
   int last_to_examine, next_to_examine, checkpoint;
   const struct block *search_block;
 
-  if (popping && !token_fifo.empty ())
+  if (popping && !VEC_empty (token_and_value, token_fifo))
     goto do_pop;
   popping = 0;
 
@@ -1435,14 +1438,14 @@ yylex (void)
   /* Read any sequence of alternating "." and identifier tokens into
      the token FIFO.  */
   current.value = yylval;
-  token_fifo.push_back (current);
+  VEC_safe_push (token_and_value, token_fifo, &current);
   last_was_dot = current.token == '.';
 
   while (1)
     {
       current.token = lex_one_token (pstate);
       current.value = yylval;
-      token_fifo.push_back (current);
+      VEC_safe_push (token_and_value, token_fifo, &current);
 
       if ((last_was_dot && current.token != IDENTIFIER)
 	  || (!last_was_dot && current.token != '.'))
@@ -1454,17 +1457,17 @@ yylex (void)
 
   /* We always read one extra token, so compute the number of tokens
      to examine accordingly.  */
-  last_to_examine = token_fifo.size () - 2;
+  last_to_examine = VEC_length (token_and_value, token_fifo) - 2;
   next_to_examine = 0;
 
-  current = token_fifo[next_to_examine];
+  current = *VEC_index (token_and_value, token_fifo, next_to_examine);
   ++next_to_examine;
 
   /* If we are not dealing with a typename, now is the time to find out.  */
   if (current.token == IDENTIFIER)
     {
       yylval = current.value;
-      current.token = classify_name (pstate, pstate->expression_context_block);
+      current.token = classify_name (pstate, expression_context_block);
       current.value = yylval;
     }
 
@@ -1480,36 +1483,35 @@ yylex (void)
 
       while (next_to_examine <= last_to_examine)
 	{
-	  token_and_value next;
+	  token_and_value *next;
 
-	  next = token_fifo[next_to_examine];
+	  next = VEC_index (token_and_value, token_fifo, next_to_examine);
 	  ++next_to_examine;
 
-	  if (next.token == IDENTIFIER && last_was_dot)
+	  if (next->token == IDENTIFIER && last_was_dot)
 	    {
 	      /* Update the partial name we are constructing.  */
               obstack_grow_str (&name_obstack, ".");
-	      obstack_grow (&name_obstack, next.value.sval.ptr,
-			    next.value.sval.length);
+	      obstack_grow (&name_obstack, next->value.sval.ptr,
+			    next->value.sval.length);
 
 	      yylval.sval.ptr = (char *) obstack_base (&name_obstack);
 	      yylval.sval.length = obstack_object_size (&name_obstack);
 
-	      current.token = classify_name (pstate,
-					     pstate->expression_context_block);
+	      current.token = classify_name (pstate, expression_context_block);
 	      current.value = yylval;
 
 	      /* We keep going until we find a TYPENAME.  */
 	      if (current.token == TYPENAME)
 		{
 		  /* Install it as the first token in the FIFO.  */
-		  token_fifo[0] = current;
-		  token_fifo.erase (token_fifo.begin () + 1,
-				    token_fifo.begin () + next_to_examine);
+		  VEC_replace (token_and_value, token_fifo, 0, &current);
+		  VEC_block_remove (token_and_value, token_fifo, 1,
+				    next_to_examine - 1);
 		  break;
 		}
 	    }
-	  else if (next.token == '.' && !last_was_dot)
+	  else if (next->token == '.' && !last_was_dot)
 	    last_was_dot = 1;
 	  else
 	    {
@@ -1520,7 +1522,7 @@ yylex (void)
 
       /* Reset our current token back to the start, if we found nothing
 	 this means that we will just jump to do pop.  */
-      current = token_fifo[0];
+      current = *VEC_index (token_and_value, token_fifo, 0);
       next_to_examine = 1;
     }
   if (current.token != TYPENAME && current.token != '.')
@@ -1533,7 +1535,7 @@ yylex (void)
   else
     {
       gdb_assert (current.token == TYPENAME);
-      search_block = pstate->expression_context_block;
+      search_block = expression_context_block;
       obstack_grow (&name_obstack, current.value.sval.ptr,
 		    current.value.sval.length);
       context_type = current.value.tsym.type;
@@ -1544,16 +1546,16 @@ yylex (void)
 
   while (next_to_examine <= last_to_examine)
     {
-      token_and_value next;
+      token_and_value *next;
 
-      next = token_fifo[next_to_examine];
+      next = VEC_index (token_and_value, token_fifo, next_to_examine);
       ++next_to_examine;
 
-      if (next.token == IDENTIFIER && last_was_dot)
+      if (next->token == IDENTIFIER && last_was_dot)
 	{
 	  int classification;
 
-	  yylval = next.value;
+	  yylval = next->value;
 	  classification = classify_inner_name (pstate, search_block,
 						context_type);
 	  /* We keep going until we either run out of names, or until
@@ -1570,8 +1572,8 @@ yylex (void)
 	      /* We don't want to put a leading "." into the name.  */
               obstack_grow_str (&name_obstack, ".");
 	    }
-	  obstack_grow (&name_obstack, next.value.sval.ptr,
-			next.value.sval.length);
+	  obstack_grow (&name_obstack, next->value.sval.ptr,
+			next->value.sval.length);
 
 	  yylval.sval.ptr = (char *) obstack_base (&name_obstack);
 	  yylval.sval.length = obstack_object_size (&name_obstack);
@@ -1585,7 +1587,7 @@ yylex (void)
 
 	  context_type = yylval.tsym.type;
 	}
-      else if (next.token == '.' && !last_was_dot)
+      else if (next->token == '.' && !last_was_dot)
 	last_was_dot = 1;
       else
 	{
@@ -1598,15 +1600,14 @@ yylex (void)
      the FIFO, and delete the other constituent tokens.  */
   if (checkpoint > 0)
     {
-      token_fifo[0] = current;
+      VEC_replace (token_and_value, token_fifo, 0, &current);
       if (checkpoint > 1)
-	token_fifo.erase (token_fifo.begin () + 1,
-			  token_fifo.begin () + checkpoint);
+	VEC_block_remove (token_and_value, token_fifo, 1, checkpoint - 1);
     }
 
  do_pop:
-  current = token_fifo[0];
-  token_fifo.erase (token_fifo.begin ());
+  current = *VEC_index (token_and_value, token_fifo, 0);
+  VEC_ordered_remove (token_and_value, token_fifo, 0);
   yylval = current.value;
   return current.token;
 }
@@ -1622,28 +1623,23 @@ d_parse (struct parser_state *par_state)
   scoped_restore restore_yydebug = make_scoped_restore (&yydebug,
 							parser_debug);
 
-  struct type_stack stack;
-  scoped_restore restore_type_stack = make_scoped_restore (&type_stack,
-							   &stack);
-
   /* Initialize some state used by the lexer.  */
   last_was_structop = 0;
   saw_name_at_eof = 0;
-  paren_depth = 0;
 
-  token_fifo.clear ();
+  VEC_free (token_and_value, token_fifo);
   popping = 0;
   name_obstack.clear ();
 
   return yyparse ();
 }
 
-static void
+void
 yyerror (const char *msg)
 {
-  if (pstate->prev_lexptr)
-    pstate->lexptr = pstate->prev_lexptr;
+  if (prev_lexptr)
+    lexptr = prev_lexptr;
 
-  error (_("A %s in expression, near `%s'."), msg, pstate->lexptr);
+  error (_("A %s in expression, near `%s'."), (msg ? msg : "error"), lexptr);
 }
 

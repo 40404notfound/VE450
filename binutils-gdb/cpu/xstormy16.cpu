@@ -1,7 +1,26 @@
 ; xstormy16 CPU core description. -*- Scheme -*-
-; Copyright (C) 2001, 2002, 2003, 2006 Red Hat, Inc.
-; This file is part of CGEN.
-; See file COPYING.CGEN for details.
+; Copyright 2011 Free Software Foundation, Inc.
+;
+; Contributed by Red Hat Inc;
+;
+; This file is part of the GNU Binutils.
+;
+; This program is free software; you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation; either version 3 of the License, or
+; (at your option) any later version.
+;
+; This program is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+; GNU General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this program; if not, write to the Free Software
+; Foundation, Inc., 51 Franklin Street - Fifth Floor, Boston,
+; MA 02110-1301, USA.
+
+(define-rtl-version 0 8)
 
 (include "simplify.inc")
 
@@ -78,7 +97,7 @@
 
 (define-keyword
   (name gr-names)
-  (print-name h-gr)
+  (enum-prefix H-GR-)
   (values (r0 0) (r1 1) (r2 2) (r3 3)
 	  (r4 4) (r5 5) (r6 6) (r7 7)
 	  (r8 8) (r9 9) (r10 10) (r11 11)
@@ -87,7 +106,7 @@
 
 (define-keyword
   (name gr-Rb-names)
-  (print-name h-Rbj)
+  (enum-prefix H-RBJ-)
   (values (r8 0) (r9 1) (r10 2) (r11 3)
 	  (r12 4) (r13 5) (r14 6) (r15 7)
 	  (psw 6) (sp 7)))
@@ -522,6 +541,12 @@
 (define-pmacro (set-alignfix-mem where what)
   (set (mem HI (and where #xFFFE)) what))
 
+(define-pmacro (alignfix-mem-far where)
+  (mem HI (and where #xFFFFFFFE)))
+
+(define-pmacro (set-alignfix-mem-far where what)
+  (set (mem HI (and where #xFFFFFFFE)) what))
+
 (dni movlmemimm
      "Move immediate to low memory"
      ()
@@ -723,7 +748,7 @@
 		   (set-alignfix-mem (add Rs imm12) Rdm)
 		   (set (mem QI (add Rs imm12)) Rdm))
 	       (set-psw-nowrite (index-of Rdm) Rdm ws2)
-	       (set Rs (add Rs 1)))
+	       (set Rs (add Rs (add ws2 1))))
      ()
 )
 
@@ -733,7 +758,7 @@
      ("mov$ws2 (--$Rs,$imm12),$Rdm")
      (+ OP1_6 OP2A_A ws2 Rs OP4M_1 Rdm OP5_0 imm12)
      (sequence ()
-	       (set Rs (sub Rs 1))
+	       (set Rs (sub Rs (add ws2 1)))
 	       (set-psw-nowrite (index-of Rdm) Rdm ws2)
 	       (if ws2
 		   (set-alignfix-mem (add Rs imm12) Rdm)
@@ -822,7 +847,7 @@
      ("movf$ws2 $Rdm,($Rs)")
      (+ OP1_7 OP2A_4 ws2 Rs OP4M_0 Rdm)
      (if ws2
-	 (set-psw Rdm (index-of Rdm) (alignfix-mem (or (sll SI R8 16) Rs)) ws2)
+	 (set-psw Rdm (index-of Rdm) (alignfix-mem-far (or (sll SI R8 16) Rs)) ws2)
 	 (set-psw Rdm (index-of Rdm) (and #xFF (mem QI (or (sll SI R8 16) Rs))) ws2))
      ()
 )
@@ -834,7 +859,7 @@
      (+ OP1_6 OP2A_4 ws2 Rs OP4M_0 Rdm)
      (sequence ()
 	       (if ws2
-		   (set-psw Rdm (index-of Rdm) (alignfix-mem (join SI HI R8 Rs)) ws2)
+		   (set-psw Rdm (index-of Rdm) (alignfix-mem-far (join SI HI R8 Rs)) ws2)
 		   (set-psw Rdm (index-of Rdm) (and #xFF (mem QI (join SI HI R8 Rs))) ws2))
 	       (set Rs (add Rs (add ws2 1))))
      ()
@@ -848,7 +873,7 @@
      (sequence ()
 	       (set Rs (sub Rs (add ws2 1)))
 	       (if ws2
-		   (set-psw Rdm (index-of Rdm) (alignfix-mem (join SI HI R8 Rs)) ws2)
+		   (set-psw Rdm (index-of Rdm) (alignfix-mem-far (join SI HI R8 Rs)) ws2)
 		   (set-psw Rdm (index-of Rdm) (and #xFF (mem QI (join SI HI R8 Rs))) ws2)))
      ()
 )
@@ -860,7 +885,7 @@
      (+ OP1_7 OP2A_6 ws2 Rs OP4M_0 Rdm)
      (sequence ()
 	       (if ws2
-		   (set-alignfix-mem (join SI HI R8 Rs) Rdm)
+		   (set-alignfix-mem-far (join SI HI R8 Rs) Rdm)
 		   (set (mem QI (join SI HI R8 Rs)) Rdm))
 	       (set-psw-nowrite (index-of Rdm) Rdm ws2))
      ()
@@ -873,7 +898,7 @@
      (+ OP1_6 OP2A_6 ws2 Rs OP4M_0 Rdm)
      (sequence ()
 	       (if ws2
-		   (set-alignfix-mem (join SI HI R8 Rs) Rdm)
+		   (set-alignfix-mem-far (join SI HI R8 Rs) Rdm)
 		   (set (mem QI (join SI HI R8 Rs)) Rdm))
 	       (set-psw-nowrite (index-of Rdm) Rdm ws2)
 	       (set Rs (add Rs (add ws2 1))))
@@ -889,7 +914,7 @@
 	       (set-psw-nowrite (index-of Rdm) Rdm ws2)
 	       (set Rs (sub Rs (add ws2 1)))
 	       (if ws2
-		   (set-alignfix-mem (join SI HI R8 Rs) Rdm)
+		   (set-alignfix-mem-far (join SI HI R8 Rs) Rdm)
 		   (set (mem QI (join SI HI R8 Rs)) Rdm)))
      ()
 )
@@ -900,7 +925,7 @@
      ("movf$ws2 $Rdm,($Rb,$Rs,$imm12)")
      (+ OP1_7 OP2A_4 ws2 Rs OP4M_1 Rdm OP5A_0 Rb imm12)
      (if ws2
-	 (set-psw Rdm (index-of Rdm) (alignfix-mem (add (join SI HI Rb Rs) imm12)) ws2)
+	 (set-psw Rdm (index-of Rdm) (alignfix-mem-far (add (join SI HI Rb Rs) imm12)) ws2)
 	 (set-psw Rdm (index-of Rdm) (and #xFF (mem QI (add (join SI HI Rb Rs) imm12))) ws2))
      ()
 )
@@ -912,9 +937,13 @@
      (+ OP1_6 OP2A_4 ws2 Rs OP4M_1 Rdm OP5A_0 Rb imm12)
      (sequence ()
 	       (if ws2
-		   (set-psw Rdm (index-of Rdm) (alignfix-mem (add (join SI HI Rb Rs) imm12)) ws2)
+		   (set-psw Rdm (index-of Rdm) (alignfix-mem-far (add (join SI HI Rb Rs) imm12)) ws2)
 		   (set-psw Rdm (index-of Rdm) (and #xFF (mem QI (add (join SI HI Rb Rs) imm12))) ws2))
-	       (set Rs (add Rs (add ws2 1))))
+	       (set Rs (add Rs (add ws2 1)))
+	       ; Note - despite the XStormy16 ISA documentation the
+	       ; addition *is* propogated into the base register.
+	       (if (eq Rs 0) (set Rb (add Rb 1)))
+	       )
      ()
 )
 
@@ -924,9 +953,12 @@
      ("movf$ws2 $Rdm,($Rb,--$Rs,$imm12)")
      (+ OP1_6 OP2A_C ws2 Rs OP4M_1 Rdm OP5A_0 Rb imm12)
      (sequence ()
+	       ; Note - despite the XStormy16 ISA documentation the
+	       ; subtraction *is* propogated into the base register.
+	       (if (eq Rs 0) (set Rb (sub Rb 1)))
 	       (set Rs (sub Rs (add ws2 1)))
 	       (if ws2
-		   (set-psw Rdm (index-of Rdm) (alignfix-mem (add (join SI HI Rb Rs) imm12)) ws2)
+		   (set-psw Rdm (index-of Rdm) (alignfix-mem-far (add (join SI HI Rb Rs) imm12)) ws2)
 		   (set-psw Rdm (index-of Rdm) (and #xFF (mem QI (add (join SI HI Rb Rs) imm12))) ws2)))
      ()
 )
@@ -956,7 +988,11 @@
 		   (set (mem HI (and (add (join SI HI Rb Rs) imm12) #xFFFFFFFE)) Rdm)
 		   (set (mem QI (add (join SI HI Rb Rs) imm12)) Rdm))
 	       (set-psw-nowrite (index-of Rdm) Rdm ws2)
-	       (set Rs (add Rs (add ws2 1))))
+	       (set Rs (add Rs (add ws2 1)))
+	       ; Note - despite the XStormy16 ISA documentation the
+	       ; addition *is* propogated into the base register.
+	       (if (eq Rs 0) (set Rb (add Rb 1)))
+	       )
      ()
 )
 
@@ -966,7 +1002,10 @@
      ("movf$ws2 ($Rb,--$Rs,$imm12),$Rdm")
      (+ OP1_6 OP2A_E ws2 Rs OP4M_1 Rdm OP5A_0 Rb imm12)
      (sequence ()
-	       (set Rs (sub Rs 1))
+	       ; Note - despite the XStormy16 ISA documentation the
+	       ; subtraction *is* propogated into the base register.
+	       (if (eq Rs 0) (set Rb (sub Rb 1)))
+	       (set Rs (sub Rs (add ws2 1)))
 	       (set-psw-nowrite (index-of Rdm) Rdm ws2)
 	       (if ws2
 		   (set (mem HI (and (add (join SI HI Rb Rs) imm12) #xFFFFFFFE)) Rdm)

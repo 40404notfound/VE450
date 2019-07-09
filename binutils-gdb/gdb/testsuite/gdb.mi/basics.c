@@ -1,4 +1,4 @@
-/* Copyright 1999-2019 Free Software Foundation, Inc.
+/* Copyright 1999-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -19,8 +19,6 @@
  *	This simple program that passes different types of arguments
  *      on function calls.  Useful to test printing frames, stepping, etc.
  */
-
-unsigned long long global_zero = 0;
 
 int callee4 (void)
 {

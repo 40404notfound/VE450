@@ -1,6 +1,6 @@
 /* General functions for the WDB TUI.
 
-   Copyright (C) 1998-2019 Free Software Foundation, Inc.
+   Copyright (C) 1998-2018 Free Software Foundation, Inc.
 
    Contributed by Hewlett-Packard Company.
 
@@ -96,7 +96,7 @@ tui_rl_switch_mode (int notused1, int notused2)
 
   /* Don't let exceptions escape.  We're in the middle of a readline
      callback that isn't prepared for that.  */
-  try
+  TRY
     {
       if (tui_active)
 	{
@@ -110,13 +110,14 @@ tui_rl_switch_mode (int notused1, int notused2)
 	  tui_enable ();
 	}
     }
-  catch (const gdb_exception &ex)
+  CATCH (ex, RETURN_MASK_ALL)
     {
       exception_print (gdb_stderr, ex);
 
       if (!tui_active)
 	rl_prep_terminal (0);
     }
+  END_CATCH
 
   /* Clear the readline in case switching occurred in middle of
      something.  */
@@ -409,14 +410,12 @@ tui_enable (void)
     {
       WINDOW *w;
       SCREEN *s;
-#ifndef __MINGW32__
-       const char *cap;
-#endif
+      const char *cap;
       const char *interp;
 
       /* If the top level interpreter is not the console/tui (e.g.,
 	 MI), enabling curses will certainly lose.  */
-      interp = top_level_interpreter ()->name ();
+      interp = interp_name (top_level_interpreter ());
       if (strcmp (interp, INTERP_TUI) != 0)
 	error (_("Cannot enable the TUI when the interpreter is '%s'"), interp);
 
@@ -438,15 +437,6 @@ tui_enable (void)
 		 gdb_getenv_term ());
 	}
       w = stdscr;
-      if (has_colors ())
-	{
-#ifdef HAVE_USE_DEFAULT_COLORS
-	  /* Ncurses extension to help with resetting to the default
-	     color.  */
-	  use_default_colors ();
-#endif
-	  start_color ();
-	}
 
       /* Check required terminal capabilities.  The MinGW port of
 	 ncurses does have them, but doesn't expose them through "cup".  */
@@ -572,7 +562,7 @@ void
 strcat_to_buf (char *buf, int buflen, 
 	       const char *item_to_add)
 {
-  if (item_to_add != NULL && buf != NULL)
+  if (item_to_add != (char *) NULL && buf != (char *) NULL)
     {
       if ((strlen (buf) + strlen (item_to_add)) <= buflen)
 	strcat (buf, item_to_add);

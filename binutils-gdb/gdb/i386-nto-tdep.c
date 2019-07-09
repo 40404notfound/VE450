@@ -1,6 +1,6 @@
 /* Target-dependent code for QNX Neutrino x86.
 
-   Copyright (C) 2003-2019 Free Software Foundation, Inc.
+   Copyright (C) 2003-2018 Free Software Foundation, Inc.
 
    Contributed by QNX Software Systems Ltd.
 
@@ -250,7 +250,7 @@ i386nto_regset_fill (const struct regcache *regcache, int regset, char *data)
 	{
 	  int offset = nto_reg_offset (regno);
 	  if (offset != -1)
-	    regcache->raw_collect (regno, data + offset);
+	    regcache_raw_collect (regcache, regno, data + offset);
 	}
     }
   else if (regset == NTO_REG_FLOAT)

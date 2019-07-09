@@ -1,5 +1,5 @@
 /* DLX specific support for 32-bit ELF
-   Copyright (C) 2002-2019 Free Software Foundation, Inc.
+   Copyright (C) 2002-2018 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -138,7 +138,7 @@ elf32_dlx_relocate16 (bfd *abfd,
   if (strcmp (input_section->name, symbol->section->output_section->name) != 0)
     {
       _bfd_error_handler
-	(_("branch (PC rel16) to section (%s) not supported"),
+	(_("BFD Link Error: branch (PC rel16) to section (%s) not supported"),
 	 symbol->section->output_section->name);
       return bfd_reloc_undefined;
     }
@@ -201,7 +201,7 @@ elf32_dlx_relocate26 (bfd *abfd,
   if (strcmp (input_section->name, symbol->section->output_section->name) != 0)
     {
       _bfd_error_handler
-	(_("jump (PC rel26) to section (%s) not supported"),
+	(_("BFD Link Error: jump (PC rel26) to section (%s) not supported"),
 	 symbol->section->output_section->name);
       return bfd_reloc_undefined;
     }
@@ -465,7 +465,9 @@ elf32_dlx_check_relocs (bfd *abfd,
 	/* This relocation describes which C++ vtable entries are actually
 	   used.  Record for later use during GC.  */
 	case R_DLX_GNU_VTENTRY:
-	  if (!bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
+	  BFD_ASSERT (h != NULL);
+	  if (h != NULL
+	      && !bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
 	    return FALSE;
 	  break;
 	}
@@ -528,7 +530,7 @@ elf32_dlx_reloc_name_lookup (bfd *abfd ATTRIBUTE_UNUSED,
 }
 
 static reloc_howto_type *
-dlx_rtype_to_howto (bfd *abfd, unsigned int r_type)
+dlx_rtype_to_howto (unsigned int r_type)
 {
   switch (r_type)
     {
@@ -543,33 +545,31 @@ dlx_rtype_to_howto (bfd *abfd, unsigned int r_type)
     default:
       if (r_type >= (unsigned int) R_DLX_max)
 	{
-	  _bfd_error_handler (_("%pB: unsupported relocation type %#x"),
-			      abfd, r_type);
-	  bfd_set_error (bfd_error_bad_value);
-	  return NULL;
+	  _bfd_error_handler (_("Invalid DLX reloc number: %d"), r_type);
+	  r_type = 0;
 	}
       return & dlx_elf_howto_table[r_type];
     }
 }
 
-static bfd_boolean
+static void
 elf32_dlx_info_to_howto (bfd * abfd ATTRIBUTE_UNUSED,
 			 arelent * cache_ptr ATTRIBUTE_UNUSED,
 			 Elf_Internal_Rela * dst ATTRIBUTE_UNUSED)
 {
-  return FALSE;
+  abort ();
 }
 
-static bfd_boolean
-elf32_dlx_info_to_howto_rel (bfd *abfd,
+static void
+elf32_dlx_info_to_howto_rel (bfd *abfd ATTRIBUTE_UNUSED,
 			     arelent *cache_ptr,
 			     Elf_Internal_Rela *dst)
 {
   unsigned int r_type;
 
   r_type = ELF32_R_TYPE (dst->r_info);
-  cache_ptr->howto = dlx_rtype_to_howto (abfd, r_type);
-  return cache_ptr->howto != NULL;
+  cache_ptr->howto = dlx_rtype_to_howto (r_type);
+  return;
 }
 
 #define TARGET_BIG_SYM		dlx_elf32_be_vec

@@ -1,6 +1,6 @@
 dnl Process this file with autoconf to produce a configure script
 dnl
-dnl   Copyright (C) 2012-2019 Free Software Foundation, Inc.
+dnl   Copyright (C) 2012-2018 Free Software Foundation, Inc.
 dnl
 dnl This file is free software; you can redistribute it and/or modify
 dnl it under the terms of the GNU General Public License as published by
@@ -17,6 +17,7 @@ dnl along with this program; see the file COPYING3.  If not see
 dnl <http://www.gnu.org/licenses/>.
 dnl
 
+AC_PREREQ(2.59)
 m4_include([../bfd/version.m4])
 AC_INIT([ld], BFD_VERSION)
 AC_CONFIG_SRCDIR(ldmain.c)
@@ -176,16 +177,6 @@ AC_ARG_ENABLE(relro,
   no)  ac_default_ld_z_relro=0 ;;
 esac])dnl
 
-# Decide if -z separate-code should be enabled in ELF linker by default.
-ac_default_ld_z_separate_code=unset
-AC_ARG_ENABLE(separate-code,
-	      AS_HELP_STRING([--enable-separate-code],
-	      [enable -z separate-code in ELF linker by default]),
-[case "${enableval}" in
-  yes) ac_default_ld_z_separate_code=1 ;;
-  no) ac_default_ld_z_separate_code=0 ;;
-esac])
-
 # Decide which "--hash-style" to use by default
 # Provide a configure time option to override our default.
 AC_ARG_ENABLE([default-hash-style],
@@ -236,7 +227,7 @@ fi
 
 # host-specific stuff:
 
-ALL_LINGUAS="bg da de es fi fr ga id it ja pt_BR ru sr sv tr uk vi zh_CN zh_TW"
+ALL_LINGUAS="bg da de es fi fr ga id it ru sr sv tr uk vi zh_CN zh_TW pt_BR"
 ZW_GNU_GETTEXT_SISTER_DIR
 AM_PO_SUBDIRS
 
@@ -319,7 +310,12 @@ EMUL=
 all_emuls=
 all_emul_extras=
 all_libpath=
-TDIRS=
+
+dnl We need to get an arbitrary number of tdir definitions into
+dnl Makefile.  We can't do it using AC_SUBST, because autoconf does
+dnl not permit literal newlines in an AC_SUBST variables.  So we use a
+dnl file.
+rm -f tdirs
 
 # If the host is 64-bit, then we enable 64-bit targets by default.
 # This is consistent with what ../bfd/configure.ac does.
@@ -371,8 +367,7 @@ do
 	  all_emuls="$all_emuls e${i}.o"
 	  eval result=\$tdir_$i
 	  test -z "$result" && result=$targ_alias
-	  TDIRS="$TDIRS
-tdir_$i=$result"
+	  echo tdir_$i=$result >> tdirs
 	  case "${i}" in
 	  *elf*)
 	    elf_list_options=TRUE
@@ -384,11 +379,7 @@ tdir_$i=$result"
 	    ;;
 	  esac
 	  if test "$elf_list_options" = "TRUE"; then
-	    source_sh()
-	    {
-	      . $1
-	    }
-	    source_sh ${srcdir}/emulparams/${i}.sh
+	    . ${srcdir}/emulparams/${i}.sh
 	    if test x${GENERATE_SHLIB_SCRIPT} = xyes; then
 	      elf_shlib_list_options=TRUE
 	    fi
@@ -443,13 +434,6 @@ AC_DEFINE_UNQUOTED(DEFAULT_LD_Z_RELRO,
   $ac_default_ld_z_relro,
   [Define to 1 if you want to enable -z relro in ELF linker by default.])
 
-if test "${ac_default_ld_z_separate_code}" = unset; then
-  ac_default_ld_z_separate_code=0
-fi
-AC_DEFINE_UNQUOTED(DEFAULT_LD_Z_SEPARATE_CODE,
-  $ac_default_ld_z_separate_code,
-  [Define to 1 if you want to enable -z separate-code in ELF linker by default.])
-
 AC_DEFINE_UNQUOTED([DEFAULT_EMIT_SYSV_HASH],
   [$ac_default_emit_sysv_hash],
   [Define to 1 if you want to emit sysv hash in the ELF linker by default.])
@@ -463,8 +447,8 @@ AC_SUBST(elf_shlib_list_options)
 AC_SUBST(elf_plt_unwind_list_options)
 AC_SUBST(EMUL)
 
-AC_SUBST(TDIRS)
-AM_SUBST_NOTMAKE(TDIRS)
+TDIRS=tdirs
+AC_SUBST_FILE(TDIRS)
 
 if test x${all_targets} = xtrue; then
   if test x${want64} = xtrue; then
@@ -506,26 +490,6 @@ if test x${EXTRA_SHLIB_EXTENSION} != x ; then
   AC_DEFINE_UNQUOTED(EXTRA_SHLIB_EXTENSION, "$EXTRA_SHLIB_EXTENSION",
    [Additional extension a shared object might have.])
 fi
-
-AC_CONFIG_COMMANDS([default],
-[[
-case "$srcdir" in
-  .) srcdirpre= ;;
-  *) srcdirpre='$(srcdir)/' ;;
-esac
-POFILES=
-GMOFILES=
-for lang in dummy $OBSOLETE_ALL_LINGUAS; do
-  if test $lang != dummy; then
-    POFILES="$POFILES $srcdirpre$lang.po"
-    GMOFILES="$GMOFILES $srcdirpre$lang.gmo"
-  fi
-done
-sed -e '/^SRC-POTFILES =/r po/SRC-POTFILES' \
-    -e '/^BLD-POTFILES =/r po/BLD-POTFILES' \
-    -e "s,@POFILES@,$POFILES," \
-    -e "s,@GMOFILES@,$GMOFILES," \
-    po/Makefile.in > po/Makefile]],[[]])
 
 dnl Required by html, pdf, install-pdf and install-html
 AC_SUBST(datarootdir)

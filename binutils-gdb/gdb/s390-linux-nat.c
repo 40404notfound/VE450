@@ -1,5 +1,5 @@
 /* S390 native-dependent code for GDB, the GNU debugger.
-   Copyright (C) 2001-2019 Free Software Foundation, Inc.
+   Copyright (C) 2001-2018 Free Software Foundation, Inc.
 
    Contributed by D.J. Barrow (djbarrow@de.ibm.com,barrow_dj@yahoo.com)
    for IBM Deutschland Entwicklung GmbH, IBM Corporation.
@@ -30,7 +30,6 @@
 #include "nat/linux-ptrace.h"
 #include "gdbcmd.h"
 
-#include "s390-tdep.h"
 #include "s390-linux-tdep.h"
 #include "elf/common.h"
 
@@ -42,7 +41,6 @@
 #include <elf.h>
 #include <algorithm>
 #include "inf-ptrace.h"
-#include "linux-tdep.h"
 
 /* Per-thread arch-specific data.  */
 
@@ -109,41 +107,6 @@ static const struct regset s390_64_gregset =
 #define PER_CONTROL_SUSPENSION		PER_BIT (41)
 #define PER_CONTROL_ALTERATION		PER_BIT (42)
 
-class s390_linux_nat_target final : public linux_nat_target
-{
-public:
-  /* Add our register access methods.  */
-  void fetch_registers (struct regcache *, int) override;
-  void store_registers (struct regcache *, int) override;
-
-  /* Add our watchpoint methods.  */
-  int can_use_hw_breakpoint (enum bptype, int, int) override;
-  int insert_hw_breakpoint (struct gdbarch *, struct bp_target_info *)
-    override;
-  int remove_hw_breakpoint (struct gdbarch *, struct bp_target_info *)
-    override;
-  int region_ok_for_hw_watchpoint (CORE_ADDR, int) override;
-  bool stopped_by_watchpoint () override;
-  int insert_watchpoint (CORE_ADDR, int, enum target_hw_bp_type,
-			 struct expression *) override;
-  int remove_watchpoint (CORE_ADDR, int, enum target_hw_bp_type,
-			 struct expression *) override;
-
-  /* Detect target architecture.  */
-  const struct target_desc *read_description () override;
-  int auxv_parse (gdb_byte **readptr,
-		  gdb_byte *endptr, CORE_ADDR *typep, CORE_ADDR *valp)
-    override;
-
-  /* Override linux_nat_target low methods.  */
-  void low_new_thread (struct lwp_info *lp) override;
-  void low_delete_thread (struct arch_lwp_info *lp) override;
-  void low_prepare_to_resume (struct lwp_info *lp) override;
-  void low_new_fork (struct lwp_info *parent, pid_t child_pid) override;
-  void low_forget_process (pid_t pid) override;
-};
-
-static s390_linux_nat_target the_s390_linux_nat_target;
 
 /* Fill GDB's register array with the general-purpose register values
    in *REGP.
@@ -170,10 +133,10 @@ supply_gregset (struct regcache *regcache, const gregset_t *regp)
       pswa = extract_unsigned_integer ((const gdb_byte *) regp
 				       + S390_PSWA_OFFSET, 8, byte_order);
       store_unsigned_integer (buf, 4, byte_order, (pswm >> 32) | 0x80000);
-      regcache->raw_supply (S390_PSWM_REGNUM, buf);
+      regcache_raw_supply (regcache, S390_PSWM_REGNUM, buf);
       store_unsigned_integer (buf, 4, byte_order,
 			      (pswa & 0x7fffffff) | (pswm & 0x80000000));
-      regcache->raw_supply (S390_PSWA_REGNUM, buf);
+      regcache_raw_supply (regcache, S390_PSWA_REGNUM, buf);
       return;
     }
 #endif
@@ -210,14 +173,14 @@ fill_gregset (const struct regcache *regcache, gregset_t *regp, int regno)
 	  if (regno == -1 || regno == S390_PSWM_REGNUM)
 	    {
 	      pswm &= 0x80000000;
-	      regcache->raw_collect (S390_PSWM_REGNUM, buf);
+	      regcache_raw_collect (regcache, S390_PSWM_REGNUM, buf);
 	      pswm |= (extract_unsigned_integer (buf, 4, byte_order)
 		       & 0xfff7ffff) << 32;
 	    }
 
 	  if (regno == -1 || regno == S390_PSWA_REGNUM)
 	    {
-	      regcache->raw_collect (S390_PSWA_REGNUM, buf);
+	      regcache_raw_collect (regcache, S390_PSWA_REGNUM, buf);
 	      pswa = extract_unsigned_integer (buf, 4, byte_order);
 	      pswm ^= (pswm ^ pswa) & 0x80000000;
 	      pswa &= 0x7fffffff;
@@ -258,9 +221,9 @@ static int
 s390_inferior_tid (void)
 {
   /* GNU/Linux LWP ID's are process ID's.  */
-  int tid = inferior_ptid.lwp ();
+  int tid = ptid_get_lwp (inferior_ptid);
   if (tid == 0)
-    tid = inferior_ptid.pid (); /* Not a threaded program.  */
+    tid = ptid_get_pid (inferior_ptid); /* Not a threaded program.  */
 
   return tid;
 }
@@ -405,10 +368,11 @@ check_regset (int tid, int regset, int regsize)
 
 /* Fetch register REGNUM from the child process.  If REGNUM is -1, do
    this for all registers.  */
-void
-s390_linux_nat_target::fetch_registers (struct regcache *regcache, int regnum)
+static void
+s390_linux_fetch_inferior_registers (struct target_ops *ops,
+				     struct regcache *regcache, int regnum)
 {
-  pid_t tid = get_ptrace_pid (regcache->ptid ());
+  pid_t tid = get_ptrace_pid (regcache_get_ptid (regcache));
 
   if (regnum == -1 || S390_IS_GREGSET_REGNUM (regnum))
     fetch_regs (regcache, tid);
@@ -459,10 +423,11 @@ s390_linux_nat_target::fetch_registers (struct regcache *regcache, int regnum)
 
 /* Store register REGNUM back into the child process.  If REGNUM is
    -1, do this for all registers.  */
-void
-s390_linux_nat_target::store_registers (struct regcache *regcache, int regnum)
+static void
+s390_linux_store_inferior_registers (struct target_ops *ops,
+				     struct regcache *regcache, int regnum)
 {
-  pid_t tid = get_ptrace_pid (regcache->ptid ());
+  pid_t tid = get_ptrace_pid (regcache_get_ptid (regcache));
 
   if (regnum == -1 || S390_IS_GREGSET_REGNUM (regnum))
     store_regs (regcache, tid, regnum);
@@ -581,8 +546,8 @@ s390_get_debug_reg_state (pid_t pid)
 /* Called whenever GDB is no longer debugging process PID.  It deletes
    data structures that keep track of hardware debug state.  */
 
-void
-s390_linux_nat_target::low_forget_process (pid_t pid)
+static void
+s390_forget_process (pid_t pid)
 {
   struct s390_process_info *proc, **proc_link;
 
@@ -607,8 +572,8 @@ s390_linux_nat_target::low_forget_process (pid_t pid)
 
 /* linux_nat_new_fork hook.   */
 
-void
-s390_linux_nat_target::low_new_fork (struct lwp_info *parent, pid_t child_pid)
+static void
+s390_linux_new_fork (struct lwp_info *parent, pid_t child_pid)
 {
   pid_t parent_pid;
   struct s390_debug_reg_state *parent_state;
@@ -622,7 +587,7 @@ s390_linux_nat_target::low_new_fork (struct lwp_info *parent, pid_t child_pid)
   /* GDB core assumes the child inherits the watchpoints/hw breakpoints of
      the parent.  So copy the debug state from parent to child.  */
 
-  parent_pid = parent->ptid.pid ();
+  parent_pid = ptid_get_pid (parent->ptid);
   parent_state = s390_get_debug_reg_state (parent_pid);
   child_state = s390_get_debug_reg_state (child_pid);
 
@@ -663,20 +628,21 @@ s390_show_debug_regs (int tid, const char *where)
 		per_info.lowcore.words.access_id);
 }
 
-bool
-s390_linux_nat_target::stopped_by_watchpoint ()
+static int
+s390_stopped_by_watchpoint (struct target_ops *ops)
 {
   struct s390_debug_reg_state *state
-    = s390_get_debug_reg_state (inferior_ptid.pid ());
+    = s390_get_debug_reg_state (ptid_get_pid (inferior_ptid));
   per_lowcore_bits per_lowcore;
   ptrace_area parea;
+  int result;
 
   if (show_debug_regs)
     s390_show_debug_regs (s390_inferior_tid (), "stop");
 
   /* Speed up common case.  */
   if (VEC_empty (s390_watch_area, state->watch_areas))
-    return false;
+    return 0;
 
   parea.len = sizeof (per_lowcore);
   parea.process_addr = (addr_t) & per_lowcore;
@@ -684,8 +650,8 @@ s390_linux_nat_target::stopped_by_watchpoint ()
   if (ptrace (PTRACE_PEEKUSR_AREA, s390_inferior_tid (), &parea, 0) < 0)
     perror_with_name (_("Couldn't retrieve watchpoint status"));
 
-  bool result = (per_lowcore.perc_storage_alteration == 1
-		 && per_lowcore.perc_store_real_address == 0);
+  result = (per_lowcore.perc_storage_alteration == 1
+	    && per_lowcore.perc_store_real_address == 0);
 
   if (result)
     {
@@ -700,11 +666,11 @@ s390_linux_nat_target::stopped_by_watchpoint ()
 
 /* Each time before resuming a thread, update its PER info.  */
 
-void
-s390_linux_nat_target::low_prepare_to_resume (struct lwp_info *lp)
+static void
+s390_prepare_to_resume (struct lwp_info *lp)
 {
   int tid;
-  pid_t pid = ptid_of_lwp (lp).pid ();
+  pid_t pid = ptid_get_pid (ptid_of_lwp (lp));
 
   per_struct per_info;
   ptrace_area parea;
@@ -730,7 +696,7 @@ s390_linux_nat_target::low_prepare_to_resume (struct lwp_info *lp)
 
   lp_priv->per_info_changed = 0;
 
-  tid = ptid_of_lwp (lp).lwp ();
+  tid = ptid_get_lwp (ptid_of_lwp (lp));
   if (tid == 0)
     tid = pid;
 
@@ -817,16 +783,16 @@ s390_mark_per_info_changed (struct lwp_info *lp)
 
 /* When attaching to a new thread, mark its PER info as changed.  */
 
-void
-s390_linux_nat_target::low_new_thread (struct lwp_info *lp)
+static void
+s390_new_thread (struct lwp_info *lp)
 {
   s390_mark_per_info_changed (lp);
 }
 
 /* Function to call when a thread is being deleted.  */
 
-void
-s390_linux_nat_target::low_delete_thread (struct arch_lwp_info *arch_lwp)
+static void
+s390_delete_thread (struct arch_lwp_info *arch_lwp)
 {
   xfree (arch_lwp);
 }
@@ -834,7 +800,7 @@ s390_linux_nat_target::low_delete_thread (struct arch_lwp_info *arch_lwp)
 /* Iterator callback for s390_refresh_per_info.  */
 
 static int
-s390_refresh_per_info_cb (struct lwp_info *lp)
+s390_refresh_per_info_cb (struct lwp_info *lp, void *arg)
 {
   s390_mark_per_info_changed (lp);
 
@@ -848,20 +814,20 @@ s390_refresh_per_info_cb (struct lwp_info *lp)
 static int
 s390_refresh_per_info (void)
 {
-  ptid_t pid_ptid = ptid_t (current_lwp_ptid ().pid ());
+  ptid_t pid_ptid = pid_to_ptid (ptid_get_pid (current_lwp_ptid ()));
 
-  iterate_over_lwps (pid_ptid, s390_refresh_per_info_cb);
+  iterate_over_lwps (pid_ptid, s390_refresh_per_info_cb, NULL);
   return 0;
 }
 
-int
-s390_linux_nat_target::insert_watchpoint (CORE_ADDR addr, int len,
-					  enum target_hw_bp_type type,
-					  struct expression *cond)
+static int
+s390_insert_watchpoint (struct target_ops *self,
+			CORE_ADDR addr, int len, enum target_hw_bp_type type,
+			struct expression *cond)
 {
   s390_watch_area area;
   struct s390_debug_reg_state *state
-    = s390_get_debug_reg_state (inferior_ptid.pid ());
+    = s390_get_debug_reg_state (ptid_get_pid (inferior_ptid));
 
   area.lo_addr = addr;
   area.hi_addr = addr + len - 1;
@@ -870,15 +836,15 @@ s390_linux_nat_target::insert_watchpoint (CORE_ADDR addr, int len,
   return s390_refresh_per_info ();
 }
 
-int
-s390_linux_nat_target::remove_watchpoint (CORE_ADDR addr, int len,
-					  enum target_hw_bp_type type,
-					  struct expression *cond)
+static int
+s390_remove_watchpoint (struct target_ops *self,
+			CORE_ADDR addr, int len, enum target_hw_bp_type type,
+			struct expression *cond)
 {
   unsigned ix;
   s390_watch_area *area;
   struct s390_debug_reg_state *state
-    = s390_get_debug_reg_state (inferior_ptid.pid ());
+    = s390_get_debug_reg_state (ptid_get_pid (inferior_ptid));
 
   for (ix = 0;
        VEC_iterate (s390_watch_area, state->watch_areas, ix, area);
@@ -898,9 +864,9 @@ s390_linux_nat_target::remove_watchpoint (CORE_ADDR addr, int len,
 
 /* Implement the "can_use_hw_breakpoint" target_ops method. */
 
-int
-s390_linux_nat_target::can_use_hw_breakpoint (enum bptype type,
-					      int cnt, int othertype)
+static int
+s390_can_use_hw_breakpoint (struct target_ops *self,
+			    enum bptype type, int cnt, int othertype)
 {
   if (type == bp_hardware_watchpoint || type == bp_hardware_breakpoint)
     return 1;
@@ -909,16 +875,17 @@ s390_linux_nat_target::can_use_hw_breakpoint (enum bptype type,
 
 /* Implement the "insert_hw_breakpoint" target_ops method.  */
 
-int
-s390_linux_nat_target::insert_hw_breakpoint (struct gdbarch *gdbarch,
-					     struct bp_target_info *bp_tgt)
+static int
+s390_insert_hw_breakpoint (struct target_ops *self,
+			   struct gdbarch *gdbarch,
+			   struct bp_target_info *bp_tgt)
 {
   s390_watch_area area;
   struct s390_debug_reg_state *state;
 
   area.lo_addr = bp_tgt->placed_address = bp_tgt->reqstd_address;
   area.hi_addr = area.lo_addr;
-  state = s390_get_debug_reg_state (inferior_ptid.pid ());
+  state = s390_get_debug_reg_state (ptid_get_pid (inferior_ptid));
   VEC_safe_push (s390_watch_area, state->break_areas, &area);
 
   return s390_refresh_per_info ();
@@ -926,15 +893,16 @@ s390_linux_nat_target::insert_hw_breakpoint (struct gdbarch *gdbarch,
 
 /* Implement the "remove_hw_breakpoint" target_ops method.  */
 
-int
-s390_linux_nat_target::remove_hw_breakpoint (struct gdbarch *gdbarch,
-					     struct bp_target_info *bp_tgt)
+static int
+s390_remove_hw_breakpoint (struct target_ops *self,
+			   struct gdbarch *gdbarch,
+			   struct bp_target_info *bp_tgt)
 {
   unsigned ix;
   struct watch_area *area;
   struct s390_debug_reg_state *state;
 
-  state = s390_get_debug_reg_state (inferior_ptid.pid ());
+  state = s390_get_debug_reg_state (ptid_get_pid (inferior_ptid));
   for (ix = 0;
        VEC_iterate (s390_watch_area, state->break_areas, ix, area);
        ix++)
@@ -951,8 +919,9 @@ s390_linux_nat_target::remove_hw_breakpoint (struct gdbarch *gdbarch,
   return -1;
 }
 
-int
-s390_linux_nat_target::region_ok_for_hw_watchpoint (CORE_ADDR addr, int cnt)
+static int
+s390_region_ok_for_hw_watchpoint (struct target_ops *self,
+				  CORE_ADDR addr, int cnt)
 {
   return 1;
 }
@@ -976,10 +945,9 @@ s390_target_wordsize (void)
   return wordsize;
 }
 
-int
-s390_linux_nat_target::auxv_parse (gdb_byte **readptr,
-				   gdb_byte *endptr, CORE_ADDR *typep,
-				   CORE_ADDR *valp)
+static int
+s390_auxv_parse (struct target_ops *ops, gdb_byte **readptr,
+		 gdb_byte *endptr, CORE_ADDR *typep, CORE_ADDR *valp)
 {
   int sizeof_auxv_field = s390_target_wordsize ();
   enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch ());
@@ -1000,8 +968,8 @@ s390_linux_nat_target::auxv_parse (gdb_byte **readptr,
   return 1;
 }
 
-const struct target_desc *
-s390_linux_nat_target::read_description ()
+static const struct target_desc *
+s390_read_description (struct target_ops *ops)
 {
   int tid = s390_inferior_tid ();
 
@@ -1017,8 +985,9 @@ s390_linux_nat_target::read_description ()
      that mode, report s390 architecture with 64-bit GPRs.  */
 #ifdef __s390x__
   {
-    CORE_ADDR hwcap = linux_get_hwcap (current_top_target ());
+    CORE_ADDR hwcap = 0;
 
+    target_auxv_search (&current_target, AT_HWCAP, &hwcap);
     have_regset_tdb = (hwcap & HWCAP_S390_TE)
       && check_regset (tid, NT_S390_TDB, s390_sizeof_tdbregset);
 
@@ -1063,9 +1032,36 @@ s390_linux_nat_target::read_description ()
 void
 _initialize_s390_nat (void)
 {
+  struct target_ops *t;
+
+  /* Fill in the generic GNU/Linux methods.  */
+  t = linux_target ();
+
+  /* Add our register access methods.  */
+  t->to_fetch_registers = s390_linux_fetch_inferior_registers;
+  t->to_store_registers = s390_linux_store_inferior_registers;
+
+  /* Add our watchpoint methods.  */
+  t->to_can_use_hw_breakpoint = s390_can_use_hw_breakpoint;
+  t->to_insert_hw_breakpoint = s390_insert_hw_breakpoint;
+  t->to_remove_hw_breakpoint = s390_remove_hw_breakpoint;
+  t->to_region_ok_for_hw_watchpoint = s390_region_ok_for_hw_watchpoint;
+  t->to_have_continuable_watchpoint = 1;
+  t->to_stopped_by_watchpoint = s390_stopped_by_watchpoint;
+  t->to_insert_watchpoint = s390_insert_watchpoint;
+  t->to_remove_watchpoint = s390_remove_watchpoint;
+
+  /* Detect target architecture.  */
+  t->to_read_description = s390_read_description;
+  t->to_auxv_parse = s390_auxv_parse;
+
   /* Register the target.  */
-  linux_target = &the_s390_linux_nat_target;
-  add_inf_child_target (&the_s390_linux_nat_target);
+  linux_nat_add_target (t);
+  linux_nat_set_new_thread (t, s390_new_thread);
+  linux_nat_set_delete_thread (t, s390_delete_thread);
+  linux_nat_set_prepare_to_resume (t, s390_prepare_to_resume);
+  linux_nat_set_forget_process (t, s390_forget_process);
+  linux_nat_set_new_fork (t, s390_linux_new_fork);
 
   /* A maintenance command to enable showing the PER state.  */
   add_setshow_boolean_cmd ("show-debug-regs", class_maintenance,

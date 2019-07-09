@@ -1,14 +1,14 @@
 /* THIS FILE IS GENERATED.  -*- buffer-read-only: t -*- vi:set ro:
   Original: tic6x-gp.xml */
 
-#include "common/tdesc.h"
+#include "arch/tdesc.h"
 
 static int
 create_feature_tic6x_gp (struct target_desc *result, long regnum)
 {
   struct tdesc_feature *feature;
 
-  feature = tdesc_create_feature (result, "org.gnu.gdb.tic6x.gp");
+  feature = tdesc_create_feature (result, "org.gnu.gdb.tic6x.gp", "tic6x-gp.xml");
   tdesc_create_reg (feature, "A16", regnum++, 1, NULL, 32, "uint32");
   tdesc_create_reg (feature, "A17", regnum++, 1, NULL, 32, "uint32");
   tdesc_create_reg (feature, "A18", regnum++, 1, NULL, 32, "uint32");

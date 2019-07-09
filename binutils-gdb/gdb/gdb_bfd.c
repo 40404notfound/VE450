@@ -1,6 +1,6 @@
 /* Definitions for BFD wrappers used by GDB.
 
-   Copyright (C) 2011-2019 Free Software Foundation, Inc.
+   Copyright (C) 2011-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -22,8 +22,8 @@
 #include "ui-out.h"
 #include "gdbcmd.h"
 #include "hashtab.h"
-#include "common/filestuff.h"
-#include "common/vec.h"
+#include "filestuff.h"
+#include "vec.h"
 #ifdef HAVE_MMAP
 #include <sys/mman.h>
 #ifndef MAP_FAILED
@@ -450,7 +450,7 @@ gdb_bfd_open (const char *name, const char *target, int fd)
 			    host_address_to_string (abfd),
 			    bfd_get_filename (abfd));
       close (fd);
-      return gdb_bfd_ref_ptr::new_reference (abfd);
+      return new_bfd_ref (abfd);
     }
 
   abfd = bfd_fopen (name, target, FOPEN_RB, fd);
@@ -470,7 +470,7 @@ gdb_bfd_open (const char *name, const char *target, int fd)
       *slot = abfd;
     }
 
-  return gdb_bfd_ref_ptr::new_reference (abfd);
+  return new_bfd_ref (abfd);
 }
 
 /* A helper function that releases any section data attached to the
@@ -702,15 +702,9 @@ gdb_bfd_map_section (asection *sectp, bfd_size_type *size)
 
   data = NULL;
   if (!bfd_get_full_section_contents (abfd, sectp, &data))
-    {
-      warning (_("Can't read data for section '%s' in file '%s'"),
-	       bfd_get_section_name (abfd, sectp),
-	       bfd_get_filename (abfd));
-      /* Set size to 0 to prevent further attempts to read the invalid
-	 section.  */
-      *size = 0;
-      return (const gdb_byte *) NULL;
-    }
+    error (_("Can't read data for section '%s' in file '%s'"),
+	   bfd_get_section_name (abfd, sectp),
+	   bfd_get_filename (abfd));
   descriptor->data = data;
 
  done:
@@ -781,7 +775,7 @@ gdb_bfd_fopen (const char *filename, const char *target, const char *mode,
 {
   bfd *result = bfd_fopen (filename, target, mode, fd);
 
-  return gdb_bfd_ref_ptr::new_reference (result);
+  return new_bfd_ref (result);
 }
 
 /* See gdb_bfd.h.  */
@@ -791,7 +785,7 @@ gdb_bfd_openr (const char *filename, const char *target)
 {
   bfd *result = bfd_openr (filename, target);
 
-  return gdb_bfd_ref_ptr::new_reference (result);
+  return new_bfd_ref (result);
 }
 
 /* See gdb_bfd.h.  */
@@ -801,7 +795,7 @@ gdb_bfd_openw (const char *filename, const char *target)
 {
   bfd *result = bfd_openw (filename, target);
 
-  return gdb_bfd_ref_ptr::new_reference (result);
+  return new_bfd_ref (result);
 }
 
 /* See gdb_bfd.h.  */
@@ -826,7 +820,7 @@ gdb_bfd_openr_iovec (const char *filename, const char *target,
 				 open_func, open_closure,
 				 pread_func, close_func, stat_func);
 
-  return gdb_bfd_ref_ptr::new_reference (result);
+  return new_bfd_ref (result);
 }
 
 /* See gdb_bfd.h.  */
@@ -871,7 +865,17 @@ gdb_bfd_record_inclusion (bfd *includer, bfd *includee)
   struct gdb_bfd_data *gdata;
 
   gdata = (struct gdb_bfd_data *) bfd_usrdata (includer);
-  gdata->included_bfds.push_back (gdb_bfd_ref_ptr::new_reference (includee));
+  gdata->included_bfds.push_back (new_bfd_ref (includee));
+}
+
+/* See gdb_bfd.h.  */
+
+gdb_bfd_ref_ptr
+gdb_bfd_fdopenr (const char *filename, const char *target, int fd)
+{
+  bfd *result = bfd_fdopenr (filename, target, fd);
+
+  return new_bfd_ref (result);
 }
 
 

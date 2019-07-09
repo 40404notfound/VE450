@@ -1,5 +1,5 @@
 /* Intel x86-64 Mach-O support for BFD.
-   Copyright (C) 2010-2019 Free Software Foundation, Inc.
+   Copyright (C) 2010-2018 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -19,10 +19,10 @@
    MA 02110-1301, USA.  */
 
 #include "sysdep.h"
+#include "mach-o.h"
 #include "bfd.h"
 #include "libbfd.h"
 #include "libiberty.h"
-#include "mach-o.h"
 #include "mach-o/x86-64.h"
 
 #define bfd_mach_o_object_p bfd_mach_o_x86_64_object_p
@@ -117,11 +117,6 @@ static reloc_howto_type x86_64_howto_table[]=
 	complain_overflow_bitfield,
 	NULL, "BRANCH8",
 	FALSE, 0xff, 0xff, TRUE),
-  /* 12 */
-  HOWTO(BFD_RELOC_MACH_O_X86_64_TLV, 0, 2, 32, TRUE, 0,
-	complain_overflow_bitfield,
-	NULL, "TLV",
-	FALSE, 0xffffffff, 0xffffffff, TRUE),
 };
 
 static bfd_boolean
@@ -225,13 +220,6 @@ bfd_mach_o_x86_64_canonicalize_one_reloc (bfd *       abfd,
 	  return TRUE;
 	}
       break;
-    case BFD_MACH_O_X86_64_RELOC_TLV:
-      if (reloc.r_length == 2 && reloc.r_pcrel && reloc.r_extern)
-	{
-	  res->howto = &x86_64_howto_table[12];
-	  return TRUE;
-	}
-      break;
     default:
       return FALSE;
     }
@@ -297,11 +285,6 @@ bfd_mach_o_x86_64_swap_reloc_out (arelent *rel, bfd_mach_o_reloc_info *rinfo)
       break;
     case BFD_RELOC_MACH_O_X86_64_GOT_LOAD:
       rinfo->r_type = BFD_MACH_O_X86_64_RELOC_GOT_LOAD;
-      rinfo->r_pcrel = 1;
-      rinfo->r_length = 2;
-      break;
-    case BFD_RELOC_MACH_O_X86_64_TLV:
-      rinfo->r_type = BFD_MACH_O_X86_64_RELOC_TLV;
       rinfo->r_pcrel = 1;
       rinfo->r_length = 2;
       break;

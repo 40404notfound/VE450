@@ -1,5 +1,5 @@
 # Expect script for ld-sparc tests
-#   Copyright (C) 2002-2019 Free Software Foundation, Inc.
+#   Copyright (C) 2002-2018 Free Software Foundation, Inc.
 #
 # This file is part of the GNU Binutils.
 #
@@ -52,7 +52,9 @@ if {[istarget "sparc-*-vxworks"]} {
 
 if { !([istarget "sparc*-*-elf*"]
        || [istarget "sparc*-sun-solaris*"]
-       || [istarget "sparc*-*-linux*"]) } {
+       || ([istarget "sparc*-*-linux*"]
+	   && ![istarget "*-*-*aout*"]
+	   && ![istarget "*-*-*oldld*"])) } {
     return
 }
 

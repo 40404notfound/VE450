@@ -1,5 +1,5 @@
 /* Infineon XC16X-specific support for 16-bit ELF.
-   Copyright (C) 2006-2019 Free Software Foundation, Inc.
+   Copyright (C) 2006-2018 Free Software Foundation, Inc.
    Contributed by KPIT Cummins Infosystems
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -212,7 +212,9 @@ xc16x_reloc_name_lookup (bfd *abfd ATTRIBUTE_UNUSED,
 {
   unsigned int i;
 
-  for (i = 0; i < ARRAY_SIZE (xc16x_elf_howto_table); i++)
+  for (i = 0;
+       i < sizeof (xc16x_elf_howto_table) / sizeof (xc16x_elf_howto_table[0]);
+       i++)
     if (xc16x_elf_howto_table[i].name != NULL
 	&& strcasecmp (xc16x_elf_howto_table[i].name, r_name) == 0)
       return &xc16x_elf_howto_table[i];
@@ -220,20 +222,11 @@ xc16x_reloc_name_lookup (bfd *abfd ATTRIBUTE_UNUSED,
   return NULL;
 }
 
-static reloc_howto_type *
-elf32_xc16x_rtype_to_howto (bfd *abfd ATTRIBUTE_UNUSED, unsigned r_type)
-{
-  if (r_type < ARRAY_SIZE (xc16x_elf_howto_table))
-    return & xc16x_elf_howto_table[r_type];
-
-  return NULL;
-}
-
 /* For a particular operand this function is
    called to finalise the type of relocation.  */
 
-static bfd_boolean
-elf32_xc16x_info_to_howto (bfd *abfd, arelent *bfd_reloc,
+static void
+elf32_xc16x_info_to_howto (bfd *abfd ATTRIBUTE_UNUSED, arelent *bfd_reloc,
 			   Elf_Internal_Rela *elf_reloc)
 {
   unsigned int r;
@@ -244,12 +237,9 @@ elf32_xc16x_info_to_howto (bfd *abfd, arelent *bfd_reloc,
     if (xc16x_elf_howto_table[i].type == r)
       {
 	bfd_reloc->howto = &xc16x_elf_howto_table[i];
-	return TRUE;
+	return;
       }
-  /* xgettext:c-format */
-  _bfd_error_handler (_("%pB: unsupported relocation type %#x"), abfd, r);
-  bfd_set_error (bfd_error_bad_value);
-  return FALSE;
+  abort ();
 }
 
 static bfd_reloc_status_type
@@ -397,7 +387,7 @@ elf32_xc16x_relocate_section (bfd *output_bfd,
 	     or sections discarded by a linker script, we just want the
 	     section contents cleared.  Avoid any special processing.  */
 	  reloc_howto_type *howto;
-	  howto = elf32_xc16x_rtype_to_howto (input_bfd, r_type);
+	  howto = xc16x_reloc_type_lookup (input_bfd, r_type);
 	  RELOC_AGAINST_DISCARDED_SECTION (info, input_bfd, input_section,
 					   rel, 1, relend, howto, 0, contents);
 	}

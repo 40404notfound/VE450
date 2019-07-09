@@ -349,6 +349,8 @@ power9:
 	stwat       23,13,0x1c
 	urfid
 	rmieg       30
+	ldmx        10,0,15
+	ldmx        10,3,15
 	stop
 	wait
 	wait        0

@@ -1,6 +1,6 @@
 /* Modula 2 language support routines for GDB, the GNU debugger.
 
-   Copyright (C) 1992-2019 Free Software Foundation, Inc.
+   Copyright (C) 1992-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -172,27 +172,6 @@ m2_printstr (struct ui_file *stream, struct type *type, const gdb_byte *string,
 
   if (force_ellipses || i < length)
     fputs_filtered ("...", stream);
-}
-
-/* Return true if TYPE is a string.  */
-
-static bool
-m2_is_string_type_p (struct type *type)
-{
-  type = check_typedef (type);
-  if (TYPE_CODE (type) == TYPE_CODE_ARRAY
-      && TYPE_LENGTH (type) > 0
-      && TYPE_LENGTH (TYPE_TARGET_TYPE (type)) > 0)
-    {
-      struct type *elttype = check_typedef (TYPE_TARGET_TYPE (type));
-
-      if (TYPE_LENGTH (elttype) == 1
-	  && (TYPE_CODE (elttype) == TYPE_CODE_INT
-	      || TYPE_CODE (elttype) == TYPE_CODE_CHAR))
-	return true;
-    }
-
-  return false;
 }
 
 static struct value *
@@ -386,6 +365,7 @@ extern const struct language_defn m2_language_defn =
   NULL,
   &exp_descriptor_modula2,
   m2_parse,			/* parser */
+  m2_yyerror,			/* parser error function */
   null_post_parser,
   m2_printchar,			/* Print character constant */
   m2_printstr,			/* function to print string constant */
@@ -397,7 +377,6 @@ extern const struct language_defn m2_language_defn =
   default_read_var_value,	/* la_read_var_value */
   NULL,				/* Language specific skip_trampoline */
   NULL,		                /* name_of_this */
-  false,			/* la_store_sym_names_in_linkage_form_p */
   basic_lookup_symbol_nonlocal,	/* lookup_symbol_nonlocal */
   basic_lookup_transparent_type,/* lookup_transparent_type */
   NULL,				/* Language specific symbol demangler */
@@ -420,8 +399,7 @@ extern const struct language_defn m2_language_defn =
   &default_varobj_ops,
   NULL,
   NULL,
-  m2_is_string_type_p,
-  "{...}"			/* la_struct_too_deep_ellipsis */
+  LANG_MAGIC
 };
 
 static void *

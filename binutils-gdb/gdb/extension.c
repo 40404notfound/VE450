@@ -1,6 +1,6 @@
 /* Interface between gdb and its extension languages.
 
-   Copyright (C) 2014-2019 Free Software Foundation, Inc.
+   Copyright (C) 2014-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -28,7 +28,7 @@
 #include "event-top.h"
 #include "extension.h"
 #include "extension-priv.h"
-#include "observable.h"
+#include "observer.h"
 #include "cli/cli-script.h"
 #include "python/python.h"
 #include "guile/guile.h"
@@ -405,16 +405,21 @@ auto_load_ext_lang_scripts_for_objfile (struct objfile *objfile)
    We don't know in advance which extension language will provide a
    pretty-printer for the type, so all are initialized.  */
 
-ext_lang_type_printers::ext_lang_type_printers ()
+struct ext_lang_type_printers *
+start_ext_lang_type_printers (void)
 {
+  struct ext_lang_type_printers *printers
+    = XCNEW (struct ext_lang_type_printers);
   int i;
   const struct extension_language_defn *extlang;
 
   ALL_ENABLED_EXTENSION_LANGUAGES (i, extlang)
     {
       if (extlang->ops->start_type_printers != NULL)
-	extlang->ops->start_type_printers (extlang, this);
+	extlang->ops->start_type_printers (extlang, printers);
     }
+
+  return printers;
 }
 
 /* Iteratively try the type pretty-printers specified by PRINTERS
@@ -455,7 +460,11 @@ apply_ext_lang_type_printers (struct ext_lang_type_printers *printers,
   return NULL;
 }
 
-ext_lang_type_printers::~ext_lang_type_printers ()
+/* Call this after pretty-printing a type to release all memory held
+   by PRINTERS.  */
+
+void
+free_ext_lang_type_printers (struct ext_lang_type_printers *printers)
 {
   int i;
   const struct extension_language_defn *extlang;
@@ -463,8 +472,10 @@ ext_lang_type_printers::~ext_lang_type_printers ()
   ALL_ENABLED_EXTENSION_LANGUAGES (i, extlang)
     {
       if (extlang->ops->free_type_printers != NULL)
-	extlang->ops->free_type_printers (extlang, this);
+	extlang->ops->free_type_printers (extlang, printers);
     }
+
+  xfree (printers);
 }
 
 /* Try to pretty-print a value of type TYPE located at VAL's contents
@@ -542,8 +553,7 @@ apply_ext_lang_val_pretty_printer (struct type *type,
    rather than trying filters in other extension languages.  */
 
 enum ext_lang_bt_status
-apply_ext_lang_frame_filter (struct frame_info *frame,
-			     frame_filter_flags flags,
+apply_ext_lang_frame_filter (struct frame_info *frame, int flags,
 			     enum ext_lang_frame_args args_type,
 			     struct ui_out *out,
 			     int frame_low, int frame_high)
@@ -870,12 +880,12 @@ get_matching_xmethod_workers (struct type *type, const char *method_name,
 
 /* See extension.h.  */
 
-std::vector<type *>
-xmethod_worker::get_arg_types ()
+type **
+xmethod_worker::get_arg_types (int *nargs)
 {
-  std::vector<type *> type_array;
+  type **type_array = NULL;
 
-  ext_lang_rc rc = do_get_arg_types (&type_array);
+  ext_lang_rc rc = do_get_arg_types (nargs, &type_array);
   if (rc == EXT_LANG_RC_ERROR)
     error (_("Error while looking for arg types of a xmethod worker "
 	     "defined in %s."), m_extlang->capitalized_name);
@@ -886,11 +896,11 @@ xmethod_worker::get_arg_types ()
 /* See extension.h.  */
 
 struct type *
-xmethod_worker::get_result_type (value *object, gdb::array_view<value *> args)
+xmethod_worker::get_result_type (value *object, value **args, int nargs)
 {
   type *result_type;
 
-  ext_lang_rc rc = do_get_result_type (object, args, &result_type);
+  ext_lang_rc rc = do_get_result_type (object, args, nargs, &result_type);
   if (rc == EXT_LANG_RC_ERROR)
     {
       error (_("Error while fetching result type of an xmethod worker "
@@ -934,5 +944,5 @@ ext_lang_before_prompt (const char *current_gdb_prompt)
 void
 _initialize_extension (void)
 {
-  gdb::observers::before_prompt.attach (ext_lang_before_prompt);
+  observer_attach_before_prompt (ext_lang_before_prompt);
 }

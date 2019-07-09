@@ -1,6 +1,6 @@
 /* Generic code for supporting multiple C++ ABI's
 
-   Copyright (C) 2001-2019 Free Software Foundation, Inc.
+   Copyright (C) 2001-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -73,21 +73,22 @@ baseclass_offset (struct type *type, int index, const gdb_byte *valaddr,
 
   gdb_assert (current_cp_abi.baseclass_offset != NULL);
 
-  try
+  TRY
     {
       res = (*current_cp_abi.baseclass_offset) (type, index, valaddr,
 						embedded_offset,
 						address, val);
     }
-  catch (const gdb_exception_error &ex)
+  CATCH (ex, RETURN_MASK_ERROR)
     {
       if (ex.error != NOT_AVAILABLE_ERROR)
-	throw;
+	throw_exception (ex);
 
       throw_error (NOT_AVAILABLE_ERROR,
 		   _("Cannot determine virtual baseclass offset "
 		     "of incomplete object"));
     }
+  END_CATCH
 
   return res;
 }
@@ -109,17 +110,17 @@ value_rtti_type (struct value *v, int *full,
 {
   struct type *ret = NULL;
 
-  if ((current_cp_abi.rtti_type) == NULL
-      || !HAVE_CPLUS_STRUCT (check_typedef (value_type (v))))
+  if ((current_cp_abi.rtti_type) == NULL)
     return NULL;
-  try
+  TRY
     {
       ret = (*current_cp_abi.rtti_type) (v, full, top, using_enc);
     }
-  catch (const gdb_exception_error &e)
+  CATCH (e, RETURN_MASK_ERROR)
     {
       return NULL;
     }
+  END_CATCH
 
   return ret;
 }

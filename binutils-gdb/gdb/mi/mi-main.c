@@ -1,6 +1,6 @@
 /* MI Command Set.
 
-   Copyright (C) 2000-2019 Free Software Foundation, Inc.
+   Copyright (C) 2000-2018 Free Software Foundation, Inc.
 
    Contributed by Cygnus Solutions (a Red Hat company).
 
@@ -43,6 +43,7 @@
 #include "mi-common.h"
 #include "language.h"
 #include "valprint.h"
+#include "inferior.h"
 #include "osdata.h"
 #include "common/gdb_splay_tree.h"
 #include "tracepoint.h"
@@ -51,12 +52,12 @@
 #include "linespec.h"
 #include "extension.h"
 #include "gdbcmd.h"
-#include "observable.h"
+#include "observer.h"
 #include "common/gdb_optional.h"
 #include "common/byte-vector.h"
 
 #include <ctype.h>
-#include "common/run-time-clock.h"
+#include "run-time-clock.h"
 #include <chrono>
 #include "progspace-and-thread.h"
 #include "common/rsp-low.h"
@@ -95,8 +96,8 @@ static void mi_execute_cli_command (const char *cmd, int args_p,
 				    const char *args);
 static void mi_execute_async_cli_command (const char *cli_command,
 					  char **argv, int argc);
-static bool register_changed_p (int regnum, readonly_detached_regcache *,
-			       readonly_detached_regcache *);
+static bool register_changed_p (int regnum, regcache *,
+				regcache *);
 static void output_register (struct frame_info *, int regnum, int format,
 			     int skip_unavailable);
 
@@ -242,13 +243,13 @@ mi_cmd_exec_jump (const char *args, char **argv, int argc)
 static void
 proceed_thread (struct thread_info *thread, int pid)
 {
-  if (thread->state != THREAD_STOPPED)
+  if (!is_stopped (thread->ptid))
     return;
 
-  if (pid != 0 && thread->ptid.pid () != pid)
+  if (pid != 0 && ptid_get_pid (thread->ptid) != pid)
     return;
 
-  switch_to_thread (thread);
+  switch_to_thread (thread->ptid);
   clear_proceed_status (0);
   proceed ((CORE_ADDR) -1, GDB_SIGNAL_DEFAULT);
 }
@@ -265,7 +266,7 @@ proceed_thread_callback (struct thread_info *thread, void *arg)
 static void
 exec_continue (char **argv, int argc)
 {
-  prepare_execution_command (current_top_target (), mi_async_p ());
+  prepare_execution_command (&current_target, mi_async_p ());
 
   if (non_stop)
     {
@@ -344,10 +345,10 @@ interrupt_thread_callback (struct thread_info *thread, void *arg)
 {
   int pid = *(int *)arg;
 
-  if (thread->state != THREAD_RUNNING)
+  if (!is_running (thread->ptid))
     return 0;
 
-  if (thread->ptid.pid () != pid)
+  if (ptid_get_pid (thread->ptid) != pid)
     return 0;
 
   target_stop (thread->ptid);
@@ -404,20 +405,25 @@ run_one_inferior (struct inferior *inf, void *arg)
   int start_p = *(int *) arg;
   const char *run_cmd = start_p ? "start" : "run";
   struct target_ops *run_target = find_run_target ();
-  int async_p = mi_async && run_target->can_async_p ();
+  int async_p = mi_async && run_target->to_can_async_p (run_target);
 
   if (inf->pid != 0)
     {
-      thread_info *tp = any_thread_of_inferior (inf);
-      if (tp == NULL)
-	error (_("Inferior has no threads."));
+      if (inf->pid != ptid_get_pid (inferior_ptid))
+	{
+	  struct thread_info *tp;
 
-      switch_to_thread (tp);
+	  tp = any_thread_of_process (inf->pid);
+	  if (!tp)
+	    error (_("Inferior has no threads."));
+
+	  switch_to_thread (tp->ptid);
+	}
     }
   else
     {
       set_current_inferior (inf);
-      switch_to_no_thread ();
+      switch_to_thread (null_ptid);
       set_current_program_space (inf->pspace);
     }
   mi_execute_cli_command (run_cmd, async_p,
@@ -473,7 +479,7 @@ mi_cmd_exec_run (const char *command, char **argv, int argc)
     {
       const char *run_cmd = start_p ? "start" : "run";
       struct target_ops *run_target = find_run_target ();
-      int async_p = mi_async && run_target->can_async_p ();
+      int async_p = mi_async && run_target->to_can_async_p (run_target);
 
       mi_execute_cli_command (run_cmd, async_p,
 			      async_p ? "&" : NULL);
@@ -486,7 +492,7 @@ find_thread_of_process (struct thread_info *ti, void *p)
 {
   int pid = *(int *)p;
 
-  if (ti->ptid.pid () == pid && ti->state != THREAD_EXITED)
+  if (ptid_get_pid (ti->ptid) == pid && !is_exited (ti->ptid))
     return 1;
 
   return 0;
@@ -534,7 +540,7 @@ mi_cmd_target_detach (const char *command, char **argv, int argc)
       if (!tp)
 	error (_("Thread group is empty"));
 
-      switch_to_thread (tp);
+      switch_to_thread (tp->ptid);
     }
 
   detach_command (NULL, 0);
@@ -565,10 +571,10 @@ mi_cmd_thread_select (const char *command, char **argv, int argc)
 			       USER_SELECTED_THREAD | USER_SELECTED_FRAME);
 
   /* Notify if the thread has effectively changed.  */
-  if (inferior_ptid != previous_ptid)
+  if (!ptid_equal (inferior_ptid, previous_ptid))
     {
-      gdb::observers::user_selected_context_changed.notify
-	(USER_SELECTED_THREAD | USER_SELECTED_FRAME);
+      observer_notify_user_selected_context_changed (USER_SELECTED_THREAD
+						     | USER_SELECTED_FRAME);
     }
 }
 
@@ -586,7 +592,8 @@ mi_cmd_thread_list_ids (const char *command, char **argv, int argc)
   {
     ui_out_emit_tuple tuple_emitter (current_uiout, "thread-ids");
 
-    for (thread_info *tp : all_non_exited_threads ())
+    struct thread_info *tp;
+    ALL_NON_EXITED_THREADS (tp)
       {
 	if (tp->ptid == inferior_ptid)
 	  current_thread = tp->global_num;
@@ -621,7 +628,7 @@ collect_cores (struct thread_info *ti, void *xdata)
 {
   struct collect_cores_data *data = (struct collect_cores_data *) xdata;
 
-  if (ti->ptid.pid () == data->pid)
+  if (ptid_get_pid (ti->ptid) == data->pid)
     {
       int core = target_core_of_thread (ti->ptid);
 
@@ -695,7 +702,7 @@ static void
 output_cores (struct ui_out *uiout, const char *field_name, const char *xcores)
 {
   ui_out_emit_list list_emitter (uiout, field_name);
-  auto cores = make_unique_xstrdup (xcores);
+  gdb::unique_xmalloc_ptr<char> cores (xstrdup (xcores));
   char *p = cores.get ();
 
   for (p = strtok (p, ","); p;  p = strtok (NULL, ","))
@@ -766,7 +773,7 @@ list_available_thread_groups (const std::set<int> &ids, int recurse)
 
 	      for (const osdata_item &child : children)
 		{
-		  ui_out_emit_tuple inner_tuple_emitter (uiout, NULL);
+		  ui_out_emit_tuple tuple_emitter (uiout, NULL);
 		  const std::string *tid = get_osdata_column (child, "tid");
 		  const std::string *tcore = get_osdata_column (child, "core");
 
@@ -888,7 +895,7 @@ mi_cmd_data_list_register_names (const char *command, char **argv, int argc)
      debugged.  */
 
   gdbarch = get_current_arch ();
-  numregs = gdbarch_num_cooked_regs (gdbarch);
+  numregs = gdbarch_num_regs (gdbarch) + gdbarch_num_pseudo_regs (gdbarch);
 
   ui_out_emit_list list_emitter (uiout, "register-names");
 
@@ -924,9 +931,9 @@ mi_cmd_data_list_register_names (const char *command, char **argv, int argc)
 void
 mi_cmd_data_list_changed_registers (const char *command, char **argv, int argc)
 {
-  static std::unique_ptr<readonly_detached_regcache> this_regs;
+  static std::unique_ptr<struct regcache> this_regs;
   struct ui_out *uiout = current_uiout;
-  std::unique_ptr<readonly_detached_regcache> prev_regs;
+  std::unique_ptr<struct regcache> prev_regs;
   struct gdbarch *gdbarch;
   int regnum, numregs;
   int i;
@@ -947,7 +954,7 @@ mi_cmd_data_list_changed_registers (const char *command, char **argv, int argc)
      debugged.  */
 
   gdbarch = this_regs->arch ();
-  numregs = gdbarch_num_cooked_regs (gdbarch);
+  numregs = gdbarch_num_regs (gdbarch) + gdbarch_num_pseudo_regs (gdbarch);
 
   ui_out_emit_list list_emitter (uiout, "changed-registers");
 
@@ -988,8 +995,8 @@ mi_cmd_data_list_changed_registers (const char *command, char **argv, int argc)
 }
 
 static bool
-register_changed_p (int regnum, readonly_detached_regcache *prev_regs,
-		    readonly_detached_regcache *this_regs)
+register_changed_p (int regnum, struct regcache *prev_regs,
+		    struct regcache *this_regs)
 {
   struct gdbarch *gdbarch = this_regs->arch ();
   struct value *prev_value, *this_value;
@@ -1010,6 +1017,8 @@ register_changed_p (int regnum, readonly_detached_regcache *prev_regs,
 
   release_value (prev_value);
   release_value (this_value);
+  value_free (prev_value);
+  value_free (this_value);
   return ret;
 }
 
@@ -1074,7 +1083,7 @@ mi_cmd_data_list_register_values (const char *command, char **argv, int argc)
 
   frame = get_selected_frame (NULL);
   gdbarch = get_frame_arch (frame);
-  numregs = gdbarch_num_cooked_regs (gdbarch);
+  numregs = gdbarch_num_regs (gdbarch) + gdbarch_num_pseudo_regs (gdbarch);
 
   ui_out_emit_list list_emitter (uiout, "register-values");
 
@@ -1162,7 +1171,7 @@ mi_cmd_data_write_register_values (const char *command, char **argv, int argc)
 
   regcache = get_current_regcache ();
   gdbarch = regcache->arch ();
-  numregs = gdbarch_num_cooked_regs (gdbarch);
+  numregs = gdbarch_num_regs (gdbarch) + gdbarch_num_pseudo_regs (gdbarch);
 
   if (argc == 0)
     error (_("-data-write-register-values: Usage: -data-write-register-"
@@ -1346,8 +1355,11 @@ mi_cmd_data_read_memory (const char *command, char **argv, int argc)
 
   gdb::byte_vector mbuf (total_bytes);
 
-  nr_bytes = target_read (current_top_target (), TARGET_OBJECT_MEMORY, NULL,
-			  mbuf.data (), addr, total_bytes);
+  /* Dispatch memory reads to the topmost target, not the flattened
+     current_target.  */
+  nr_bytes = target_read (current_target.beneath,
+			  TARGET_OBJECT_MEMORY, NULL, mbuf.data (),
+			  addr, total_bytes);
   if (nr_bytes <= 0)
     error (_("Unable to read memory."));
 
@@ -1374,7 +1386,7 @@ mi_cmd_data_read_memory (const char *command, char **argv, int argc)
       {
 	int col;
 	int col_byte;
-	struct value_print_options print_opts;
+	struct value_print_options opts;
 
 	ui_out_emit_tuple tuple_emitter (uiout, NULL);
 	uiout->field_core_addr ("addr", gdbarch, addr + row_byte);
@@ -1382,7 +1394,7 @@ mi_cmd_data_read_memory (const char *command, char **argv, int argc)
 	   row_byte); */
 	{
 	  ui_out_emit_list list_data_emitter (uiout, "data");
-	  get_formatted_print_options (&print_opts, word_format);
+	  get_formatted_print_options (&opts, word_format);
 	  for (col = 0, col_byte = row_byte;
 	       col < nr_cols;
 	       col++, col_byte += word_size)
@@ -1394,8 +1406,8 @@ mi_cmd_data_read_memory (const char *command, char **argv, int argc)
 	      else
 		{
 		  stream.clear ();
-		  print_scalar_formatted (&mbuf[col_byte], word_type,
-					  &print_opts, word_asize, &stream);
+		  print_scalar_formatted (&mbuf[col_byte], word_type, &opts,
+					  word_asize, &stream);
 		  uiout->field_stream (NULL, stream);
 		}
 	    }
@@ -1466,7 +1478,7 @@ mi_cmd_data_read_memory_bytes (const char *command, char **argv, int argc)
   length = atol (argv[1]);
 
   std::vector<memory_read_result> result
-    = read_memory_robust (current_top_target (), addr, length);
+    = read_memory_robust (current_target.beneath, addr, length);
 
   if (result.size () == 0)
     error (_("Unable to read memory."));
@@ -1681,7 +1693,6 @@ mi_cmd_list_features (const char *command, char **argv, int argc)
       uiout->field_string (NULL, "info-gdb-mi-command");
       uiout->field_string (NULL, "undefined-command-error-code");
       uiout->field_string (NULL, "exec-run-start-option");
-      uiout->field_string (NULL, "data-disassemble-a-option");
 
       if (ext_lang_initialized_p (get_ext_lang_defn (EXT_LANG_PYTHON)))
 	uiout->field_string (NULL, "python");
@@ -1765,11 +1776,8 @@ mi_cmd_remove_inferior (const char *command, char **argv, int argc)
 
       set_current_inferior (new_inferior);
       if (new_inferior->pid != 0)
-	tp = any_thread_of_inferior (new_inferior);
-      if (tp != NULL)
-	switch_to_thread (tp);
-      else
-	switch_to_no_thread ();
+	tp = any_thread_of_process (new_inferior->pid);
+      switch_to_thread (tp ? tp->ptid : null_ptid);
       set_current_program_space (new_inferior->pspace);
     }
 
@@ -1875,7 +1883,7 @@ captured_mi_execute_command (struct ui_out *uiout, struct mi_parse *context)
 /* Print a gdb exception to the MI output stream.  */
 
 static void
-mi_print_exception (const char *token, const struct gdb_exception &exception)
+mi_print_exception (const char *token, struct gdb_exception exception)
 {
   struct mi_interp *mi = (struct mi_interp *) current_interpreter ();
 
@@ -1884,7 +1892,7 @@ mi_print_exception (const char *token, const struct gdb_exception &exception)
   if (exception.message == NULL)
     fputs_unfiltered ("unknown error", mi->raw_stdout);
   else
-    fputstr_unfiltered (exception.what (), '"', mi->raw_stdout);
+    fputstr_unfiltered (exception.message, '"', mi->raw_stdout);
   fputs_unfiltered ("\"", mi->raw_stdout);
 
   switch (exception.error)
@@ -1938,15 +1946,16 @@ mi_execute_command (const char *cmd, int from_tty)
 
   target_log_command (cmd);
 
-  try
+  TRY
     {
       command = mi_parse (cmd, &token);
     }
-  catch (const gdb_exception &exception)
+  CATCH (exception, RETURN_MASK_ALL)
     {
       mi_print_exception (token, exception);
       xfree (token);
     }
+  END_CATCH
 
   if (command != NULL)
     {
@@ -1965,11 +1974,11 @@ mi_execute_command (const char *cmd, int from_tty)
 	  timestamp (command->cmd_start);
 	}
 
-      try
+      TRY
 	{
 	  captured_mi_execute_command (current_uiout, command.get ());
 	}
-      catch (const gdb_exception &result)
+      CATCH (result, RETURN_MASK_ALL)
 	{
 	  /* Like in start_event_loop, enable input and force display
 	     of the prompt.  Otherwise, any command that calls
@@ -1983,28 +1992,30 @@ mi_execute_command (const char *cmd, int from_tty)
 	  mi_print_exception (command->token, result);
 	  mi_out_rewind (current_uiout);
 	}
+      END_CATCH
 
       bpstat_do_actions ();
 
       if (/* The notifications are only output when the top-level
 	     interpreter (specified on the command line) is MI.  */
-	  top_level_interpreter ()->interp_ui_out ()->is_mi_like_p ()
+	  interp_ui_out (top_level_interpreter ())->is_mi_like_p ()
 	  /* Don't try report anything if there are no threads --
 	     the program is dead.  */
-	  && any_thread_p ()
+	  && thread_count () != 0
 	  /* If the command already reports the thread change, no need to do it
 	     again.  */
 	  && !command_notifies_uscc_observer (command.get ()))
 	{
+	  struct mi_interp *mi = (struct mi_interp *) top_level_interpreter ();
 	  int report_change = 0;
 
 	  if (command->thread == -1)
 	    {
-	      report_change = (previous_ptid != null_ptid
-			       && inferior_ptid != previous_ptid
-			       && inferior_ptid != null_ptid);
+	      report_change = (!ptid_equal (previous_ptid, null_ptid)
+			       && !ptid_equal (inferior_ptid, previous_ptid)
+			       && !ptid_equal (inferior_ptid, null_ptid));
 	    }
-	  else if (inferior_ptid != null_ptid)
+	  else if (!ptid_equal (inferior_ptid, null_ptid))
 	    {
 	      struct thread_info *ti = inferior_thread ();
 
@@ -2013,8 +2024,8 @@ mi_execute_command (const char *cmd, int from_tty)
 
 	  if (report_change)
 	    {
-	      gdb::observers::user_selected_context_changed.notify
-		(USER_SELECTED_THREAD | USER_SELECTED_FRAME);
+		observer_notify_user_selected_context_changed
+		  (USER_SELECTED_THREAD | USER_SELECTED_FRAME);
 	    }
 	}
     }
@@ -2052,25 +2063,22 @@ mi_cmd_execute (struct mi_parse *parse)
 	 provide --thread if it wishes to operate on a specific
 	 thread.  */
       if (inf->pid != 0)
-	tp = any_live_thread_of_inferior (inf);
-      if (tp != NULL)
-	switch_to_thread (tp);
-      else
-	switch_to_no_thread ();
+	tp = any_live_thread_of_process (inf->pid);
+      switch_to_thread (tp ? tp->ptid : null_ptid);
       set_current_program_space (inf->pspace);
     }
 
   if (parse->thread != -1)
     {
-      thread_info *tp = find_thread_global_id (parse->thread);
+      struct thread_info *tp = find_thread_global_id (parse->thread);
 
-      if (tp == NULL)
+      if (!tp)
 	error (_("Invalid thread id: %d"), parse->thread);
 
-      if (tp->state == THREAD_EXITED)
+      if (is_exited (tp->ptid))
 	error (_("Thread id: %d has terminated"), parse->thread);
 
-      switch_to_thread (tp);
+      switch_to_thread (tp->ptid);
     }
 
   if (parse->frame != -1)
@@ -2171,8 +2179,16 @@ mi_load_progress (const char *section_name,
      which means uiout may not be correct.  Fix it for the duration
      of this function.  */
 
-  std::unique_ptr<ui_out> uiout (mi_out_new (current_interpreter ()->name ()));
-  if (uiout == nullptr)
+  std::unique_ptr<ui_out> uiout;
+
+  if (current_interp_named_p (INTERP_MI)
+      || current_interp_named_p (INTERP_MI2))
+    uiout.reset (mi_out_new (2));
+  else if (current_interp_named_p (INTERP_MI1))
+    uiout.reset (mi_out_new (1));
+  else if (current_interp_named_p (INTERP_MI3))
+    uiout.reset (mi_out_new (3));
+  else
     return;
 
   scoped_restore save_uiout
@@ -2557,7 +2573,6 @@ mi_cmd_trace_frame_collected (const char *command, char **argv, int argc)
 	  break;
 	case REGISTERS_FORMAT:
 	  registers_format = oarg[0];
-	  break;
 	case MEMORY_CONTENTS:
 	  memory_contents = 1;
 	  break;
@@ -2626,7 +2641,7 @@ mi_cmd_trace_frame_collected (const char *command, char **argv, int argc)
 
     frame = get_selected_frame (NULL);
     gdbarch = get_frame_arch (frame);
-    numregs = gdbarch_num_cooked_regs (gdbarch);
+    numregs = gdbarch_num_regs (gdbarch) + gdbarch_num_pseudo_regs (gdbarch);
 
     for (regnum = 0; regnum < numregs; regnum++)
       {
@@ -2652,7 +2667,7 @@ mi_cmd_trace_frame_collected (const char *command, char **argv, int argc)
 
 	if (tsv != NULL)
 	  {
-	    uiout->field_fmt ("name", "$%s", tsv->name.c_str ());
+	    uiout->field_fmt ("name", "$%s", tsv->name);
 
 	    tsv->value_known = target_get_trace_state_variable_value (tsv->number,
 								      &tsv->value);
@@ -2698,60 +2713,6 @@ mi_cmd_trace_frame_collected (const char *command, char **argv, int argc)
       }
   }
 }
-
-/* See mi/mi-main.h.  */
-
-void
-mi_cmd_fix_multi_location_breakpoint_output (const char *command, char **argv,
-					     int argc)
-{
-  fix_multi_location_breakpoint_output_globally = true;
-}
-
-/* Implement the "-complete" command.  */
-
-void
-mi_cmd_complete (const char *command, char **argv, int argc)
-{
-  if (argc != 1)
-    error (_("Usage: -complete COMMAND"));
-
-  if (max_completions == 0)
-    error (_("max-completions is zero, completion is disabled."));
-
-  int quote_char = '\0';
-  const char *word;
-
-  completion_result result = complete (argv[0], &word, &quote_char);
-
-  std::string arg_prefix (argv[0], word - argv[0]);
-
-  struct ui_out *uiout = current_uiout;
-
-  if (result.number_matches > 0)
-    uiout->field_fmt ("completion", "%s%s",
-                      arg_prefix.c_str (),result.match_list[0]);
-
-  {
-    ui_out_emit_list completions_emitter (uiout, "matches");
-
-    if (result.number_matches == 1)
-      uiout->field_fmt (NULL, "%s%s",
-                        arg_prefix.c_str (), result.match_list[0]);
-    else
-      {
-        result.sort_match_list ();
-        for (size_t i = 0; i < result.number_matches; i++)
-          {
-            uiout->field_fmt (NULL, "%s%s",
-                              arg_prefix.c_str (), result.match_list[i + 1]);
-          }
-      }
-  }
-  uiout->field_string ("max_completions_reached",
-                       result.number_matches == max_completions ? "1" : "0");
-}
-
 
 void
 _initialize_mi_main (void)

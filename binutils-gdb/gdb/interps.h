@@ -1,6 +1,6 @@
 /* Manages interpreters for GDB, the GNU debugger.
 
-   Copyright (C) 2000-2019 Free Software Foundation, Inc.
+   Copyright (C) 2000-2018 Free Software Foundation, Inc.
 
    Written by Jim Ingham <jingham@apple.com> of Apple Computer, Inc.
 
@@ -61,8 +61,7 @@ public:
   /* Provides a hook for interpreters to do any additional
      setup/cleanup that they might need when logging is enabled or
      disabled.  */
-  virtual void set_logging (ui_file_up logfile, bool logging_redirect,
-			    bool debug_redirect) = 0;
+  virtual void set_logging (ui_file_up logfile, bool logging_redirect) = 0;
 
   /* Called before starting an event loop, to give the interpreter a
      chance to e.g., print a prompt.  */
@@ -75,18 +74,11 @@ public:
   virtual bool supports_command_editing ()
   { return false; }
 
-  const char *name () const
-  {
-    return m_name;
-  }
-
   /* This is the name in "-i=" and "set interpreter".  */
-private:
-  char *m_name;
+  const char *name;
 
   /* Interpreters are stored in a linked list, this is the next
      one...  */
-public:
   struct interp *next;
 
   /* Has the init method been run?  */
@@ -106,6 +98,9 @@ extern struct interp *interp_lookup (struct ui *ui, const char *name);
    interpreter fails to initialize.  */
 extern void set_top_level_interpreter (const char *name);
 
+extern struct ui_out *interp_ui_out (struct interp *interp);
+extern const char *interp_name (struct interp *interp);
+
 /* Temporarily set the current interpreter, and reset it on
    destruction.  */
 class scoped_restore_interp
@@ -119,7 +114,7 @@ public:
 
   ~scoped_restore_interp ()
   {
-    set_interp (m_interp->name ());
+    set_interp (interp_name (m_interp));
   }
 
   scoped_restore_interp (const scoped_restore_interp &) = delete;
@@ -142,12 +137,9 @@ extern int current_interp_named_p (const char *name);
    interpreter should configure the output streams to send output only
    to the logfile.  If false, the interpreter should configure the
    output streams to send output to both the current output stream
-   (i.e., the terminal) and the log file.  DEBUG_REDIRECT is same as
-   LOGGING_REDIRECT, but for the value of "set logging debugredirect"
-   instead.  */
+   (i.e., the terminal) and the log file.  */
 extern void current_interp_set_logging (ui_file_up logfile,
-					bool logging_redirect,
-					bool debug_redirect);
+					bool logging_redirect);
 
 /* Returns the top-level interpreter.  */
 extern struct interp *top_level_interpreter (void);

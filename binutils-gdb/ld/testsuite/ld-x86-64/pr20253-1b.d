@@ -1,6 +1,6 @@
 #source: pr20253-1.s
 #as: --64
-#ld: -melf_x86_64 -z max-page-size=0x200000 -z noseparate-code
+#ld: -melf_x86_64
 #objdump: -dw
 #notarget: x86_64-*-nacl*
 

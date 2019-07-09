@@ -1,5 +1,5 @@
 /* GDB variable objects API.
-   Copyright (C) 1999-2019 Free Software Foundation, Inc.
+   Copyright (C) 1999-2018 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,8 +19,7 @@
 
 #include "symtab.h"
 #include "gdbtypes.h"
-#include "common/vec.h"
-#include "value.h"
+#include "vec.h"
 
 /* Enumeration for the format types */
 enum varobj_display_formats
@@ -123,7 +122,7 @@ struct varobj
      indicates there was an error getting this value.
      Invariant: if varobj_value_is_changeable_p (this) is non-zero, 
      the value is either NULL, or not lazy.  */
-  value_ref_ptr value;
+  struct value *value = NULL;
 
   /* The number of (immediate) children this variable has.  */
   int num_children = -1;

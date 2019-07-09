@@ -1,6 +1,6 @@
 /* Native-dependent code for GNU/Linux x86 (i386 and x86-64).
 
-   Copyright (C) 1999-2019 Free Software Foundation, Inc.
+   Copyright (C) 1999-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -27,6 +27,7 @@
 #include <sys/uio.h>
 
 #include "x86-nat.h"
+#include "linux-nat.h"
 #ifndef __x86_64__
 #include "i386-linux-nat.h"
 #endif
@@ -35,17 +36,17 @@
 #ifdef __x86_64__
 #include "amd64-linux-tdep.h"
 #endif
-#include "common/x86-xstate.h"
+#include "x86-xstate.h"
 #include "nat/linux-btrace.h"
 #include "nat/linux-nat.h"
 #include "nat/x86-linux.h"
 #include "nat/x86-linux-dregs.h"
 #include "nat/linux-ptrace.h"
 
-/* linux_nat_target::low_new_fork implementation.  */
+/* linux_nat_new_fork hook.   */
 
-void
-x86_linux_nat_target::low_new_fork (struct lwp_info *parent, pid_t child_pid)
+static void
+x86_linux_new_fork (struct lwp_info *parent, pid_t child_pid)
 {
   pid_t parent_pid;
   struct x86_debug_reg_state *parent_state;
@@ -70,22 +71,21 @@ x86_linux_nat_target::low_new_fork (struct lwp_info *parent, pid_t child_pid)
      in the end before detaching the forked off process, thus making
      this compatible with older Linux kernels too.  */
 
-  parent_pid = parent->ptid.pid ();
+  parent_pid = ptid_get_pid (parent->ptid);
   parent_state = x86_debug_reg_state (parent_pid);
   child_state = x86_debug_reg_state (child_pid);
   *child_state = *parent_state;
 }
 
 
-x86_linux_nat_target::~x86_linux_nat_target ()
-{
-}
+static void (*super_post_startup_inferior) (struct target_ops *self,
+					    ptid_t ptid);
 
-void
-x86_linux_nat_target::post_startup_inferior (ptid_t ptid)
+static void
+x86_linux_child_post_startup_inferior (struct target_ops *self, ptid_t ptid)
 {
   x86_cleanup_dregs ();
-  linux_nat_target::post_startup_inferior (ptid);
+  super_post_startup_inferior (self, ptid);
 }
 
 #ifdef __x86_64__
@@ -102,8 +102,8 @@ x86_linux_nat_target::post_startup_inferior (ptid_t ptid)
 
 /* Get Linux/x86 target description from running target.  */
 
-const struct target_desc *
-x86_linux_nat_target::read_description ()
+static const struct target_desc *
+x86_linux_read_description (struct target_ops *ops)
 {
   int tid;
   int is_64bit = 0;
@@ -114,9 +114,9 @@ x86_linux_nat_target::read_description ()
   uint64_t xcr0_features_bits;
 
   /* GNU/Linux LWP ID's are process ID's.  */
-  tid = inferior_ptid.lwp ();
+  tid = ptid_get_lwp (inferior_ptid);
   if (tid == 0)
-    tid = inferior_ptid.pid (); /* Not a threaded program.  */
+    tid = ptid_get_pid (inferior_ptid); /* Not a threaded program.  */
 
 #ifdef __x86_64__
   {
@@ -212,28 +212,27 @@ x86_linux_nat_target::read_description ()
 
 /* Enable branch tracing.  */
 
-struct btrace_target_info *
-x86_linux_nat_target::enable_btrace (ptid_t ptid,
-				     const struct btrace_config *conf)
+static struct btrace_target_info *
+x86_linux_enable_btrace (struct target_ops *self, ptid_t ptid,
+			 const struct btrace_config *conf)
 {
-  struct btrace_target_info *tinfo = nullptr;
-  try
-    {
-      tinfo = linux_enable_btrace (ptid, conf);
-    }
-  catch (const gdb_exception_error &exception)
-    {
-      error (_("Could not enable branch tracing for %s: %s"),
-	     target_pid_to_str (ptid).c_str (), exception.what ());
-    }
+  struct btrace_target_info *tinfo;
+
+  errno = 0;
+  tinfo = linux_enable_btrace (ptid, conf);
+
+  if (tinfo == NULL)
+    error (_("Could not enable branch tracing for %s: %s."),
+	   target_pid_to_str (ptid), safe_strerror (errno));
 
   return tinfo;
 }
 
 /* Disable branch tracing.  */
 
-void
-x86_linux_nat_target::disable_btrace (struct btrace_target_info *tinfo)
+static void
+x86_linux_disable_btrace (struct target_ops *self,
+			  struct btrace_target_info *tinfo)
 {
   enum btrace_error errcode = linux_disable_btrace (tinfo);
 
@@ -243,25 +242,28 @@ x86_linux_nat_target::disable_btrace (struct btrace_target_info *tinfo)
 
 /* Teardown branch tracing.  */
 
-void
-x86_linux_nat_target::teardown_btrace (struct btrace_target_info *tinfo)
+static void
+x86_linux_teardown_btrace (struct target_ops *self,
+			   struct btrace_target_info *tinfo)
 {
   /* Ignore errors.  */
   linux_disable_btrace (tinfo);
 }
 
-enum btrace_error
-x86_linux_nat_target::read_btrace (struct btrace_data *data,
-				   struct btrace_target_info *btinfo,
-				   enum btrace_read_type type)
+static enum btrace_error
+x86_linux_read_btrace (struct target_ops *self,
+		       struct btrace_data *data,
+		       struct btrace_target_info *btinfo,
+		       enum btrace_read_type type)
 {
   return linux_read_btrace (data, btinfo, type);
 }
 
 /* See to_btrace_conf in target.h.  */
 
-const struct btrace_config *
-x86_linux_nat_target::btrace_conf (const struct btrace_target_info *btinfo)
+static const struct btrace_config *
+x86_linux_btrace_conf (struct target_ops *self,
+		       const struct btrace_target_info *btinfo)
 {
   return linux_btrace_conf (btinfo);
 }
@@ -310,14 +312,50 @@ x86_linux_get_thread_area (pid_t pid, void *addr, unsigned int *base_addr)
 }
 
 
-void
-_initialize_x86_linux_nat ()
+/* Create an x86 GNU/Linux target.  */
+
+struct target_ops *
+x86_linux_create_target (void)
 {
+  /* Fill in the generic GNU/Linux methods.  */
+  struct target_ops *t = linux_target ();
+
   /* Initialize the debug register function vectors.  */
+  x86_use_watchpoints (t);
   x86_dr_low.set_control = x86_linux_dr_set_control;
   x86_dr_low.set_addr = x86_linux_dr_set_addr;
   x86_dr_low.get_addr = x86_linux_dr_get_addr;
   x86_dr_low.get_status = x86_linux_dr_get_status;
   x86_dr_low.get_control = x86_linux_dr_get_control;
   x86_set_debug_register_length (sizeof (void *));
+
+  /* Override the GNU/Linux inferior startup hook.  */
+  super_post_startup_inferior = t->to_post_startup_inferior;
+  t->to_post_startup_inferior = x86_linux_child_post_startup_inferior;
+
+  /* Add the description reader.  */
+  t->to_read_description = x86_linux_read_description;
+
+  /* Add btrace methods.  */
+  t->to_supports_btrace = linux_supports_btrace;
+  t->to_enable_btrace = x86_linux_enable_btrace;
+  t->to_disable_btrace = x86_linux_disable_btrace;
+  t->to_teardown_btrace = x86_linux_teardown_btrace;
+  t->to_read_btrace = x86_linux_read_btrace;
+  t->to_btrace_conf = x86_linux_btrace_conf;
+
+  return t;
+}
+
+/* Add an x86 GNU/Linux target.  */
+
+void
+x86_linux_add_target (struct target_ops *t)
+{
+  linux_nat_add_target (t);
+  linux_nat_set_new_thread (t, x86_linux_new_thread);
+  linux_nat_set_delete_thread (t, x86_linux_delete_thread);
+  linux_nat_set_new_fork (t, x86_linux_new_fork);
+  linux_nat_set_forget_process (t, x86_forget_process);
+  linux_nat_set_prepare_to_resume (t, x86_linux_prepare_to_resume);
 }

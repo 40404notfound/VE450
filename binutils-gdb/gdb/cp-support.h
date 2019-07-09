@@ -1,5 +1,5 @@
 /* Helper routines for C++ support in GDB.
-   Copyright (C) 2002-2019 Free Software Foundation, Inc.
+   Copyright (C) 2002-2018 Free Software Foundation, Inc.
 
    Contributed by MontaVista Software.
    Namespace support contributed by David Carlton.
@@ -25,17 +25,14 @@
 /* We need this for 'domain_enum', alas...  */
 
 #include "symtab.h"
-#include "common/vec.h"
-#include "common/gdb_vecs.h"
+#include "vec.h"
+#include "gdb_vecs.h"
 #include "gdb_obstack.h"
-#include "common/array-view.h"
-#include <vector>
 
 /* Opaque declarations.  */
 
 struct symbol;
 struct block;
-struct buildsym_compunit;
 struct objfile;
 struct type;
 struct demangle_component;
@@ -96,7 +93,7 @@ extern unsigned int cp_find_first_component (const char *name);
 
 extern unsigned int cp_entire_prefix_len (const char *name);
 
-extern gdb::unique_xmalloc_ptr<char> cp_func_name (const char *full_name);
+extern char *cp_func_name (const char *full_name);
 
 extern gdb::unique_xmalloc_ptr<char> cp_remove_params
   (const char *demanged_name);
@@ -109,16 +106,15 @@ extern gdb::unique_xmalloc_ptr<char> cp_remove_params
 extern gdb::unique_xmalloc_ptr<char> cp_remove_params_if_any
   (const char *demangled_name, bool completion_mode);
 
-extern std::vector<symbol *> make_symbol_overload_list (const char *,
-							const char *);
+extern struct symbol **make_symbol_overload_list (const char *,
+						  const char *);
 
-extern void add_symbol_overload_list_adl
-  (gdb::array_view<type *> arg_types,
-   const char *func_name,
-   std::vector<symbol *> *overload_list);
+extern struct symbol **make_symbol_overload_list_adl (struct type **arg_types,
+                                                      int nargs,
+                                                      const char *func_name);
 
 extern struct type *cp_lookup_rtti_type (const char *name,
-					 const struct block *block);
+					 struct block *block);
 
 /* Produce an unsigned hash value from SEARCH_NAME that is compatible
    with cp_symbol_name_matches.  Only the last component in
@@ -136,8 +132,7 @@ extern symbol_name_matcher_ftype *cp_get_symbol_name_matcher
 
 extern int cp_is_in_anonymous (const char *symbol_name);
 
-extern void cp_scan_for_anonymous_namespaces (struct buildsym_compunit *,
-					      const struct symbol *symbol,
+extern void cp_scan_for_anonymous_namespaces (const struct symbol *symbol,
 					      struct objfile *objfile);
 
 extern struct block_symbol cp_lookup_symbol_nonlocal
@@ -174,7 +169,7 @@ struct type *cp_find_type_baseclass_by_name (struct type *parent_type,
 /* Functions from cp-name-parser.y.  */
 
 extern std::unique_ptr<demangle_parse_info> cp_demangled_name_to_comp
-     (const char *demangled_name, std::string *errmsg);
+     (const char *demangled_name, const char **errmsg);
 
 extern gdb::unique_xmalloc_ptr<char> cp_comp_to_string
   (struct demangle_component *result, int estimated_len);

@@ -1,5 +1,5 @@
 /* POWER/PowerPC XCOFF linker support.
-   Copyright (C) 1995-2019 Free Software Foundation, Inc.
+   Copyright (C) 1995-2018 Free Software Foundation, Inc.
    Written by Ian Lance Taylor <ian@cygnus.com>, Cygnus Support.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -829,7 +829,7 @@ xcoff_link_add_dynamic_symbols (bfd *abfd, struct bfd_link_info *info)
    if (info->output_bfd->xvec != abfd->xvec)
     {
       _bfd_error_handler
-	(_("%pB: XCOFF shared object when not producing XCOFF output"),
+	(_("%B: XCOFF shared object when not producing XCOFF output"),
 	 abfd);
       bfd_set_error (bfd_error_invalid_operation);
       return FALSE;
@@ -850,7 +850,7 @@ xcoff_link_add_dynamic_symbols (bfd *abfd, struct bfd_link_info *info)
   if (lsec == NULL)
     {
       _bfd_error_handler
-	(_("%pB: dynamic object with no .loader section"),
+	(_("%B: dynamic object with no .loader section"),
 	 abfd);
       bfd_set_error (bfd_error_no_symbols);
       return FALSE;
@@ -1410,7 +1410,7 @@ xcoff_link_add_symbols (bfd *abfd, struct bfd_link_info *info)
 		{
 		  _bfd_error_handler
 		    /* xgettext:c-format */
-		    (_("%pB: `%s' has line numbers but no enclosing section"),
+		    (_("%B: `%s' has line numbers but no enclosing section"),
 		     abfd, name);
 		  bfd_set_error (bfd_error_bad_value);
 		  goto error_return;
@@ -1463,7 +1463,7 @@ xcoff_link_add_symbols (bfd *abfd, struct bfd_link_info *info)
 	{
 	  _bfd_error_handler
 	    /* xgettext:c-format */
-	    (_("%pB: class %d symbol `%s' has no aux entries"),
+	    (_("%B: class %d symbol `%s' has no aux entries"),
 	     abfd, sym.n_sclass, name);
 	  bfd_set_error (bfd_error_bad_value);
 	  goto error_return;
@@ -1486,7 +1486,7 @@ xcoff_link_add_symbols (bfd *abfd, struct bfd_link_info *info)
 	default:
 	  _bfd_error_handler
 	    /* xgettext:c-format */
-	    (_("%pB: symbol `%s' has unrecognized csect type %d"),
+	    (_("%B: symbol `%s' has unrecognized csect type %d"),
 	     abfd, name, smtyp);
 	  bfd_set_error (bfd_error_bad_value);
 	  goto error_return;
@@ -1499,10 +1499,9 @@ xcoff_link_add_symbols (bfd *abfd, struct bfd_link_info *info)
 	    {
 	      _bfd_error_handler
 		/* xgettext:c-format */
-		(_("%pB: bad XTY_ER symbol `%s': class %d scnum %d "
-		   "scnlen %" PRId64),
+		(_("%B: bad XTY_ER symbol `%s': class %d scnum %d scnlen %Ld"),
 		 abfd, name, sym.n_sclass, sym.n_scnum,
-		 (int64_t) aux.x_csect.x_scnlen.l);
+		 aux.x_csect.x_scnlen.l);
 	      bfd_set_error (bfd_error_bad_value);
 	      goto error_return;
 	    }
@@ -1530,8 +1529,8 @@ xcoff_link_add_symbols (bfd *abfd, struct bfd_link_info *info)
 		{
 		  _bfd_error_handler
 		    /* xgettext:c-format */
-		    (_("%pB: XMC_TC0 symbol `%s' is class %d scnlen %" PRId64),
-		     abfd, name, sym.n_sclass, (int64_t) aux.x_csect.x_scnlen.l);
+		    (_("%B: XMC_TC0 symbol `%s' is class %d scnlen %Ld"),
+		     abfd, name, sym.n_sclass, aux.x_csect.x_scnlen.l);
 		  bfd_set_error (bfd_error_bad_value);
 		  goto error_return;
 		}
@@ -1677,7 +1676,7 @@ xcoff_link_add_symbols (bfd *abfd, struct bfd_link_info *info)
 	      {
 		_bfd_error_handler
 		  /* xgettext:c-format */
-		  (_("%pB: csect `%s' not in enclosing section"),
+		  (_("%B: csect `%s' not in enclosing section"),
 		   abfd, name);
 		bfd_set_error (bfd_error_bad_value);
 		goto error_return;
@@ -1785,7 +1784,7 @@ xcoff_link_add_symbols (bfd *abfd, struct bfd_link_info *info)
 	      {
 		_bfd_error_handler
 		  /* xgettext:c-format */
-		  (_("%pB: misplaced XTY_LD `%s'"),
+		  (_("%B: misplaced XTY_LD `%s'"),
 		   abfd, name);
 		bfd_set_error (bfd_error_bad_value);
 		goto error_return;
@@ -1882,7 +1881,7 @@ xcoff_link_add_symbols (bfd *abfd, struct bfd_link_info *info)
 
       if (EXTERN_SYM_P (sym.n_sclass))
 	{
-	  bfd_boolean copy, ok;
+	  bfd_boolean copy;
 	  flagword flags;
 
 	  BFD_ASSERT (section != NULL);
@@ -2022,12 +2021,12 @@ xcoff_link_add_symbols (bfd *abfd, struct bfd_link_info *info)
 	  BFD_ASSERT (last_real->next == first_csect);
 	  last_real->next = NULL;
 	  flags = (sym.n_sclass == C_EXT ? BSF_GLOBAL : BSF_WEAK);
-	  ok = (_bfd_generic_link_add_one_symbol
-		(info, abfd, name, flags, section, value, NULL, copy, TRUE,
-		 (struct bfd_link_hash_entry **) sym_hash));
-	  last_real->next = first_csect;
-	  if (!ok)
+	  if (! (_bfd_generic_link_add_one_symbol
+		 (info, abfd, name, flags, section, value,
+		  NULL, copy, TRUE,
+		  (struct bfd_link_hash_entry **) sym_hash)))
 	    goto error_return;
+	  last_real->next = first_csect;
 
 	  if (smtyp == XTY_CM)
 	    {
@@ -2106,8 +2105,8 @@ xcoff_link_add_symbols (bfd *abfd, struct bfd_link_info *info)
 		{
 		  _bfd_error_handler
 		    /* xgettext:c-format */
-		    (_("%pB: reloc %s:%" PRId64 " not in csect"),
-		     abfd, o->name, (int64_t) i);
+		    (_("%B: reloc %s:%Ld not in csect"),
+		     abfd, o->name, i);
 		  bfd_set_error (bfd_error_bad_value);
 		  goto error_return;
 		}
@@ -2687,7 +2686,10 @@ xcoff_need_ldrel_p (struct bfd_link_info *info, struct internal_reloc *rel,
     case R_RLA:
       /* Absolute relocations against absolute symbols can be
 	 resolved statically.  */
-      if (h != NULL && bfd_is_abs_symbol (&h->root))
+      if (h != NULL
+	  && (h->root.type == bfd_link_hash_defined
+	      || h->root.type == bfd_link_hash_defweak)
+	  && bfd_is_abs_section (h->root.u.def.section))
 	return FALSE;
 
       return TRUE;
@@ -3122,7 +3124,7 @@ bfd_xcoff_import_symbol (bfd *output_bfd,
   if (val != (bfd_vma) -1)
     {
       if (h->root.type == bfd_link_hash_defined
-	  && (!bfd_is_abs_symbol (&h->root)
+	  && (! bfd_is_abs_section (h->root.u.def.section)
 	      || h->root.u.def.value != val))
 	(*info->callbacks->multiple_definition) (info, &h->root, output_bfd,
 						 bfd_abs_section_ptr, val);
@@ -4057,7 +4059,7 @@ xcoff_create_ldrel (bfd *output_bfd, struct xcoff_final_link_info *flinfo,
 	{
 	  _bfd_error_handler
 	    /* xgettext:c-format */
-	    (_("%pB: loader reloc in unrecognized section `%s'"),
+	    (_("%B: loader reloc in unrecognized section `%s'"),
 	     reference_bfd, secname);
 	  bfd_set_error (bfd_error_nonrepresentable_section);
 	  return FALSE;
@@ -4069,7 +4071,7 @@ xcoff_create_ldrel (bfd *output_bfd, struct xcoff_final_link_info *flinfo,
 	{
 	  _bfd_error_handler
 	    /* xgettext:c-format */
-	    (_("%pB: `%s' in loader reloc but not loader sym"),
+	    (_("%B: `%s' in loader reloc but not loader sym"),
 	     reference_bfd, h->root.root.string);
 	  bfd_set_error (bfd_error_bad_value);
 	  return FALSE;
@@ -4086,7 +4088,7 @@ xcoff_create_ldrel (bfd *output_bfd, struct xcoff_final_link_info *flinfo,
     {
       _bfd_error_handler
 	/* xgettext:c-format */
-	(_("%pB: loader reloc in read-only section %pA"),
+	(_("%B: loader reloc in read-only section %A"),
 	 reference_bfd, output_section);
       bfd_set_error (bfd_error_invalid_operation);
       return FALSE;
@@ -5110,9 +5112,9 @@ xcoff_find_tc0 (bfd *output_bfd, struct xcoff_final_link_info *flinfo)
       if (best_address > toc_start + 0x8000)
 	{
 	  _bfd_error_handler
-	    (_("TOC overflow: %#" PRIx64 " > 0x10000; try -mminimal-toc "
+	    (_("TOC overflow: %#Lx > 0x10000; try -mminimal-toc "
 	       "when compiling"),
-	     (uint64_t) (toc_end - toc_start));
+	     toc_end - toc_start);
 	  bfd_set_error (bfd_error_file_too_big);
 	  return FALSE;
 	}
@@ -5586,10 +5588,10 @@ xcoff_write_global_symbol (struct bfd_hash_entry *bh, void * inf)
 	    || h->root.type == bfd_link_hash_defweak)
 	   && h->smclas == XMC_XO)
     {
-      BFD_ASSERT (bfd_is_abs_symbol (&h->root));
+      BFD_ASSERT (bfd_is_abs_section (h->root.u.def.section));
       isym.n_value = h->root.u.def.value;
       isym.n_scnum = N_UNDEF;
-      if (h->root.type == bfd_link_hash_defweak
+      if (h->root.type == bfd_link_hash_undefweak
 	  && C_WEAKEXT == C_AIX_WEAKEXT)
 	isym.n_sclass = C_WEAKEXT;
       else
@@ -5655,7 +5657,7 @@ xcoff_write_global_symbol (struct bfd_hash_entry *bh, void * inf)
       /* We just output an SD symbol.  Now output an LD symbol.  */
       h->indx += 2;
 
-      if (h->root.type == bfd_link_hash_defweak
+      if (h->root.type == bfd_link_hash_undefweak
 	  && C_WEAKEXT == C_AIX_WEAKEXT)
 	isym.n_sclass = C_WEAKEXT;
       else

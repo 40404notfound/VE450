@@ -1,7 +1,7 @@
 /* Target-dependent code for the Texas Instruments MSP430 for GDB, the
    GNU debugger.
 
-   Copyright (C) 2012-2019 Free Software Foundation, Inc.
+   Copyright (C) 2012-2018 Free Software Foundation, Inc.
 
    Contributed by Red Hat, Inc.
 
@@ -218,7 +218,7 @@ msp430_register_reggroup_p (struct gdbarch *gdbarch, int regnum,
 
 static enum register_status
 msp430_pseudo_register_read (struct gdbarch *gdbarch,
-			     readable_regcache *regcache,
+			     struct regcache *regcache,
 			     int regnum, gdb_byte *buffer)
 {
   if (MSP430_NUM_REGS <= regnum && regnum < MSP430_NUM_TOTAL_REGS)
@@ -229,7 +229,7 @@ msp430_pseudo_register_read (struct gdbarch *gdbarch,
       int regsize = register_size (gdbarch, regnum);
       int raw_regnum = regnum - MSP430_NUM_REGS;
 
-      status = regcache->raw_read (raw_regnum, &val);
+      status = regcache_raw_read_unsigned (regcache, raw_regnum, &val);
       if (status == REG_VALID)
 	store_unsigned_integer (buffer, regsize, byte_order, val);
 
@@ -447,6 +447,22 @@ msp430_skip_prologue (struct gdbarch *gdbarch, CORE_ADDR pc)
   return p.prologue_end;
 }
 
+/* Implement the "unwind_pc" gdbarch method.  */
+
+static CORE_ADDR
+msp430_unwind_pc (struct gdbarch *arch, struct frame_info *next_frame)
+{
+  return frame_unwind_register_unsigned (next_frame, MSP430_PC_REGNUM);
+}
+
+/* Implement the "unwind_sp" gdbarch method.  */
+
+static CORE_ADDR
+msp430_unwind_sp (struct gdbarch *arch, struct frame_info *next_frame)
+{
+  return frame_unwind_register_unsigned (next_frame, MSP430_SP_REGNUM);
+}
+
 /* Given a frame described by THIS_FRAME, decode the prologue of its
    associated function if there is not cache entry as specified by
    THIS_PROLOGUE_CACHE.  Save the decoded prologue in the cache and
@@ -634,14 +650,26 @@ msp430_frame_align (struct gdbarch *gdbarch, CORE_ADDR sp)
   return align_down (sp, 2);
 }
 
+
+/* Implement the "dummy_id" gdbarch method.  */
+
+static struct frame_id
+msp430_dummy_id (struct gdbarch *gdbarch, struct frame_info *this_frame)
+{
+  return
+    frame_id_build (get_frame_register_unsigned
+		    (this_frame, MSP430_SP_REGNUM),
+		    get_frame_pc (this_frame));
+}
+
+
 /* Implement the "push_dummy_call" gdbarch method.  */
 
 static CORE_ADDR
 msp430_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
 			struct regcache *regcache, CORE_ADDR bp_addr,
 			int nargs, struct value **args, CORE_ADDR sp,
-			function_call_return_method return_method,
-			CORE_ADDR struct_addr)
+			int struct_return, CORE_ADDR struct_addr)
 {
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
   int write_pass;
@@ -671,7 +699,7 @@ msp430_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
 	sp = align_down (sp - sp_off, 4);
       sp_off = 0;
 
-      if (return_method == return_method_struct)
+      if (struct_return)
 	{
 	  if (write_pass)
 	    regcache_cooked_write_unsigned (regcache, arg_reg, struct_addr);
@@ -687,7 +715,6 @@ msp430_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
 	  ULONGEST arg_size = TYPE_LENGTH (arg_type);
 	  int offset;
 	  int current_arg_on_stack;
-	  gdb_byte struct_addr_buf[4];
 
 	  current_arg_on_stack = 0;
 
@@ -695,9 +722,11 @@ msp430_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
 	      || TYPE_CODE (arg_type) == TYPE_CODE_UNION)
 	    {
 	      /* Aggregates of any size are passed by reference.  */
-	      store_unsigned_integer (struct_addr_buf, 4, byte_order,
+	      gdb_byte struct_addr[4];
+
+	      store_unsigned_integer (struct_addr, 4, byte_order,
 				      value_address (arg));
-	      arg_bits = struct_addr_buf;
+	      arg_bits = struct_addr;
 	      arg_size = (code_model == MSP_LARGE_CODE_MODEL) ? 4 : 2;
 	    }
 	  else
@@ -879,8 +908,8 @@ msp430_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 	      code_model = ca_tdep->code_model;
 	      break;
 	    }
+	  /* Otherwise, fall through...  */
 	}
-	/* Fall through.  */
       default:
 	error (_("Unknown msp430 isa"));
 	break;
@@ -966,11 +995,14 @@ msp430_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   /* Frames, prologues, etc.  */
   set_gdbarch_inner_than (gdbarch, core_addr_lessthan);
   set_gdbarch_skip_prologue (gdbarch, msp430_skip_prologue);
+  set_gdbarch_unwind_pc (gdbarch, msp430_unwind_pc);
+  set_gdbarch_unwind_sp (gdbarch, msp430_unwind_sp);
   set_gdbarch_frame_align (gdbarch, msp430_frame_align);
   dwarf2_append_unwinders (gdbarch);
   frame_unwind_append_unwinder (gdbarch, &msp430_unwind);
 
   /* Dummy frames, return values.  */
+  set_gdbarch_dummy_id (gdbarch, msp430_dummy_id);
   set_gdbarch_push_dummy_call (gdbarch, msp430_push_dummy_call);
   set_gdbarch_return_value (gdbarch, msp430_return_value);
 

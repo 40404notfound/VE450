@@ -1,6 +1,6 @@
 /* Native-dependent code for GNU/Linux i386.
 
-   Copyright (C) 1999-2019 Free Software Foundation, Inc.
+   Copyright (C) 1999-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -31,23 +31,12 @@
 #include "i387-tdep.h"
 #include "i386-tdep.h"
 #include "i386-linux-tdep.h"
-#include "common/x86-xstate.h"
+#include "x86-xstate.h"
 
+#include "linux-nat.h"
 #include "x86-linux-nat.h"
 #include "nat/linux-ptrace.h"
 #include "inf-ptrace.h"
-
-struct i386_linux_nat_target final : public x86_linux_nat_target
-{
-  /* Add our register access methods.  */
-  void fetch_registers (struct regcache *, int) override;
-  void store_registers (struct regcache *, int) override;
-
-  /* Override the default ptrace resume method.  */
-  void low_resume (ptid_t ptid, int step, enum gdb_signal sig) override;
-};
-
-static i386_linux_nat_target the_i386_linux_nat_target;
 
 /* The register sets used in GNU/Linux ELF core-dumps are identical to
    the register sets in `struct user' that is used for a.out
@@ -112,11 +101,11 @@ fetch_register (struct regcache *regcache, int regno)
   gdb_assert (!have_ptrace_getregs);
   if (i386_linux_gregset_reg_offset[regno] == -1)
     {
-      regcache->raw_supply (regno, NULL);
+      regcache_raw_supply (regcache, regno, NULL);
       return;
     }
 
-  tid = get_ptrace_pid (regcache->ptid ());
+  tid = get_ptrace_pid (regcache_get_ptid (regcache));
 
   errno = 0;
   val = ptrace (PTRACE_PEEKUSER, tid,
@@ -126,7 +115,7 @@ fetch_register (struct regcache *regcache, int regno)
 	   gdbarch_register_name (regcache->arch (), regno),
 	   regno, safe_strerror (errno));
 
-  regcache->raw_supply (regno, &val);
+  regcache_raw_supply (regcache, regno, &val);
 }
 
 /* Store one register.  */
@@ -141,10 +130,10 @@ store_register (const struct regcache *regcache, int regno)
   if (i386_linux_gregset_reg_offset[regno] == -1)
     return;
 
-  tid = get_ptrace_pid (regcache->ptid ());
+  tid = get_ptrace_pid (regcache_get_ptid (regcache));
 
   errno = 0;
-  regcache->raw_collect (regno, &val);
+  regcache_raw_collect (regcache, regno, &val);
   ptrace (PTRACE_POKEUSER, tid,
 	  i386_linux_gregset_reg_offset[regno], val);
   if (errno != 0)
@@ -167,13 +156,13 @@ supply_gregset (struct regcache *regcache, const elf_gregset_t *gregsetp)
   int i;
 
   for (i = 0; i < I386_NUM_GREGS; i++)
-    regcache->raw_supply (i, regp + i386_linux_gregset_reg_offset[i]);
+    regcache_raw_supply (regcache, i,
+			 regp + i386_linux_gregset_reg_offset[i]);
 
   if (I386_LINUX_ORIG_EAX_REGNUM
 	< gdbarch_num_regs (regcache->arch ()))
-    regcache->raw_supply
-      (I386_LINUX_ORIG_EAX_REGNUM,
-       regp + i386_linux_gregset_reg_offset[I386_LINUX_ORIG_EAX_REGNUM]);
+    regcache_raw_supply (regcache, I386_LINUX_ORIG_EAX_REGNUM, regp
+			 + i386_linux_gregset_reg_offset[I386_LINUX_ORIG_EAX_REGNUM]);
 }
 
 /* Fill register REGNO (if it is a general-purpose register) in
@@ -189,14 +178,14 @@ fill_gregset (const struct regcache *regcache,
 
   for (i = 0; i < I386_NUM_GREGS; i++)
     if (regno == -1 || regno == i)
-      regcache->raw_collect (i, regp + i386_linux_gregset_reg_offset[i]);
+      regcache_raw_collect (regcache, i,
+			    regp + i386_linux_gregset_reg_offset[i]);
 
   if ((regno == -1 || regno == I386_LINUX_ORIG_EAX_REGNUM)
       && I386_LINUX_ORIG_EAX_REGNUM
 	   < gdbarch_num_regs (regcache->arch ()))
-    regcache->raw_collect
-      (I386_LINUX_ORIG_EAX_REGNUM,
-       regp + i386_linux_gregset_reg_offset[I386_LINUX_ORIG_EAX_REGNUM]);
+    regcache_raw_collect (regcache, I386_LINUX_ORIG_EAX_REGNUM, regp
+			  + i386_linux_gregset_reg_offset[I386_LINUX_ORIG_EAX_REGNUM]);
 }
 
 #ifdef HAVE_PTRACE_GETREGS
@@ -457,8 +446,9 @@ store_fpxregs (const struct regcache *regcache, int tid, int regno)
    this for all registers (including the floating point and SSE
    registers).  */
 
-void
-i386_linux_nat_target::fetch_registers (struct regcache *regcache, int regno)
+static void
+i386_linux_fetch_inferior_registers (struct target_ops *ops,
+				     struct regcache *regcache, int regno)
 {
   pid_t tid;
 
@@ -475,7 +465,7 @@ i386_linux_nat_target::fetch_registers (struct regcache *regcache, int regno)
       return;
     }
 
-  tid = get_ptrace_pid (regcache->ptid ());
+  tid = get_ptrace_pid (regcache_get_ptid (regcache));
 
   /* Use the PTRACE_GETFPXREGS request whenever possible, since it
      transfers more registers in one system call, and we'll cache the
@@ -488,7 +478,7 @@ i386_linux_nat_target::fetch_registers (struct regcache *regcache, int regno)
       /* The call above might reset `have_ptrace_getregs'.  */
       if (!have_ptrace_getregs)
 	{
-	  fetch_registers (regcache, regno);
+	  i386_linux_fetch_inferior_registers (ops, regcache, regno);
 	  return;
 	}
 
@@ -534,8 +524,9 @@ i386_linux_nat_target::fetch_registers (struct regcache *regcache, int regno)
 /* Store register REGNO back into the child process.  If REGNO is -1,
    do this for all registers (including the floating point and SSE
    registers).  */
-void
-i386_linux_nat_target::store_registers (struct regcache *regcache, int regno)
+static void
+i386_linux_store_inferior_registers (struct target_ops *ops,
+				     struct regcache *regcache, int regno)
 {
   pid_t tid;
 
@@ -552,7 +543,7 @@ i386_linux_nat_target::store_registers (struct regcache *regcache, int regno)
       return;
     }
 
-  tid = get_ptrace_pid (regcache->ptid ());
+  tid = get_ptrace_pid (regcache_get_ptid (regcache));
 
   /* Use the PTRACE_SETFPXREGS requests whenever possible, since it
      transfers more registers in one system call.  But remember that
@@ -644,10 +635,11 @@ static const unsigned char linux_syscall[] = { 0xcd, 0x80 };
    If STEP is nonzero, single-step it.
    If SIGNAL is nonzero, give it that signal.  */
 
-void
-i386_linux_nat_target::low_resume (ptid_t ptid, int step, enum gdb_signal signal)
+static void
+i386_linux_resume (struct target_ops *ops,
+		   ptid_t ptid, int step, enum gdb_signal signal)
 {
-  int pid = ptid.lwp ();
+  int pid = ptid_get_lwp (ptid);
   int request;
 
   if (catch_syscall_enabled () > 0)
@@ -714,8 +706,16 @@ i386_linux_nat_target::low_resume (ptid_t ptid, int step, enum gdb_signal signal
 void
 _initialize_i386_linux_nat (void)
 {
-  linux_target = &the_i386_linux_nat_target;
+  /* Create a generic x86 GNU/Linux target.  */
+  struct target_ops *t = x86_linux_create_target ();
+
+  /* Override the default ptrace resume method.  */
+  t->to_resume = i386_linux_resume;
+
+  /* Add our register access methods.  */
+  t->to_fetch_registers = i386_linux_fetch_inferior_registers;
+  t->to_store_registers = i386_linux_store_inferior_registers;
 
   /* Add the target.  */
-  add_inf_child_target (linux_target);
+  x86_linux_add_target (t);
 }

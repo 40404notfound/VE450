@@ -1,4 +1,4 @@
-source_sh ${srcdir}/emulparams/armelf.sh
+. ${srcdir}/emulparams/armelf.sh
 SCRIPT_NAME="armbpabi"
 GENERATE_COMBRELOC_SCRIPT=1
 OUTPUT_FORMAT="elf32-littlearm-symbian"

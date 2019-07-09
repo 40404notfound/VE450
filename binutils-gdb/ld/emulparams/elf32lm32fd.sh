@@ -1,6 +1,5 @@
-source_sh ${srcdir}/emulparams/elf32lm32.sh
+. ${srcdir}/emulparams/elf32lm32.sh
 unset STACK_ADDR
-unset DYNAMIC_LINK
 OUTPUT_FORMAT="elf32-lm32fdpic"
 MAXPAGESIZE="CONSTANT (MAXPAGESIZE)"
 TEMPLATE_NAME=elf32

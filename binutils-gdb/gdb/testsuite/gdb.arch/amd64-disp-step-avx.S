@@ -1,4 +1,4 @@
-/* Copyright 2009-2019 Free Software Foundation, Inc.
+/* Copyright 2009-2018 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,11 +20,9 @@
 
 	.text
 
-	.global _start,main
-_start:
-	nop
+	.global main
 main:
-        nop
+	nop
 
 /***********************************************/
 
@@ -61,7 +59,7 @@ ro_var:
 
 done:
 	mov $0,%rdi
-	call _exit
+	call exit
 	hlt
 
 /* RIP-relative data for VEX3 test above.  */

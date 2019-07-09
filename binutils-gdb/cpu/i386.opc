@@ -1,0 +1,19 @@
+
+/* -- opc.h */
+#undef  CGEN_DIS_HASH_SIZE        
+#define CGEN_DIS_HASH_SIZE 1       
+#undef  CGEN_DIS_HASH        
+#define CGEN_DIS_HASH(buffer, value) 0
+/* -- */
+
+/* -- opc.c */
+
+/* -- */
+
+/* -- asm.c */
+
+/* -- */
+
+/* -- dis.c */
+
+/* -- */

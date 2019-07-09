@@ -1,6 +1,6 @@
 /* Top level stuff for GDB, the GNU debugger.
 
-   Copyright (C) 1999-2019 Free Software Foundation, Inc.
+   Copyright (C) 1999-2018 Free Software Foundation, Inc.
 
    Written by Elena Zannoni <ezannoni@cygnus.com> of Cygnus Solutions.
 
@@ -24,7 +24,7 @@
 #include "inferior.h"
 #include "infrun.h"
 #include "target.h"
-#include "terminal.h"
+#include "terminal.h"		/* for job_control */
 #include "event-loop.h"
 #include "event-top.h"
 #include "interps.h"
@@ -32,12 +32,12 @@
 #include "cli/cli-script.h"     /* for reset_command_nest_depth */
 #include "main.h"
 #include "gdbthread.h"
-#include "observable.h"
+#include "observer.h"
 #include "continuations.h"
 #include "gdbcmd.h"		/* for dont_repeat() */
 #include "annotate.h"
 #include "maint.h"
-#include "common/buffer.h"
+#include "buffer.h"
 #include "ser-event.h"
 #include "gdb_select.h"
 
@@ -164,7 +164,7 @@ void (*after_char_processing_hook) (void);
 static struct gdb_exception
 gdb_rl_callback_read_char_wrapper_noexcept () noexcept
 {
-  struct gdb_exception gdb_expt;
+  struct gdb_exception gdb_expt = exception_none;
 
   /* C++ exceptions can't normally be thrown across readline (unless
      it is built with -fexceptions, but it won't by default on many
@@ -178,7 +178,7 @@ gdb_rl_callback_read_char_wrapper_noexcept () noexcept
     }
   CATCH_SJLJ (ex, RETURN_MASK_ALL)
     {
-      gdb_expt = std::move (ex);
+      gdb_expt = ex;
     }
   END_CATCH_SJLJ
 
@@ -193,7 +193,7 @@ gdb_rl_callback_read_char_wrapper (gdb_client_data client_data)
 
   /* Rethrow using the normal EH mechanism.  */
   if (gdb_expt.reason < 0)
-    throw_exception (std::move (gdb_expt));
+    throw_exception (gdb_expt);
 }
 
 /* GDB's readline callback handler.  Calls the current INPUT_HANDLER,
@@ -205,21 +205,18 @@ gdb_rl_callback_read_char_wrapper (gdb_client_data client_data)
 static void
 gdb_rl_callback_handler (char *rl) noexcept
 {
-  /* This is static to avoid undefined behavior when calling longjmp
-     -- gdb_exception has a destructor with side effects.  */
-  static struct gdb_exception gdb_rl_expt;
+  struct gdb_exception gdb_rl_expt = exception_none;
   struct ui *ui = current_ui;
 
-  try
+  TRY
     {
-      /* Ensure the exception is reset on each call.  */
-      gdb_rl_expt = {};
-      ui->input_handler (gdb::unique_xmalloc_ptr<char> (rl));
+      ui->input_handler (rl);
     }
-  catch (gdb_exception &ex)
+  CATCH (ex, RETURN_MASK_ALL)
     {
-      gdb_rl_expt = std::move (ex);
+      gdb_rl_expt = ex;
     }
+  END_CATCH
 
   /* If we caught a GDB exception, longjmp out of the readline
      callback.  There's no other way for the callback to signal to
@@ -431,7 +428,7 @@ top_level_prompt (void)
 
   /* Give observers a chance of changing the prompt.  E.g., the python
      `gdb.prompt_hook' is installed as an observer.  */
-  gdb::observers::before_prompt.notify (get_prompt ());
+  observer_notify_before_prompt (get_prompt ());
 
   prompt = get_prompt ();
 
@@ -594,10 +591,10 @@ command_handler (const char *command)
    emulations, to CMD_LINE_BUFFER.  Returns the command line if we
    have a whole command line ready to be processed by the command
    interpreter or NULL if the command line isn't complete yet (input
-   line ends in a backslash).  */
+   line ends in a backslash).  Takes ownership of RL.  */
 
 static char *
-command_line_append_input_line (struct buffer *cmd_line_buffer, const char *rl)
+command_line_append_input_line (struct buffer *cmd_line_buffer, char *rl)
 {
   char *cmd;
   size_t len;
@@ -618,6 +615,9 @@ command_line_append_input_line (struct buffer *cmd_line_buffer, const char *rl)
       cmd = cmd_line_buffer->buffer;
     }
 
+  /* Allocated in readline.  */
+  xfree (rl);
+
   return cmd;
 }
 
@@ -634,16 +634,16 @@ command_line_append_input_line (struct buffer *cmd_line_buffer, const char *rl)
    If REPEAT, handle command repetitions:
 
      - If the input command line is NOT empty, the command returned is
-       saved using save_command_line () so that it can be repeated later.
+       copied into the global 'saved_command_line' var so that it can
+       be repeated later.
 
-     - OTOH, if the input command line IS empty, return the saved
-       command instead of the empty input line.
+     - OTOH, if the input command line IS empty, return the previously
+       saved command instead of the empty input line.
 */
 
 char *
 handle_line_of_input (struct buffer *cmd_line_buffer,
-		      const char *rl, int repeat,
-		      const char *annotation_suffix)
+		      char *rl, int repeat, const char *annotation_suffix)
 {
   struct ui *ui = current_ui;
   int from_tty = ui->instream == ui->stdin_stream;
@@ -672,7 +672,7 @@ handle_line_of_input (struct buffer *cmd_line_buffer,
   server_command = startswith (cmd, SERVER_COMMAND_PREFIX);
   if (server_command)
     {
-      /* Note that we don't call `save_command_line'.  Between this
+      /* Note that we don't set `saved_command_line'.  Between this
          and the check in dont_repeat, this insures that repeating
          will still do the right thing.  */
       return cmd + strlen (SERVER_COMMAND_PREFIX);
@@ -681,29 +681,31 @@ handle_line_of_input (struct buffer *cmd_line_buffer,
   /* Do history expansion if that is wished.  */
   if (history_expansion_p && from_tty && input_interactive_p (current_ui))
     {
-      char *cmd_expansion;
+      char *history_value;
       int expanded;
 
-      expanded = history_expand (cmd, &cmd_expansion);
-      gdb::unique_xmalloc_ptr<char> history_value (cmd_expansion);
+      expanded = history_expand (cmd, &history_value);
       if (expanded)
 	{
 	  size_t len;
 
 	  /* Print the changes.  */
-	  printf_unfiltered ("%s\n", history_value.get ());
+	  printf_unfiltered ("%s\n", history_value);
 
 	  /* If there was an error, call this function again.  */
 	  if (expanded < 0)
-	    return cmd;
+	    {
+	      xfree (history_value);
+	      return cmd;
+	    }
 
 	  /* history_expand returns an allocated string.  Just replace
 	     our buffer with it.  */
-	  len = strlen (history_value.get ());
+	  len = strlen (history_value);
 	  xfree (buffer_finish (cmd_line_buffer));
-	  cmd_line_buffer->buffer = history_value.get ();
+	  cmd_line_buffer->buffer = history_value;
 	  cmd_line_buffer->buffer_size = len + 1;
-	  cmd = history_value.release ();
+	  cmd = history_value;
 	}
     }
 
@@ -712,7 +714,7 @@ handle_line_of_input (struct buffer *cmd_line_buffer,
   for (p1 = cmd; *p1 == ' ' || *p1 == '\t'; p1++)
     ;
   if (repeat && *p1 == '\0')
-    return get_saved_command_line ();
+    return saved_command_line;
 
   /* Add command to history if appropriate.  Note: lines consisting
      solely of comments are also added to the command history.  This
@@ -727,8 +729,9 @@ handle_line_of_input (struct buffer *cmd_line_buffer,
   /* Save into global buffer if appropriate.  */
   if (repeat)
     {
-      save_command_line (cmd);
-      return get_saved_command_line ();
+      xfree (saved_command_line);
+      saved_command_line = xstrdup (cmd);
+      return saved_command_line;
     }
   else
     return cmd;
@@ -743,13 +746,13 @@ handle_line_of_input (struct buffer *cmd_line_buffer,
    function.  */
 
 void
-command_line_handler (gdb::unique_xmalloc_ptr<char> &&rl)
+command_line_handler (char *rl)
 {
   struct buffer *line_buffer = get_command_line_buffer ();
   struct ui *ui = current_ui;
   char *cmd;
 
-  cmd = handle_line_of_input (line_buffer, rl.get (), 1, "prompt");
+  cmd = handle_line_of_input (line_buffer, rl, 1, "prompt");
   if (cmd == (char *) EOF)
     {
       /* stdin closed.  The connection with the terminal is gone.
@@ -843,7 +846,7 @@ gdb_readline_no_editing_callback (gdb_client_data client_data)
 
   buffer_grow_char (&line_buffer, '\0');
   result = buffer_finish (&line_buffer);
-  ui->input_handler (gdb::unique_xmalloc_ptr<char> (result));
+  ui->input_handler (result);
 }
 
 
@@ -1083,25 +1086,27 @@ static void
 async_disconnect (gdb_client_data arg)
 {
 
-  try
+  TRY
     {
       quit_cover ();
     }
 
-  catch (const gdb_exception &exception)
+  CATCH (exception, RETURN_MASK_ALL)
     {
       fputs_filtered ("Could not kill the program being debugged",
 		      gdb_stderr);
       exception_print (gdb_stderr, exception);
     }
+  END_CATCH
 
-  try
+  TRY
     {
       pop_all_targets ();
     }
-  catch (const gdb_exception &exception)
+  CATCH (exception, RETURN_MASK_ALL)
     {
     }
+  END_CATCH
 
   signal (SIGHUP, SIG_DFL);	/*FIXME: ???????????  */
   raise (SIGHUP);

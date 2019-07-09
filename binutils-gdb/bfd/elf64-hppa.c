@@ -1,5 +1,5 @@
 /* Support for HPPA 64-bit ELF
-   Copyright (C) 1999-2019 Free Software Foundation, Inc.
+   Copyright (C) 1999-2018 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -2011,7 +2011,7 @@ elf64_hppa_finish_dynamic_symbol (bfd *output_bfd,
 	 in the output_offset of the PLT section.  */
 
       bfd_put_64 (splt->owner, value, splt->contents + hh->plt_offset);
-      value = _bfd_get_gp_value (info->output_bfd);
+      value = _bfd_get_gp_value (splt->output_section->owner);
       bfd_put_64 (splt->owner, value, splt->contents + hh->plt_offset + 0x8);
 
       /* Create a dynamic IPLT relocation for this entry.
@@ -2027,7 +2027,7 @@ elf64_hppa_finish_dynamic_symbol (bfd *output_bfd,
 
       loc = spltrel->contents;
       loc += spltrel->reloc_count++ * sizeof (Elf64_External_Rela);
-      bfd_elf64_swap_reloca_out (info->output_bfd, &rel, loc);
+      bfd_elf64_swap_reloca_out (splt->output_section->owner, &rel, loc);
     }
 
   /* Initialize an external call stub entry if requested.  */
@@ -2078,8 +2078,8 @@ elf64_hppa_finish_dynamic_symbol (bfd *output_bfd,
 	{
 	  _bfd_error_handler
 	    /* xgettext:c-format */
-	    (_("stub entry for %s cannot load .plt, dp offset = %" PRId64),
-	     hh->eh.root.root.string, (int64_t) value);
+	    (_("stub entry for %s cannot load .plt, dp offset = %Ld"),
+	     hh->eh.root.root.string, value);
 	  return FALSE;
 	}
 
@@ -2143,7 +2143,7 @@ elf64_hppa_finalize_opd (struct elf_link_hash_entry *eh, void *data)
       bfd_put_64 (sopd->owner, value, sopd->contents + hh->opd_offset + 16);
 
       /* The last word is our local __gp value.  */
-      value = _bfd_get_gp_value (info->output_bfd);
+      value = _bfd_get_gp_value (sopd->output_section->owner);
       bfd_put_64 (sopd->owner, value, sopd->contents + hh->opd_offset + 24);
     }
 
@@ -2220,7 +2220,7 @@ elf64_hppa_finalize_opd (struct elf_link_hash_entry *eh, void *data)
 
       loc = sopdrel->contents;
       loc += sopdrel->reloc_count++ * sizeof (Elf64_External_Rela);
-      bfd_elf64_swap_reloca_out (info->output_bfd, &rel, loc);
+      bfd_elf64_swap_reloca_out (sopd->output_section->owner, &rel, loc);
     }
   return TRUE;
 }
@@ -2315,7 +2315,7 @@ elf64_hppa_finalize_dlt (struct elf_link_hash_entry *eh, void *data)
 
       loc = sdltrel->contents;
       loc += sdltrel->reloc_count++ * sizeof (Elf64_External_Rela);
-      bfd_elf64_swap_reloca_out (info->output_bfd, &rel, loc);
+      bfd_elf64_swap_reloca_out (sdlt->output_section->owner, &rel, loc);
     }
   return TRUE;
 }
@@ -2431,7 +2431,8 @@ elf64_hppa_finalize_dynreloc (struct elf_link_hash_entry *eh,
 	  loc = hppa_info->other_rel_sec->contents;
 	  loc += (hppa_info->other_rel_sec->reloc_count++
 		  * sizeof (Elf64_External_Rela));
-	  bfd_elf64_swap_reloca_out (info->output_bfd, &rel, loc);
+	  bfd_elf64_swap_reloca_out (hppa_info->other_rel_sec->output_section->owner,
+				     &rel, loc);
 	}
     }
 
@@ -3282,10 +3283,10 @@ elf_hppa_final_link_relocate (Elf_Internal_Rela *rel,
 	  {
 	    _bfd_error_handler
 	      /* xgettext:c-format */
-	      (_("%pB(%pA+%#" PRIx64 "): cannot reach %s"),
+	      (_("%B(%A+%#Lx): cannot reach %s"),
 	      input_bfd,
 	      input_section,
-	      (uint64_t) offset,
+	      offset,
 	      eh ? eh->root.root.string : "unknown");
 	    bfd_set_error (bfd_error_bad_value);
 	    return bfd_reloc_overflow;
@@ -3380,7 +3381,8 @@ elf_hppa_final_link_relocate (Elf_Internal_Rela *rel,
 				(hppa_info->opd_sec->contents + off + 16));
 
 		    /* The last word is our local __gp value.  */
-		    value = _bfd_get_gp_value (info->output_bfd);
+		    value = _bfd_get_gp_value
+			      (hppa_info->opd_sec->output_section->owner);
 		    bfd_put_64 (hppa_info->opd_sec->owner, value,
 				(hppa_info->opd_sec->contents + off + 24));
 		  }
@@ -3554,12 +3556,33 @@ elf_hppa_final_link_relocate (Elf_Internal_Rela *rel,
 
     case R_PARISC_LTOFF_FPTR32:
       {
-	/* FIXME: There used to be code here to create the FPTR itself if
-	   the relocation was against a local symbol.  But the code could
-	   never have worked.  If the assert below is ever triggered then
-	   the code will need to be reinstated and fixed so that it does
-	   what is needed.  */
-	BFD_ASSERT (hh != NULL);
+	/* We may still need to create the FPTR itself if it was for
+	   a local symbol.  */
+	if (hh == NULL)
+	  {
+	    /* The first two words of an .opd entry are zero.  */
+	    memset (hppa_info->opd_sec->contents + hh->opd_offset, 0, 16);
+
+	    /* The next word is the address of the function.  */
+	    bfd_put_64 (hppa_info->opd_sec->owner, value + addend,
+			(hppa_info->opd_sec->contents
+			 + hh->opd_offset + 16));
+
+	    /* The last word is our local __gp value.  */
+	    value = _bfd_get_gp_value
+		      (hppa_info->opd_sec->output_section->owner);
+	    bfd_put_64 (hppa_info->opd_sec->owner, value,
+			hppa_info->opd_sec->contents + hh->opd_offset + 24);
+
+	    /* The DLT value is the address of the .opd entry.  */
+	    value = (hh->opd_offset
+		     + hppa_info->opd_sec->output_offset
+		     + hppa_info->opd_sec->output_section->vma);
+
+	    bfd_put_64 (hppa_info->dlt_sec->owner,
+			value,
+			hppa_info->dlt_sec->contents + hh->dlt_offset);
+	  }
 
 	/* We want the value of the DLT offset for this symbol, not
 	   the symbol's actual address.  Note that __gp may not point
@@ -3589,7 +3612,8 @@ elf_hppa_final_link_relocate (Elf_Internal_Rela *rel,
 			 + hh->opd_offset + 16));
 
 	    /* The last word is our local __gp value.  */
-	    value = _bfd_get_gp_value (info->output_bfd);
+	    value = _bfd_get_gp_value
+		      (hppa_info->opd_sec->output_section->owner);
 	    bfd_put_64 (hppa_info->opd_sec->owner, value,
 			hppa_info->opd_sec->contents + hh->opd_offset + 24);
 
@@ -3715,7 +3739,8 @@ elf_hppa_final_link_relocate (Elf_Internal_Rela *rel,
 			    (hppa_info->opd_sec->contents + off + 16));
 
 		/* The last word is our local __gp value.  */
-		value = _bfd_get_gp_value (info->output_bfd);
+		value = _bfd_get_gp_value
+			  (hppa_info->opd_sec->output_section->owner);
 		bfd_put_64 (hppa_info->opd_sec->owner, value,
 			    hppa_info->opd_sec->contents + off + 24);
 	      }
@@ -4027,8 +4052,8 @@ const struct elf_size_info hppa64_elf_size_info =
 					elf64_hppa_create_dynamic_sections
 #define elf_backend_post_process_headers	elf64_hppa_post_process_headers
 
-#define elf_backend_omit_section_dynsym _bfd_elf_omit_section_dynsym_all
-
+#define elf_backend_omit_section_dynsym \
+  ((bfd_boolean (*) (bfd *, struct bfd_link_info *, asection *)) bfd_true)
 #define elf_backend_adjust_dynamic_symbol \
 					elf64_hppa_adjust_dynamic_symbol
 

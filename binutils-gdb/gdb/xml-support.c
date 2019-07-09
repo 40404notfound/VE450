@@ -1,6 +1,6 @@
 /* Helper routines for parsing XML using Expat.
 
-   Copyright (C) 2006-2019 Free Software Foundation, Inc.
+   Copyright (C) 2006-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -20,7 +20,7 @@
 #include "defs.h"
 #include "gdbcmd.h"
 #include "xml-support.h"
-#include "common/filestuff.h"
+#include "filestuff.h"
 #include "safe-ctype.h"
 #include <vector>
 #include <string>
@@ -113,9 +113,9 @@ struct gdb_xml_parser
   { m_is_xinclude = is_xinclude; }
 
   /* A thrown error, if any.  */
-  void set_error (gdb_exception &&error)
+  void set_error (gdb_exception error)
   {
-    m_error = std::move (error);
+    m_error = error;
 #ifdef HAVE_XML_STOPPARSER
     XML_StopParser (m_expat_parser, XML_FALSE);
 #endif
@@ -179,14 +179,16 @@ void
 gdb_xml_parser::vdebug (const char *format, va_list ap)
 {
   int line = XML_GetCurrentLineNumber (m_expat_parser);
+  char *message;
 
-  std::string message = string_vprintf (format, ap);
+  message = xstrvprintf (format, ap);
   if (line)
     fprintf_unfiltered (gdb_stderr, "%s (line %d): %s\n",
-			m_name, line, message.c_str ());
+			m_name, line, message);
   else
     fprintf_unfiltered (gdb_stderr, "%s: %s\n",
-			m_name, message.c_str ());
+			m_name, message);
+  xfree (message);
 }
 
 void
@@ -383,14 +385,15 @@ gdb_xml_start_element_wrapper (void *data, const XML_Char *name,
 {
   struct gdb_xml_parser *parser = (struct gdb_xml_parser *) data;
 
-  try
+  TRY
     {
       parser->start_element (name, attrs);
     }
-  catch (gdb_exception &ex)
+  CATCH (ex, RETURN_MASK_ALL)
     {
-      parser->set_error (std::move (ex));
+      parser->set_error (ex);
     }
+  END_CATCH
 }
 
 /* Handle the end of an element.  NAME is the current element.  */
@@ -455,14 +458,15 @@ gdb_xml_end_element_wrapper (void *data, const XML_Char *name)
 {
   struct gdb_xml_parser *parser = (struct gdb_xml_parser *) data;
 
-  try
+  TRY
     {
       parser->end_element (name);
     }
-  catch (gdb_exception &ex)
+  CATCH (ex, RETURN_MASK_ALL)
     {
-      parser->set_error (std::move (ex));
+      parser->set_error (ex);
     }
+  END_CATCH
 }
 
 /* Free a parser and all its associated state.  */
@@ -479,6 +483,7 @@ gdb_xml_parser::gdb_xml_parser (const char *name,
 				void *user_data)
   : m_name (name),
     m_user_data (user_data),
+    m_error (exception_none),
     m_last_line (0),
     m_dtd_name (NULL),
     m_is_xinclude (false)
@@ -592,7 +597,7 @@ gdb_xml_parser::parse (const char *buffer)
       && m_error.error == XML_PARSE_ERROR)
     {
       gdb_assert (m_error.message != NULL);
-      error_string = m_error.what ();
+      error_string = m_error.message;
     }
   else if (status == XML_STATUS_ERROR)
     {
@@ -603,7 +608,7 @@ gdb_xml_parser::parse (const char *buffer)
   else
     {
       gdb_assert (m_error.reason < 0);
-      throw_exception (std::move (m_error));
+      throw_exception (m_error);
     }
 
   if (m_last_line != 0)
@@ -788,13 +793,13 @@ xinclude_start_include (struct gdb_xml_parser *parser,
     gdb_xml_error (parser, _("Maximum XInclude depth (%d) exceeded"),
 		   MAX_XINCLUDE_DEPTH);
 
-  gdb::optional<gdb::char_vector> text
-    = data->fetcher (href, data->fetcher_baton);
-  if (!text)
+  gdb::unique_xmalloc_ptr<char> text = data->fetcher (href,
+						      data->fetcher_baton);
+  if (text == NULL)
     gdb_xml_error (parser, _("Could not load XML document \"%s\""), href);
 
   if (!xml_process_xincludes (data->output, parser->name (),
-			      text->data (), data->fetcher,
+			      text.get (), data->fetcher,
 			      data->fetcher_baton,
 			      data->include_depth + 1))
     gdb_xml_error (parser, _("Parsing \"%s\" failed"), href);
@@ -966,7 +971,7 @@ show_debug_xml (struct ui_file *file, int from_tty,
   fprintf_filtered (file, _("XML debugging is %s.\n"), value);
 }
 
-gdb::optional<gdb::char_vector>
+gdb::unique_xmalloc_ptr<char>
 xml_fetch_content_from_file (const char *filename, void *baton)
 {
   const char *dirname = (const char *) baton;
@@ -985,7 +990,7 @@ xml_fetch_content_from_file (const char *filename, void *baton)
     file = gdb_fopen_cloexec (filename, FOPEN_RT);
 
   if (file == NULL)
-    return {};
+    return NULL;
 
   /* Read in the whole file.  */
 
@@ -996,16 +1001,16 @@ xml_fetch_content_from_file (const char *filename, void *baton)
   len = ftell (file.get ());
   rewind (file.get ());
 
-  gdb::char_vector text (len + 1);
+  gdb::unique_xmalloc_ptr<char> text ((char *) xmalloc (len + 1));
 
-  if (fread (text.data (), 1, len, file.get ()) != len
+  if (fread (text.get (), 1, len, file.get ()) != len
       || ferror (file.get ()))
     {
       warning (_("Read error from \"%s\""), filename);
-      return {};
+      return NULL;
     }
 
-  text.back () = '\0';
+  text.get ()[len] = '\0';
   return text;
 }
 

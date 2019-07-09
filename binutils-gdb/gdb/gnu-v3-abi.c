@@ -1,7 +1,7 @@
 /* Abstraction of GNU v3 abi.
    Contributed by Jim Blandy <jimb@redhat.com>
 
-   Copyright (C) 2001-2019 Free Software Foundation, Inc.
+   Copyright (C) 2001-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -164,7 +164,7 @@ build_gdb_vtable_type (struct gdbarch *arch)
   t = arch_type (arch, TYPE_CODE_STRUCT, offset * TARGET_CHAR_BIT, NULL);
   TYPE_NFIELDS (t) = field - field_list;
   TYPE_FIELDS (t) = field_list;
-  TYPE_NAME (t) = "gdb_gnu_v3_abi_vtable";
+  TYPE_TAG_NAME (t) = "gdb_gnu_v3_abi_vtable";
   INIT_CPLUS_SPECIFIC (t);
 
   return make_type_with_address_space (t, TYPE_INSTANCE_FLAG_CODE_SPACE);
@@ -299,9 +299,8 @@ gnuv3_rtti_type (struct value *value,
   LONGEST offset_to_top;
   const char *atsign;
 
-  /* We only have RTTI for dynamic class objects.  */
-  if (TYPE_CODE (values_type) != TYPE_CODE_STRUCT
-      || !gnuv3_dynamic_class (values_type))
+  /* We only have RTTI for class objects.  */
+  if (TYPE_CODE (values_type) != TYPE_CODE_STRUCT)
     return NULL;
 
   /* Determine architecture.  */
@@ -906,15 +905,16 @@ print_one_vtable (struct gdbarch *gdbarch, struct value *value,
       if (gdbarch_vtable_function_descriptors (gdbarch))
 	vfn = value_addr (vfn);
 
-      try
+      TRY
 	{
 	  addr = value_as_address (vfn);
 	}
-      catch (const gdb_exception_error &ex)
+      CATCH (ex, RETURN_MASK_ERROR)
 	{
-	  printf_filtered (_("<error: %s>"), ex.what ());
+	  printf_filtered (_("<error: %s>"), ex.message);
 	  got_error = 1;
 	}
+      END_CATCH
 
       if (!got_error)
 	print_function_pointer_address (opts, gdbarch, addr, gdb_stdout);
@@ -1027,7 +1027,7 @@ build_std_type_info_type (struct gdbarch *arch)
   t = arch_type (arch, TYPE_CODE_STRUCT, offset * TARGET_CHAR_BIT, NULL);
   TYPE_NFIELDS (t) = field - field_list;
   TYPE_FIELDS (t) = field_list;
-  TYPE_NAME (t) = "gdb_gnu_v3_type_info";
+  TYPE_TAG_NAME (t) = "gdb_gnu_v3_type_info";
   INIT_CPLUS_SPECIFIC (t);
 
   return t;
@@ -1216,7 +1216,7 @@ gnuv3_skip_trampoline (struct frame_info *frame, CORE_ADDR stop_pc)
      of the real function from the function descriptor before passing on
      the address to other layers of GDB.  */
   func_addr = gdbarch_convert_from_func_ptr_addr (gdbarch, method_stop_pc,
-						  current_top_target ());
+                                                  &current_target);
   if (func_addr != 0)
     method_stop_pc = func_addr;
 

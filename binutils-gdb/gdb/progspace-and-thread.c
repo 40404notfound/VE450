@@ -1,4 +1,4 @@
-/* Copyright (C) 2009-2019 Free Software Foundation, Inc.
+/* Copyright (C) 2009-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -17,7 +17,6 @@
 
 #include "defs.h"
 #include "progspace-and-thread.h"
-#include "inferior.h"
 
 /* See progspace-and-thread.h  */
 
@@ -28,17 +27,17 @@ switch_to_program_space_and_thread (program_space *pspace)
 
   if (inf != NULL && inf->pid != 0)
     {
-      thread_info *tp = any_live_thread_of_inferior (inf);
+      thread_info *tp = any_live_thread_of_process (inf->pid);
 
       if (tp != NULL)
 	{
-	  switch_to_thread (tp);
+	  switch_to_thread (tp->ptid);
 	  /* Switching thread switches pspace implicitly.  We're
 	     done.  */
 	  return;
 	}
     }
 
-  switch_to_no_thread ();
+  switch_to_thread (null_ptid);
   set_current_program_space (pspace);
 }

@@ -1,6 +1,6 @@
 # name: 26-bit teq/cmn/tst/cmp instructions
 # objdump: -dr --prefix-addresses --show-raw-insn -marmv4
-# skip: *-*-pe *-*-wince
+# skip: *-*-*coff *-*-pe *-*-wince *-*-*aout* *-*-netbsd
 
 .*: +file format .*arm.*
 

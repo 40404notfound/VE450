@@ -1,5 +1,5 @@
 /* Low level interface to SPUs, for the remote server for GDB.
-   Copyright (C) 2006-2019 Free Software Foundation, Inc.
+   Copyright (C) 2006-2018 Free Software Foundation, Inc.
 
    Contributed by Ulrich Weigand <uweigand@de.ibm.com>.
 
@@ -20,12 +20,12 @@
 
 #include "server.h"
 
-#include "common/gdb_wait.h"
+#include "gdb_wait.h"
 #include <sys/ptrace.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/syscall.h>
-#include "common/filestuff.h"
+#include "filestuff.h"
 #include "hostio.h"
 #include "nat/fork-inferior.h"
 
@@ -66,7 +66,7 @@ fetch_ppc_register (int regno)
 {
   PTRACE_TYPE_RET res;
 
-  int tid = current_ptid.lwp ();
+  int tid = ptid_get_lwp (current_ptid);
 
 #ifndef __powerpc64__
   /* If running as a 32-bit process on a 64-bit system, we attempt
@@ -151,7 +151,7 @@ fetch_ppc_memory (CORE_ADDR memaddr, char *myaddr, int len)
 	       / sizeof (PTRACE_TYPE_RET));
   PTRACE_TYPE_RET *buffer;
 
-  int tid = current_ptid.lwp ();
+  int tid = ptid_get_lwp (current_ptid);
 
   buffer = XALLOCAVEC (PTRACE_TYPE_RET, count);
   for (i = 0; i < count; i++, addr += sizeof (PTRACE_TYPE_RET))
@@ -176,7 +176,7 @@ store_ppc_memory (CORE_ADDR memaddr, char *myaddr, int len)
 	       / sizeof (PTRACE_TYPE_RET));
   PTRACE_TYPE_RET *buffer;
 
-  int tid = current_ptid.lwp ();
+  int tid = ptid_get_lwp (current_ptid);
 
   buffer = XALLOCAVEC (PTRACE_TYPE_RET, count);
 
@@ -241,7 +241,7 @@ spu_proc_xfer_spu (const char *annex, unsigned char *readbuf,
   if (!annex)
     return 0;
 
-  sprintf (buf, "/proc/%ld/fd/%s", current_ptid.lwp (), annex);
+  sprintf (buf, "/proc/%ld/fd/%s", ptid_get_lwp (current_ptid), annex);
   fd = open (buf, writebuf? O_WRONLY : O_RDONLY);
   if (fd <= 0)
     return -1;
@@ -297,7 +297,7 @@ spu_create_inferior (const char *program,
   proc = add_process (pid, 0);
   proc->tdesc = tdesc_spu;
 
-  ptid = ptid_t (pid, pid, 0);
+  ptid = ptid_build (pid, pid, 0);
   add_thread (ptid, NULL);
   return pid;
 }
@@ -319,17 +319,19 @@ spu_attach (unsigned long  pid)
 
   proc = add_process (pid, 1);
   proc->tdesc = tdesc_spu;
-  ptid = ptid_t (pid, pid, 0);
+  ptid = ptid_build (pid, pid, 0);
   add_thread (ptid, NULL);
   return 0;
 }
 
 /* Kill the inferior process.  */
 static int
-spu_kill (process_info *process)
+spu_kill (int pid)
 {
   int status, ret;
-  int pid = process->pid;
+  struct process_info *process = find_process_pid (pid);
+  if (process == NULL)
+    return -1;
 
   ptrace (PTRACE_KILL, pid, 0, 0);
 
@@ -346,9 +348,13 @@ spu_kill (process_info *process)
 
 /* Detach from inferior process.  */
 static int
-spu_detach (process_info *process)
+spu_detach (int pid)
 {
-  ptrace (PTRACE_DETACH, process->pid, 0, 0);
+  struct process_info *process = find_process_pid (pid);
+  if (process == NULL)
+    return -1;
+
+  ptrace (PTRACE_DETACH, pid, 0, 0);
 
   clear_inferiors ();
   remove_process (process);
@@ -377,7 +383,7 @@ spu_join (int pid)
 static int
 spu_thread_alive (ptid_t ptid)
 {
-  return ptid == current_ptid;
+  return ptid_equal (ptid, current_ptid);
 }
 
 /* Resume process.  */
@@ -388,8 +394,8 @@ spu_resume (struct thread_resume *resume_info, size_t n)
   size_t i;
 
   for (i = 0; i < n; i++)
-    if (resume_info[i].thread == minus_one_ptid
-	|| resume_info[i].thread == ptid_of (thr))
+    if (ptid_equal (resume_info[i].thread, minus_one_ptid)
+	|| ptid_equal (resume_info[i].thread, ptid_of (thr)))
       break;
 
   if (i == n)
@@ -403,7 +409,7 @@ spu_resume (struct thread_resume *resume_info, size_t n)
   regcache_invalidate ();
 
   errno = 0;
-  ptrace (PTRACE_CONT, ptid_of (thr).lwp (), 0, resume_info[i].sig);
+  ptrace (PTRACE_CONT, ptid_get_lwp (ptid_of (thr)), 0, resume_info[i].sig);
   if (errno)
     perror_with_name ("ptrace");
 }
@@ -412,7 +418,7 @@ spu_resume (struct thread_resume *resume_info, size_t n)
 static ptid_t
 spu_wait (ptid_t ptid, struct target_waitstatus *ourstatus, int options)
 {
-  int pid = ptid.pid ();
+  int pid = ptid_get_pid (ptid);
   int w;
   int ret;
 
@@ -451,7 +457,7 @@ spu_wait (ptid_t ptid, struct target_waitstatus *ourstatus, int options)
       ourstatus->kind =  TARGET_WAITKIND_EXITED;
       ourstatus->value.integer = WEXITSTATUS (w);
       clear_inferiors ();
-      return ptid_t (ret);
+      return pid_to_ptid (ret);
     }
   else if (!WIFSTOPPED (w))
     {
@@ -459,7 +465,7 @@ spu_wait (ptid_t ptid, struct target_waitstatus *ourstatus, int options)
       ourstatus->kind = TARGET_WAITKIND_SIGNALLED;
       ourstatus->value.sig = gdb_signal_from_host (WTERMSIG (w));
       clear_inferiors ();
-      return ptid_t (ret);
+      return pid_to_ptid (ret);
     }
 
   /* After attach, we may have received a SIGSTOP.  Do not return this
@@ -468,12 +474,12 @@ spu_wait (ptid_t ptid, struct target_waitstatus *ourstatus, int options)
     {
       ourstatus->kind = TARGET_WAITKIND_STOPPED;
       ourstatus->value.sig = GDB_SIGNAL_0;
-      return ptid_t (ret, ret, 0);
+      return ptid_build (ret, ret, 0);
     }
 
   ourstatus->kind = TARGET_WAITKIND_STOPPED;
   ourstatus->value.sig = gdb_signal_from_host (WSTOPSIG (w));
-  return ptid_t (ret, ret, 0);
+  return ptid_build (ret, ret, 0);
 }
 
 /* Fetch inferior registers.  */
@@ -711,6 +717,7 @@ static struct target_ops spu_target_ops = {
   NULL, /* get_min_fast_tracepoint_insn_len */
   NULL, /* qxfer_libraries_svr4 */
   NULL, /* support_agent */
+  NULL, /* support_btrace */
   NULL, /* enable_btrace */
   NULL, /* disable_btrace */
   NULL, /* read_btrace */

@@ -1,6 +1,6 @@
 /* Native-dependent code for NetBSD/sh.
 
-   Copyright (C) 2002-2019 Free Software Foundation, Inc.
+   Copyright (C) 2002-2018 Free Software Foundation, Inc.
 
    Contributed by Wasabi Systems, Inc.
 
@@ -30,13 +30,6 @@
 #include "inf-ptrace.h"
 #include "regcache.h"
 
-struct sh_nbsd_nat_target final : public inf_ptrace_target
-{
-  void fetch_registers (struct regcache *, int) override;
-  void store_registers (struct regcache *, int) override;
-};
-
-static sh_nbsd_nat_target the_sh_nbsd_nat_target;
 
 /* Determine if PT_GETREGS fetches this register.  */
 #define GETREGS_SUPPLIES(gdbarch, regno) \
@@ -48,10 +41,11 @@ static sh_nbsd_nat_target the_sh_nbsd_nat_target;
 /* Sizeof `struct reg' in <machine/reg.h>.  */
 #define SHNBSD_SIZEOF_GREGS	(21 * 4)
 
-void
-sh_nbsd_nat_target::fetch_registers (struct regcache *regcache, int regno)
+static void
+shnbsd_fetch_inferior_registers (struct target_ops *ops,
+				 struct regcache *regcache, int regno)
 {
-  pid_t pid = regcache->ptid ().pid ();
+  pid_t pid = ptid_get_pid (regcache_get_ptid (regcache));
 
   if (regno == -1 || GETREGS_SUPPLIES (regcache->arch (), regno))
     {
@@ -70,10 +64,11 @@ sh_nbsd_nat_target::fetch_registers (struct regcache *regcache, int regno)
     }
 }
 
-void
-sh_nbsd_nat_target::store_registers (struct regcache *regcache, int regno)
+static void
+shnbsd_store_inferior_registers (struct target_ops *ops,
+				 struct regcache *regcache, int regno)
 {
-  pid_t pid = regcache->ptid ().pid ();
+  pid_t pid = ptid_get_pid (regcache_get_ptid (regcache));
 
   if (regno == -1 || GETREGS_SUPPLIES (regcache->arch (), regno))
     {
@@ -99,5 +94,10 @@ sh_nbsd_nat_target::store_registers (struct regcache *regcache, int regno)
 void
 _initialize_shnbsd_nat (void)
 {
-  add_inf_child_target (&the_sh_nbsd_nat_target);
+  struct target_ops *t;
+
+  t = inf_ptrace_target ();
+  t->to_fetch_registers = shnbsd_fetch_inferior_registers;
+  t->to_store_registers = shnbsd_store_inferior_registers;
+  add_target (t);
 }

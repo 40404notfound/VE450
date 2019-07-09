@@ -1,6 +1,6 @@
 /* Definitions for dealing with stack frames, for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2019 Free Software Foundation, Inc.
+   Copyright (C) 1986-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -26,7 +26,7 @@
 
    Prefixes:
 
-   get_frame_WHAT...(): Get WHAT from the THIS frame (functionally
+   get_frame_WHAT...(): Get WHAT from the THIS frame (functionaly
    equivalent to THIS->next->unwind->what)
 
    frame_unwind_WHAT...(): Unwind THIS frame's WHAT from the NEXT
@@ -70,7 +70,6 @@
    */
 
 #include "language.h"
-#include "cli/cli-option.h"
 
 struct symtab_and_line;
 struct frame_unwind;
@@ -79,7 +78,6 @@ struct block;
 struct gdbarch;
 struct ui_file;
 struct ui_out;
-struct frame_print_options;
 
 /* Status of a given frame's stack.  */
 
@@ -164,25 +162,6 @@ struct frame_id
      Caller of inlined function will have it zero, each more inner called frame
      will have it increasingly one, two etc.  Similarly for TAILCALL_FRAME.  */
   int artificial_depth;
-};
-
-/* Save and restore the currently selected frame.  */
-
-class scoped_restore_selected_frame
-{
-public:
-  /* Save the currently selected frame.  */
-  scoped_restore_selected_frame ();
-
-  /* Restore the currently selected frame.  */
-  ~scoped_restore_selected_frame ();
-
-  DISABLE_COPY_AND_ASSIGN (scoped_restore_selected_frame);
-
-private:
-
-  /* The ID of the previously selected frame.  */
-  struct frame_id m_fid;
 };
 
 /* Methods for constructing and comparing Frame IDs.  */
@@ -561,7 +540,7 @@ const char *frame_stop_reason_string (struct frame_info *);
    (up, older) frame is returned.  If VALUEP is NULL, don't
    fetch/compute the value.  Instead just return the location of the
    value.  */
-extern void frame_register_unwind (frame_info *frame, int regnum,
+extern void frame_register_unwind (struct frame_info *frame, int regnum,
 				   int *optimizedp, int *unavailablep,
 				   enum lval_type *lvalp,
 				   CORE_ADDR *addrp, int *realnump,
@@ -573,22 +552,22 @@ extern void frame_register_unwind (frame_info *frame, int regnum,
    fetch fails.  The value methods never return NULL, but usually
    do return a lazy value.  */
 
-extern void frame_unwind_register (frame_info *next_frame,
+extern void frame_unwind_register (struct frame_info *frame,
 				   int regnum, gdb_byte *buf);
 extern void get_frame_register (struct frame_info *frame,
 				int regnum, gdb_byte *buf);
 
-struct value *frame_unwind_register_value (frame_info *next_frame,
+struct value *frame_unwind_register_value (struct frame_info *frame,
 					   int regnum);
 struct value *get_frame_register_value (struct frame_info *frame,
 					int regnum);
 
-extern LONGEST frame_unwind_register_signed (frame_info *next_frame,
+extern LONGEST frame_unwind_register_signed (struct frame_info *frame,
 					     int regnum);
 extern LONGEST get_frame_register_signed (struct frame_info *frame,
 					  int regnum);
-extern ULONGEST frame_unwind_register_unsigned (frame_info *frame,
-						int regnum);
+extern ULONGEST frame_unwind_register_unsigned (struct frame_info *frame,
+					       int regnum);
 extern ULONGEST get_frame_register_unsigned (struct frame_info *frame,
 					     int regnum);
 
@@ -671,7 +650,7 @@ extern int safe_frame_unwind_memory (struct frame_info *this_frame,
 extern struct gdbarch *get_frame_arch (struct frame_info *this_frame);
 
 /* Return the previous frame's architecture.  */
-extern struct gdbarch *frame_unwind_arch (frame_info *next_frame);
+extern struct gdbarch *frame_unwind_arch (struct frame_info *frame);
 
 /* Return the previous frame's architecture, skipping inline functions.  */
 extern struct gdbarch *frame_unwind_caller_arch (struct frame_info *frame);
@@ -701,9 +680,8 @@ extern void *frame_obstack_zalloc (unsigned long size);
 #define FRAME_OBSTACK_CALLOC(NUMBER,TYPE) \
   ((TYPE *) frame_obstack_zalloc ((NUMBER) * sizeof (TYPE)))
 
-class readonly_detached_regcache;
 /* Create a regcache, and copy the frame's registers into it.  */
-std::unique_ptr<readonly_detached_regcache> frame_save_as_regcache
+std::unique_ptr<struct regcache> frame_save_as_regcache
     (struct frame_info *this_frame);
 
 extern const struct block *get_frame_block (struct frame_info *,
@@ -755,8 +733,7 @@ extern void print_stack_frame (struct frame_info *, int print_level,
 			       enum print_what print_what,
 			       int set_current_sal);
 
-extern void print_frame_info (const frame_print_options &fp_opts,
-			      struct frame_info *, int print_level,
+extern void print_frame_info (struct frame_info *, int print_level,
 			      enum print_what print_what, int args,
 			      int set_current_sal);
 
@@ -767,12 +744,6 @@ extern int deprecated_frame_register_read (struct frame_info *frame, int regnum,
 
 /* From stack.c.  */
 
-/* The possible choices of "set print frame-arguments".  */
-extern const char print_frame_arguments_all[];
-extern const char print_frame_arguments_scalars[];
-extern const char print_frame_arguments_none[];
-
-/* The possible choices of "set print entry-values".  */
 extern const char print_entry_values_no[];
 extern const char print_entry_values_only[];
 extern const char print_entry_values_preferred[];
@@ -780,22 +751,7 @@ extern const char print_entry_values_if_needed[];
 extern const char print_entry_values_both[];
 extern const char print_entry_values_compact[];
 extern const char print_entry_values_default[];
-
-/* Data for the frame-printing "set print" settings exposed as command
-   options.  */
-
-struct frame_print_options
-{
-  const char *print_frame_arguments = print_frame_arguments_scalars;
-  const char *print_entry_values = print_entry_values_default;
-
-  /* If non-zero, don't invoke pretty-printers for frame
-     arguments.  */
-  int print_raw_frame_arguments;
-};
-
-/* The values behind the global "set print ..." settings.  */
-extern frame_print_options user_frame_print_options;
+extern const char *print_entry_values;
 
 /* Inferior function parameter value read in from a frame.  */
 
@@ -824,8 +780,7 @@ struct frame_arg
   const char *entry_kind;
 };
 
-extern void read_frame_arg (const frame_print_options &fp_opts,
-			    symbol *sym, frame_info *frame,
+extern void read_frame_arg (struct symbol *sym, struct frame_info *frame,
 			    struct frame_arg *argp,
 			    struct frame_arg *entryargp);
 extern void read_frame_local (struct symbol *sym, struct frame_info *frame,
@@ -905,29 +860,5 @@ extern struct frame_info *skip_tailcall_frames (struct frame_info *frame);
    writable.  */
 
 extern struct frame_info *skip_unwritable_frames (struct frame_info *frame);
-
-/* Data for the "set backtrace" settings.  */
-
-struct set_backtrace_options
-{
-  /* Flag to indicate whether backtraces should continue past
-     main.  */
-  int backtrace_past_main = 0;
-
-  /* Flag to indicate whether backtraces should continue past
-     entry.  */
-  int backtrace_past_entry = 0;
-
-  /* Upper bound on the number of backtrace levels.  Note this is not
-     exposed as a command option, because "backtrace" and "frame
-     apply" already have other means to set a frame count limit.  */
-  unsigned int backtrace_limit = UINT_MAX;
-};
-
-/* The corresponding option definitions.  */
-extern const gdb::option::option_def set_backtrace_option_defs[2];
-
-/* The values behind the global "set backtrace ..." settings.  */
-extern set_backtrace_options user_set_backtrace_options;
 
 #endif /* !defined (FRAME_H)  */

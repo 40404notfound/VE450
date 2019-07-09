@@ -1,5 +1,5 @@
 /* expr.c -operands, expressions-
-   Copyright (C) 1987-2019 Free Software Foundation, Inc.
+   Copyright (C) 1987-2018 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -34,8 +34,6 @@
 #ifndef CHAR_BIT
 #define CHAR_BIT 8
 #endif
-
-bfd_boolean literal_prefix_dollar_hex = FALSE;
 
 static void floating_constant (expressionS * expressionP);
 static valueT generic_bignum_to_int32 (void);
@@ -780,6 +778,15 @@ operand (expressionS *expressionP, enum expr_mode mode)
 			expressionP);
       break;
 
+#ifdef LITERAL_PREFIXDOLLAR_HEX
+    case '$':
+      /* $L is the start of a local label, not a hex constant.  */
+      if (* input_line_pointer == 'L')
+      goto isname;
+      integer_constant (16, expressionP);
+      break;
+#endif
+
 #ifdef LITERAL_PREFIXPERCENT_BIN
     case '%':
       integer_constant (2, expressionP);
@@ -1107,21 +1114,7 @@ operand (expressionS *expressionP, enum expr_mode mode)
       }
       break;
 
-#if !defined (DOLLAR_DOT) && !defined (TC_M68K)
-    case '$':
-      if (literal_prefix_dollar_hex)
-	{
-	  /* $L is the start of a local label, not a hex constant.  */
-	  if (* input_line_pointer == 'L')
-		goto isname;
-	  integer_constant (16, expressionP);
-	}
-      else
-	{
-	  goto isname;
-	}
-      break;
-#else
+#if defined (DOLLAR_DOT) || defined (TC_M68K)
     case '$':
       /* '$' is the program counter when in MRI mode, or when
 	 DOLLAR_DOT is defined.  */
@@ -1305,6 +1298,48 @@ operand (expressionS *expressionP, enum expr_mode mode)
 	  if (md_parse_name (name, expressionP, mode, &c))
 	    {
 	      restore_line_pointer (c);
+	      break;
+	    }
+#endif
+
+#ifdef TC_I960
+	  /* The MRI i960 assembler permits
+	         lda sizeof code,g13
+	     FIXME: This should use md_parse_name.  */
+	  if (flag_mri
+	      && (strcasecmp (name, "sizeof") == 0
+		  || strcasecmp (name, "startof") == 0))
+	    {
+	      int start;
+	      char *buf;
+
+	      start = (name[1] == 't'
+		       || name[1] == 'T');
+
+	      *input_line_pointer = c;
+	      SKIP_WHITESPACE_AFTER_NAME ();
+
+	      c = get_symbol_name (& name);
+	      if (! *name)
+		{
+		  as_bad (_("expected symbol name"));
+		  expressionP->X_op = O_absent;
+		  (void) restore_line_pointer (c);
+		  ignore_rest_of_line ();
+		  break;
+		}
+
+	      buf = concat (start ? ".startof." : ".sizeof.", name,
+			    (char *) NULL);
+	      symbolP = symbol_make (buf);
+	      free (buf);
+
+	      expressionP->X_op = O_symbol;
+	      expressionP->X_add_symbol = symbolP;
+	      expressionP->X_add_number = 0;
+
+	      *input_line_pointer = c;
+	      SKIP_WHITESPACE_AFTER_NAME ();
 	      break;
 	    }
 #endif
@@ -1845,13 +1880,6 @@ expr (int rankarg,		/* Larger # is higher rank.  */
 	  right.X_op_symbol = NULL;
 	}
 
-      if (mode == expr_defer
-	  && ((resultP->X_add_symbol != NULL
-	       && S_IS_FORWARD_REF (resultP->X_add_symbol))
-	      || (right.X_add_symbol != NULL
-		  && S_IS_FORWARD_REF (right.X_add_symbol))))
-	goto general;
-
       /* Optimize common cases.  */
 #ifdef md_optimize_expr
       if (md_optimize_expr (resultP, op_left, &right))
@@ -2186,10 +2214,7 @@ resolve_expression (expressionS *expressionP)
 		|| op == O_lt || op == O_le || op == O_ge || op == O_gt)
 	       && seg_left == seg_right
 	       && (finalize_syms
-		   || frag_offset_fixed_p (frag_left, frag_right, &frag_off)
-		   || (op == O_gt
-		       && frag_gtoffset_p (left, frag_left,
-					   right, frag_right, &frag_off)))
+		   || frag_offset_fixed_p (frag_left, frag_right, &frag_off))
 	       && (seg_left != reg_section || left == right)
 	       && (seg_left != undefined_section || add_symbol == op_symbol)))
 	{

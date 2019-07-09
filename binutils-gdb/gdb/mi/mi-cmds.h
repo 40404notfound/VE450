@@ -1,6 +1,6 @@
 /* MI Command Set for GDB, the GNU debugger.
 
-   Copyright (C) 2000-2019 Free Software Foundation, Inc.
+   Copyright (C) 2000-2018 Free Software Foundation, Inc.
 
    Contributed by Cygnus Solutions (a Red Hat company).
 
@@ -19,8 +19,8 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#ifndef MI_MI_CMDS_H
-#define MI_MI_CMDS_H
+#ifndef MI_CMDS_H
+#define MI_CMDS_H
 
 enum print_values {
    PRINT_NO_VALUES,
@@ -41,7 +41,6 @@ extern mi_cmd_argv_ftype mi_cmd_break_passcount;
 extern mi_cmd_argv_ftype mi_cmd_break_watch;
 extern mi_cmd_argv_ftype mi_cmd_catch_assert;
 extern mi_cmd_argv_ftype mi_cmd_catch_exception;
-extern mi_cmd_argv_ftype mi_cmd_catch_handlers;
 extern mi_cmd_argv_ftype mi_cmd_catch_load;
 extern mi_cmd_argv_ftype mi_cmd_catch_unload;
 extern mi_cmd_argv_ftype mi_cmd_disassemble;
@@ -125,7 +124,6 @@ extern mi_cmd_argv_ftype mi_cmd_var_update;
 extern mi_cmd_argv_ftype mi_cmd_enable_pretty_printing;
 extern mi_cmd_argv_ftype mi_cmd_enable_frame_filters;
 extern mi_cmd_argv_ftype mi_cmd_var_set_update_range;
-extern mi_cmd_argv_ftype mi_cmd_complete;
 
 /* Description of a single command.  */
 
@@ -163,4 +161,4 @@ extern int mi_debug_p;
 
 extern void mi_execute_command (const char *cmd, int from_tty);
 
-#endif /* MI_MI_CMDS_H */
+#endif

@@ -1,5 +1,5 @@
 /* ns32k.c  -- Assemble on the National Semiconductor 32k series
-   Copyright (C) 1987-2019 Free Software Foundation, Inc.
+   Copyright (C) 1987-2018 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -493,7 +493,7 @@ addr_mode (char *operand,
 	default:
 	  break;
 	}
-      /* Fall through.  */
+      /* Drop through.  */
 
     case 3:
       if (!strncmp (str, "tos", 3))
@@ -1331,7 +1331,7 @@ fix_new_ns32k (fragS *frag,		/* Which frag? */
   fix_bsr (fixP) = bsr;
   fix_bit_fixP (fixP) = bit_fixP;
   /* We have a MD overflow check for displacements.  */
-  fixP->fx_no_overflow = im_disp != 0 || bit_fixP != NULL;
+  fixP->fx_no_overflow = (im_disp != 0);
 }
 
 static void
@@ -1359,7 +1359,7 @@ fix_new_ns32k_exp (fragS *frag,		/* Which frag? */
   fix_bsr (fixP) = bsr;
   fix_bit_fixP (fixP) = bit_fixP;
   /* We have a MD overflow check for displacements.  */
-  fixP->fx_no_overflow = im_disp != 0 || bit_fixP != NULL;
+  fixP->fx_no_overflow = (im_disp != 0);
 }
 
 /* Convert number to chars in correct order.  */

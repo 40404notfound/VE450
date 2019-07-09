@@ -1,4 +1,4 @@
-/* Copyright (C) 2007-2019 Free Software Foundation, Inc.
+/* Copyright (C) 2007-2018 Free Software Foundation, Inc.
 
    This file is part of the GNU opcodes library.
 
@@ -58,9 +58,9 @@ static initializer cpu_flag_init[] =
   { "CPU_I486_FLAGS",
     "CPU_I386_FLAGS|Cpu486" },
   { "CPU_I586_FLAGS",
-    "CPU_I486_FLAGS|Cpu387|Cpu586" },
+    "CPU_I486_FLAGS|CPU_387_FLAGS|Cpu586" },
   { "CPU_I686_FLAGS",
-    "CPU_I586_FLAGS|Cpu686|Cpu687|CpuCMOV|CpuFXSR" },
+    "CPU_I586_FLAGS|Cpu686|Cpu687" },
   { "CPU_PENTIUMPRO_FLAGS",
     "CPU_I686_FLAGS|CpuNop" },
   { "CPU_P2_FLAGS",
@@ -88,7 +88,7 @@ static initializer cpu_flag_init[] =
   { "CPU_AMDFAM10_FLAGS",
     "CPU_K8_FLAGS|CpuFISTTP|CPU_SSE4A_FLAGS|CpuABM" },
   { "CPU_BDVER1_FLAGS",
-    "CPU_GENERIC64_FLAGS|CpuFISTTP|CpuRdtscp|CpuCX16|CPU_XOP_FLAGS|CpuABM|CpuLWP|CpuSVME|CpuAES|CpuPCLMUL|CpuLZCNT|CpuPRFCHW" },
+    "CPU_GENERIC64_FLAGS|CpuFISTTP|CpuRdtscp|CpuCX16|CPU_SSE4_2_FLAGS|CpuSSE4A|CpuABM|CpuFMA4|CpuXOP|CpuLWP|CpuSVME|CpuXsave|CpuAES|CpuAVX|CpuPCLMUL|CpuLZCNT|CpuPRFCHW" },
   { "CPU_BDVER2_FLAGS",
     "CPU_BDVER1_FLAGS|CpuFMA|CpuBMI|CpuTBM|CpuF16C" },
   { "CPU_BDVER3_FLAGS",
@@ -96,25 +96,19 @@ static initializer cpu_flag_init[] =
   { "CPU_BDVER4_FLAGS",
     "CPU_BDVER3_FLAGS|CpuAVX2|CpuMovbe|CpuBMI2|CpuRdRnd|CpuMWAITX" },
   { "CPU_ZNVER1_FLAGS",
-    "CPU_GENERIC64_FLAGS|CpuFISTTP|CpuRdtscp|CpuCX16|CPU_AVX2_FLAGS|CpuSSE4A|CpuABM|CpuSVME|CpuAES|CpuPCLMUL|CpuLZCNT|CpuPRFCHW|CpuFMA|CpuBMI|CpuF16C|CpuXsaveopt|CpuFSGSBase|CpuMovbe|CpuBMI2|CpuRdRnd|CpuADX|CpuRdSeed|CpuSMAP|CpuSHA|CpuXSAVEC|CpuXSAVES|CpuClflushOpt|CpuCLZERO|CpuMWAITX" },
-  { "CPU_ZNVER2_FLAGS",
-    "CPU_ZNVER1_FLAGS|CpuRDPID|CpuWBNOINVD|CpuCLWB" },
+    "CPU_GENERIC64_FLAGS|CpuFISTTP|CpuRdtscp|CpuCX16|CPU_SSE4_2_FLAGS|CpuSSE4A|CpuABM|CpuSVME|CpuXsave|CpuAES|CpuAVX|CpuPCLMUL|CpuLZCNT|CpuPRFCHW|CpuFMA|CpuBMI|CpuF16C|CpuXsaveopt|CpuFSGSBase|CpuAVX2|CpuMovbe|CpuBMI2|CpuRdRnd|CpuADX|CpuRdSeed|CpuSMAP|CpuSHA|CpuXSAVEC|CpuXSAVES|CpuClflushOpt|CpuCLZERO|CpuMWAITX" },
   { "CPU_BTVER1_FLAGS",
     "CPU_GENERIC64_FLAGS|CpuFISTTP|CpuCX16|CpuRdtscp|CPU_SSSE3_FLAGS|CpuSSE4A|CpuABM|CpuPRFCHW|CpuCX16|CpuClflush|CpuFISTTP|CpuSVME|CpuLZCNT" },
   { "CPU_BTVER2_FLAGS",
-    "CPU_BTVER1_FLAGS|CPU_AVX_FLAGS|CpuBMI|CpuF16C|CpuAES|CpuPCLMUL|CpuMovbe|CpuXsaveopt|CpuPRFCHW" },
+    "CPU_BTVER1_FLAGS|CPU_SSE4_2_FLAGS|CpuBMI|CpuF16C|CpuAES|CpuPCLMUL|CpuAVX|CpuMovbe|CpuXsave|CpuXsaveopt|CpuPRFCHW" },
   { "CPU_8087_FLAGS",
     "Cpu8087" },
   { "CPU_287_FLAGS",
-    "Cpu287" },
+    "CPU_8087_FLAGS|Cpu287" },
   { "CPU_387_FLAGS",
-    "Cpu387" },
+    "CPU_287_FLAGS|Cpu387" },
   { "CPU_687_FLAGS",
     "CPU_387_FLAGS|Cpu687" },
-  { "CPU_CMOV_FLAGS",
-    "CpuCMOV" },
-  { "CPU_FXSR_FLAGS",
-    "CpuFXSR" },
   { "CPU_CLFLUSH_FLAGS",
     "CpuClflush" },
   { "CPU_NOP_FLAGS",
@@ -122,9 +116,9 @@ static initializer cpu_flag_init[] =
   { "CPU_SYSCALL_FLAGS",
     "CpuSYSCALL" },
   { "CPU_MMX_FLAGS",
-    "CpuMMX" },
+    "CpuRegMMX|CpuMMX" },
   { "CPU_SSE_FLAGS",
-    "CpuSSE" },
+    "CpuRegXMM|CpuSSE" },
   { "CPU_SSE2_FLAGS",
     "CPU_SSE_FLAGS|CpuSSE2" },
   { "CPU_SSE3_FLAGS",
@@ -154,7 +148,7 @@ static initializer cpu_flag_init[] =
   { "CPU_XOP_FLAGS",
     "CPU_SSE4A_FLAGS|CPU_FMA4_FLAGS|CpuXOP" },
   { "CPU_LWP_FLAGS",
-    "CPU_XSAVE_FLAGS|CpuLWP" },
+    "CpuLWP" },
   { "CPU_BMI_FLAGS",
     "CpuBMI" },
   { "CPU_TBM_FLAGS",
@@ -198,11 +192,13 @@ static initializer cpu_flag_init[] =
   { "CPU_ABM_FLAGS",
     "CpuABM" },
   { "CPU_AVX_FLAGS",
-    "CPU_SSE4_2_FLAGS|CPU_XSAVE_FLAGS|CpuAVX" },
+    "CPU_SSE4_2_FLAGS|CpuRegYMM|CpuAVX" },
   { "CPU_AVX2_FLAGS",
     "CPU_AVX_FLAGS|CpuAVX2" },
+  /* Don't use CPU_AVX2_FLAGS on CPU_AVX512F_FLAGS since AVX512F doesn't
+     support YMM registers.  */
   { "CPU_AVX512F_FLAGS",
-    "CPU_AVX2_FLAGS|CpuAVX512F" },
+    "CpuVREX|CPU_SSE4_2_FLAGS|CpuRegZMM|CpuRegMask|CpuAVX|CpuAVX2|CpuAVX512F" },
   { "CPU_AVX512CD_FLAGS",
     "CPU_AVX512F_FLAGS|CpuAVX512CD" },
   { "CPU_AVX512ER_FLAGS",
@@ -214,7 +210,9 @@ static initializer cpu_flag_init[] =
   { "CPU_AVX512BW_FLAGS",
     "CPU_AVX512F_FLAGS|CpuAVX512BW" },
   { "CPU_AVX512VL_FLAGS",
-    "CPU_AVX512F_FLAGS|CpuAVX512VL" },
+  /* Use CPU_AVX2_FLAGS on CPU_AVX512VL_FLAGS since AVX512VL supports YMM
+     registers.  */
+    "CPU_AVX512F_FLAGS|CPU_AVX2_FLAGS|CpuAVX512VL" },
   { "CPU_AVX512IFMA_FLAGS",
     "CPU_AVX512F_FLAGS|CpuAVX512IFMA" },
   { "CPU_AVX512VBMI_FLAGS",
@@ -231,8 +229,6 @@ static initializer cpu_flag_init[] =
     "CPU_AVX512F_FLAGS|CpuAVX512_VNNI" },
   { "CPU_AVX512_BITALG_FLAGS",
     "CPU_AVX512F_FLAGS|CpuAVX512_BITALG" },
-  { "CPU_AVX512_BF16_FLAGS",
-    "CPU_AVX512F_FLAGS|CpuAVX512_BF16" },
   { "CPU_L1OM_FLAGS",
     "unknown" },
   { "CPU_K1OM_FLAGS",
@@ -248,7 +244,7 @@ static initializer cpu_flag_init[] =
   { "CPU_SMAP_FLAGS",
     "CpuSMAP" },
   { "CPU_MPX_FLAGS",
-    "CPU_XSAVE_FLAGS|CpuMPX" },
+    "CpuMPX" },
   { "CPU_SHA_FLAGS",
     "CPU_SSE2_FLAGS|CpuSHA" },
   { "CPU_CLFLUSHOPT_FLAGS",
@@ -268,7 +264,7 @@ static initializer cpu_flag_init[] =
   { "CPU_MWAITX_FLAGS",
     "CpuMWAITX" },
   { "CPU_OSPKE_FLAGS",
-    "CPU_XSAVE_FLAGS|CpuOSPKE" },
+    "CpuOSPKE" },
   { "CPU_RDPID_FLAGS",
     "CpuRDPID" },
   { "CPU_PTWRITE_FLAGS",
@@ -283,22 +279,6 @@ static initializer cpu_flag_init[] =
     "CpuVAES" },
   { "CPU_VPCLMULQDQ_FLAGS",
     "CpuVPCLMULQDQ" },
-  { "CPU_WBNOINVD_FLAGS",
-    "CpuWBNOINVD" },
-  { "CPU_PCONFIG_FLAGS",
-    "CpuPCONFIG" },
-  { "CPU_WAITPKG_FLAGS",
-    "CpuWAITPKG" },
-  { "CPU_CLDEMOTE_FLAGS",
-    "CpuCLDEMOTE" },
-  { "CPU_MOVDIRI_FLAGS",
-    "CpuMOVDIRI" },
-  { "CPU_MOVDIR64B_FLAGS",
-    "CpuMOVDIR64B" },
-  { "CPU_ENQCMD_FLAGS",
-    "CpuENQCMD" },
-  { "CPU_AVX512_VP2INTERSECT_FLAGS",
-    "CpuAVX512_VP2INTERSECT" },
   { "CPU_ANY_X87_FLAGS",
     "CPU_ANY_287_FLAGS|Cpu8087" },
   { "CPU_ANY_287_FLAGS",
@@ -307,10 +287,6 @@ static initializer cpu_flag_init[] =
     "CPU_ANY_687_FLAGS|Cpu387" },
   { "CPU_ANY_687_FLAGS",
     "Cpu687|CpuFISTTP" },
-  { "CPU_ANY_CMOV_FLAGS",
-    "CpuCMOV" },
-  { "CPU_ANY_FXSR_FLAGS",
-    "CpuFXSR" },
   { "CPU_ANY_MMX_FLAGS",
     "CPU_3DNOWA_FLAGS" },
   { "CPU_ANY_SSE_FLAGS",
@@ -328,9 +304,9 @@ static initializer cpu_flag_init[] =
   { "CPU_ANY_AVX_FLAGS",
     "CPU_ANY_AVX2_FLAGS|CpuF16C|CpuFMA|CpuFMA4|CpuXOP|CpuAVX" },
   { "CPU_ANY_AVX2_FLAGS",
-    "CPU_ANY_AVX512F_FLAGS|CpuAVX2" },
+    "CpuAVX2" },
   { "CPU_ANY_AVX512F_FLAGS",
-    "CpuAVX512F|CpuAVX512CD|CpuAVX512ER|CpuAVX512PF|CpuAVX512DQ|CpuAVX512BW|CpuAVX512VL|CpuAVX512IFMA|CpuAVX512VBMI|CpuAVX512_4FMAPS|CpuAVX512_4VNNIW|CpuAVX512_VPOPCNTDQ|CpuAVX512_VBMI2|CpuAVX512_VNNI|CpuAVX512_BITALG|CpuAVX512_BF16|CpuAVX512_VP2INTERSECT" },
+    "CpuVREX|CpuRegZMM|CpuRegMask|CpuAVX512CD|CpuAVX512ER|CpuAVX512PF|CpuAVX512DQ|CpuAVX512BW|CpuAVX512VL|CpuAVX512IFMA|CpuAVX512VBMI|CpuAVX512_4FMAPS|CpuAVX512_4VNNIW|CpuAVX512_VPOPCNTDQ|CpuAVX512_VBMI2|CpuAVX512_VNNI|CpuAVX512_BITALG|CpuAVX512F" },
   { "CPU_ANY_AVX512CD_FLAGS",
     "CpuAVX512CD" },
   { "CPU_ANY_AVX512ER_FLAGS",
@@ -363,16 +339,6 @@ static initializer cpu_flag_init[] =
     "CpuAVX512_VNNI" },
   { "CPU_ANY_AVX512_BITALG_FLAGS",
     "CpuAVX512_BITALG" },
-  { "CPU_ANY_AVX512_BF16_FLAGS",
-    "CpuAVX512_BF16" },
-  { "CPU_ANY_MOVDIRI_FLAGS",
-    "CpuMOVDIRI" },
-  { "CPU_ANY_MOVDIR64B_FLAGS",
-    "CpuMOVDIR64B" },
-  { "CPU_ANY_ENQCMD_FLAGS",
-    "CpuENQCMD" },
-  { "CPU_ANY_AVX512_VP2INTERSECT_FLAGS",
-    "CpuAVX512_VP2INTERSECT" },
 };
 
 static const initializer operand_type_shorthands[] =
@@ -464,6 +430,10 @@ static initializer operand_type_init[] =
     "Reg32|Acc|Dword" },
   { "OPERAND_TYPE_ACC64",
     "Reg64|Acc|Qword" },
+  { "OPERAND_TYPE_INOUTPORTREG",
+    "InOutPortReg" },
+  { "OPERAND_TYPE_REG16_INOUTPORTREG",
+    "Reg16|InOutPortReg" },
   { "OPERAND_TYPE_DISP16_32",
     "Disp16|Disp32" },
   { "OPERAND_TYPE_ANYDISP",
@@ -507,8 +477,6 @@ static bitfield cpu_flags[] =
   BITFIELD (Cpu486),
   BITFIELD (Cpu586),
   BITFIELD (Cpu686),
-  BITFIELD (CpuCMOV),
-  BITFIELD (CpuFXSR),
   BITFIELD (CpuClflush),
   BITFIELD (CpuNop),
   BITFIELD (CpuSYSCALL),
@@ -573,6 +541,7 @@ static bitfield cpu_flags[] =
   BITFIELD (CpuPRFCHW),
   BITFIELD (CpuSMAP),
   BITFIELD (CpuSHA),
+  BITFIELD (CpuVREX),
   BITFIELD (CpuClflushOpt),
   BITFIELD (CpuXSAVES),
   BITFIELD (CpuXSAVEC),
@@ -590,8 +559,6 @@ static bitfield cpu_flags[] =
   BITFIELD (CpuAVX512_VBMI2),
   BITFIELD (CpuAVX512_VNNI),
   BITFIELD (CpuAVX512_BITALG),
-  BITFIELD (CpuAVX512_BF16),
-  BITFIELD (CpuAVX512_VP2INTERSECT),
   BITFIELD (CpuMWAITX),
   BITFIELD (CpuCLZERO),
   BITFIELD (CpuOSPKE),
@@ -602,13 +569,11 @@ static bitfield cpu_flags[] =
   BITFIELD (CpuGFNI),
   BITFIELD (CpuVAES),
   BITFIELD (CpuVPCLMULQDQ),
-  BITFIELD (CpuWBNOINVD),
-  BITFIELD (CpuPCONFIG),
-  BITFIELD (CpuWAITPKG),
-  BITFIELD (CpuCLDEMOTE),
-  BITFIELD (CpuMOVDIRI),
-  BITFIELD (CpuMOVDIR64B),
-  BITFIELD (CpuENQCMD),
+  BITFIELD (CpuRegMMX),
+  BITFIELD (CpuRegXMM),
+  BITFIELD (CpuRegYMM),
+  BITFIELD (CpuRegZMM),
+  BITFIELD (CpuRegMask),
 #ifdef CpuUnused
   BITFIELD (CpuUnused),
 #endif
@@ -627,7 +592,10 @@ static bitfield opcode_modifiers[] =
   BITFIELD (JumpInterSegment),
   BITFIELD (FloatMF),
   BITFIELD (FloatR),
-  BITFIELD (Size),
+  BITFIELD (FloatD),
+  BITFIELD (Size16),
+  BITFIELD (Size32),
+  BITFIELD (Size64),
   BITFIELD (CheckRegSize),
   BITFIELD (IgnoreSize),
   BITFIELD (DefaultSize),
@@ -648,7 +616,7 @@ static bitfield opcode_modifiers[] =
   BITFIELD (HLEPrefixOk),
   BITFIELD (ToDword),
   BITFIELD (ToQword),
-  BITFIELD (AddrPrefixOpReg),
+  BITFIELD (AddrPrefixOp0),
   BITFIELD (IsPrefix),
   BITFIELD (ImmExt),
   BITFIELD (NoRex64),
@@ -659,18 +627,20 @@ static bitfield opcode_modifiers[] =
   BITFIELD (VexW),
   BITFIELD (VexOpcode),
   BITFIELD (VexSources),
+  BITFIELD (VexImmExt),
   BITFIELD (VecSIB),
   BITFIELD (SSE2AVX),
   BITFIELD (NoAVX),
   BITFIELD (EVex),
   BITFIELD (Masking),
+  BITFIELD (VecESize),
   BITFIELD (Broadcast),
   BITFIELD (StaticRounding),
   BITFIELD (SAE),
   BITFIELD (Disp8MemShift),
   BITFIELD (NoDefMask),
   BITFIELD (ImplicitQuadGroup),
-  BITFIELD (Optimize),
+  BITFIELD (OldGcc),
   BITFIELD (ATTMnemonic),
   BITFIELD (ATTSyntax),
   BITFIELD (IntelSyntax),
@@ -708,6 +678,7 @@ static bitfield operand_types[] =
   BITFIELD (JumpAbsolute),
   BITFIELD (EsSeg),
   BITFIELD (RegMem),
+  BITFIELD (Mem),
   BITFIELD (Byte),
   BITFIELD (Word),
   BITFIELD (Dword),
@@ -744,7 +715,7 @@ fail (const char *message, ...)
   va_list args;
 
   va_start (args, message);
-  fprintf (stderr, _("%s: error: "), program_name);
+  fprintf (stderr, _("%s: Error: "), program_name);
   vfprintf (stderr, message, args);
   va_end (args);
   xexit (1);
@@ -754,7 +725,7 @@ static void
 process_copyright (FILE *fp)
 {
   fprintf (fp, "/* This file is automatically generated by i386-gen.  Do not edit!  */\n\
-/* Copyright (C) 2007-2019 Free Software Foundation, Inc.\n\
+/* Copyright (C) 2007-2018 Free Software Foundation, Inc.\n\
 \n\
    This file is part of the GNU opcodes library.\n\
 \n\
@@ -923,9 +894,9 @@ set_bitfield (char *f, bitfield *array, int value,
     return;
 
   if (lineno != -1)
-    fail (_("%s: %d: unknown bitfield: %s\n"), filename, lineno, f);
+    fail (_("%s: %d: Unknown bitfield: %s\n"), filename, lineno, f);
   else
-    fail (_("unknown bitfield: %s\n"), f);
+    fail (_("Unknown bitfield: %s\n"), f);
 }
 
 static void
@@ -988,7 +959,7 @@ process_i386_cpu_flag (FILE *table, char *flag, int macro,
 	  last -= 1;
 	  next = flag + 2;
 	  if (*last != ')')
-	    fail (_("%s: %d: missing `)' in bitfield: %s\n"), filename,
+	    fail (_("%s: %d: Missing `)' in bitfield: %s\n"), filename,
 		  lineno, flag);
 	  *last = '\0';
 	}
@@ -1044,58 +1015,8 @@ output_opcode_modifier (FILE *table, bitfield *modifier, unsigned int size)
   fprintf (table, "%d },\n", modifier[i].value);
 }
 
-static int
-adjust_broadcast_modifier (char **opnd)
-{
-  char *str, *next, *last, *op;
-  int bcst_type = INT_MAX;
-
-  /* Skip the immediate operand.  */
-  op = opnd[0];
-  if (strcasecmp(op, "Imm8") == 0)
-    op = opnd[1];
-
-  op = xstrdup (op);
-  last = op + strlen (op);
-  for (next = op; next && next < last; )
-    {
-      str = next_field (next, '|', &next, last);
-      if (str)
-	{
-	  if (strcasecmp(str, "Byte") == 0)
-	    {
-	      /* The smalest broadcast type, no need to check
-		 further.  */
-	      bcst_type = BYTE_BROADCAST;
-	      break;
-	    }
-	  else if (strcasecmp(str, "Word") == 0)
-	    {
-	      if (bcst_type > WORD_BROADCAST)
-		bcst_type = WORD_BROADCAST;
-	    }
-	  else if (strcasecmp(str, "Dword") == 0)
-	    {
-	      if (bcst_type > DWORD_BROADCAST)
-		bcst_type = DWORD_BROADCAST;
-	    }
-	  else if (strcasecmp(str, "Qword") == 0)
-	    {
-	      if (bcst_type > QWORD_BROADCAST)
-		bcst_type = QWORD_BROADCAST;
-	    }
-	}
-    }
-  free (op);
-
-  if (bcst_type == INT_MAX)
-    fail (_("unknown broadcast operand: %s\n"), op);
-
-  return bcst_type;
-}
-
 static void
-process_i386_opcode_modifier (FILE *table, char *mod, char **opnd, int lineno)
+process_i386_opcode_modifier (FILE *table, char *mod, int lineno)
 {
   char *str, *next, *last;
   bitfield modifiers [ARRAY_SIZE (opcode_modifiers)];
@@ -1113,10 +1034,7 @@ process_i386_opcode_modifier (FILE *table, char *mod, char **opnd, int lineno)
 	  str = next_field (next, '|', &next, last);
 	  if (str)
 	    {
-	      int val = 1;
-	      if (strcasecmp(str, "Broadcast") == 0)
-		  val = adjust_broadcast_modifier (opnd);
-	      set_bitfield (str, modifiers, val, ARRAY_SIZE (modifiers),
+	      set_bitfield (str, modifiers, 1, ARRAY_SIZE (modifiers),
 			  lineno);
 	      if (strcasecmp(str, "IsString") == 0)
 		active_isstring = 1;
@@ -1275,7 +1193,7 @@ output_i386_opcode (FILE *table, const char *name, char *str,
 
   process_i386_cpu_flag (table, cpu_flags, 0, ",", "    ", lineno);
 
-  process_i386_opcode_modifier (table, opcode_modifier, operand_types, lineno);
+  process_i386_opcode_modifier (table, opcode_modifier, lineno);
 
   fprintf (table, "    { ");
 
@@ -1336,10 +1254,14 @@ process_i386_opcodes (FILE *table)
   htab_t opcode_hash_table;
   struct opcode_hash_entry **opcode_array;
   unsigned int opcode_array_size = 1024;
-  int lineno = 0, marker = 0;
+  int lineno = 0;
 
   filename = "i386-opc.tbl";
-  fp = stdin;
+  fp = fopen (filename, "r");
+
+  if (fp == NULL)
+    fail (_("can't find i386-opc.tbl for reading, errno = %s\n"),
+	  xstrerror (errno));
 
   i = 0;
   opcode_array = (struct opcode_hash_entry **)
@@ -1373,32 +1295,11 @@ process_i386_opcodes (FILE *table)
       switch (p[0])
 	{
 	case '#':
-	  if (!strcmp("### MARKER ###", buf))
-	    marker = 1;
-	  else
-	    {
-	      /* Since we ignore all included files (we only care about their
-		 #define-s here), we don't need to monitor filenames.  The final
-		 line number directive is going to refer to the main source file
-		 again.  */
-	      char *end;
-	      unsigned long ln;
-
-	      p = remove_leading_whitespaces (p + 1);
-	      if (!strncmp(p, "line", 4))
-		p += 4;
-	      ln = strtoul (p, &end, 10);
-	      if (ln > 1 && ln < INT_MAX
-		  && *remove_leading_whitespaces (end) == '"')
-		lineno = ln - 1;
-	    }
 	  /* Ignore comments.  */
 	case '\0':
 	  continue;
 	  break;
 	default:
-	  if (!marker)
-	    continue;
 	  break;
 	}
 
@@ -1468,7 +1369,7 @@ process_i386_opcodes (FILE *table)
 
   process_i386_cpu_flag (table, "0", 0, ",", "    ", -1);
 
-  process_i386_opcode_modifier (table, "0", NULL, -1);
+  process_i386_opcode_modifier (table, "0", -1);
 
   fprintf (table, "    { ");
   process_i386_operand_type (table, "0", stage_opcodes, "\t  ", -1);

@@ -1,7 +1,7 @@
 /* Functions that provide the mechanism to parse a syscall XML file
    and get its values.
 
-   Copyright (C) 2009-2019 Free Software Foundation, Inc.
+   Copyright (C) 2009-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -38,13 +38,11 @@ void set_xml_syscall_file_name (struct gdbarch *gdbarch,
 void get_syscall_by_number (struct gdbarch *gdbarch,
 			    int syscall_number, struct syscall *s);
 
-/* Function that retrieves the syscall numbers corresponding to the
-   given name.  The numbers of all syscalls with either a name or
-   alias equal to SYSCALL_NAME are appended to SYSCALL_NUMBERS.  If no
-   matching syscalls are found, return false.  */
+/* Function that retrieves the syscall number corresponding to the given
+   name.  It puts the requested information inside 'struct syscall'.  */
 
-bool get_syscalls_by_name (struct gdbarch *gdbarch, const char *syscall_name,
-			   std::vector<int> *syscall_numbers);
+void get_syscall_by_name (struct gdbarch *gdbarch,
+			  const char *syscall_name, struct syscall *s);
 
 /* Function used to retrieve the list of syscalls in the system.  This list
    is returned as an array of strings.  Returns the list of syscalls in the
@@ -53,11 +51,13 @@ bool get_syscalls_by_name (struct gdbarch *gdbarch, const char *syscall_name,
 const char **get_syscall_names (struct gdbarch *gdbarch);
 
 /* Function used to retrieve the list of syscalls of a given group in
-   the system.  The syscall numbers are appended to SYSCALL_NUMBERS.
-   If the group doesn't exist, return false.  */
+   the system.  Return a list of syscalls that are element of the
+   group, terminated by an empty element. The list is malloc'ed
+   and must be freed by the caller.  If group doesn't exist, return
+   NULL.  */
 
-bool get_syscalls_by_group (struct gdbarch *gdbarch, const char *group,
-			    std::vector<int> *syscall_numbers);
+struct syscall *get_syscalls_by_group (struct gdbarch *gdbarch,
+				       const char *group);
 
 /* Function used to retrieve the list of syscall groups in the system.
    Return an array of strings terminated by a NULL element.  The list

@@ -1,6 +1,6 @@
 /* GDB commands implemented in Scheme.
 
-   Copyright (C) 2008-2019 Free Software Foundation, Inc.
+   Copyright (C) 2008-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -267,9 +267,9 @@ gdbscm_command_valid_p (SCM self)
 static SCM
 gdbscm_dont_repeat (SCM self)
 {
-  /* We currently don't need anything from SELF, but still verify it.
-     Call for side effects.  */
-  cmdscm_get_valid_command_smob_arg_unsafe (self, SCM_ARG1, FUNC_NAME);
+  /* We currently don't need anything from SELF, but still verify it.  */
+  command_smob *c_smob
+    = cmdscm_get_valid_command_smob_arg_unsafe (self, SCM_ARG1, FUNC_NAME);
 
   dont_repeat ();
 
@@ -316,10 +316,10 @@ cmdscm_function (struct cmd_list_element *command,
 	 itself.  */
       if (gdbscm_user_error_p (gdbscm_exception_key (result)))
 	{
-	  gdb::unique_xmalloc_ptr<char> msg
-	    = gdbscm_exception_message_to_string (result);
+	  char *msg = gdbscm_exception_message_to_string (result);
 
-	  error ("%s", msg.get ());
+	  make_cleanup (xfree, msg);
+	  error ("%s", msg);
 	}
       else
 	{
@@ -362,8 +362,8 @@ cmdscm_add_completion (SCM completion, completion_tracker &tracker)
     }
 
   gdb::unique_xmalloc_ptr<char> item
-    = gdbscm_scm_to_string (completion, NULL, host_charset (), 1,
-			    &except_scm);
+    (gdbscm_scm_to_string (completion, NULL, host_charset (), 1,
+			   &except_scm));
   if (item == NULL)
     {
       /* Inform the user, but otherwise ignore the entire result.  */
@@ -758,8 +758,7 @@ gdbscm_register_command_x (SCM self)
   c_smob->cmd_name = gdbscm_gc_xstrdup (cmd_name);
   xfree (cmd_name);
 
-  gdbscm_gdb_exception exc {};
-  try
+  TRY
     {
       if (c_smob->is_prefix)
 	{
@@ -777,11 +776,11 @@ gdbscm_register_command_x (SCM self)
 			 c_smob->doc, cmd_list);
 	}
     }
-  catch (const gdb_exception &except)
+  CATCH (except, RETURN_MASK_ALL)
     {
-      exc = unpack (except);
+      GDBSCM_HANDLE_GDB_EXCEPTION (except);
     }
-  GDBSCM_HANDLE_GDB_EXCEPTION (exc);
+  END_CATCH
 
   /* Note: At this point the command exists in gdb.
      So no more errors after this point.  */

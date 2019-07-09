@@ -1,5 +1,5 @@
 /* Renesas RX specific support for 32-bit ELF.
-   Copyright (C) 2008-2019 Free Software Foundation, Inc.
+   Copyright (C) 2008-2018 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -20,6 +20,7 @@
 
 #include "sysdep.h"
 #include "bfd.h"
+#include "bfd_stdint.h"
 #include "libbfd.h"
 #include "elf-bfd.h"
 #include "elf/rx.h"
@@ -299,8 +300,8 @@ rx_reloc_name_lookup (bfd * abfd ATTRIBUTE_UNUSED, const char * r_name)
 
 /* Set the howto pointer for an RX ELF reloc.  */
 
-static bfd_boolean
-rx_info_to_howto_rela (bfd *		   abfd,
+static void
+rx_info_to_howto_rela (bfd *		   abfd ATTRIBUTE_UNUSED,
 		       arelent *	   cache_ptr,
 		       Elf_Internal_Rela * dst)
 {
@@ -310,21 +311,10 @@ rx_info_to_howto_rela (bfd *		   abfd,
   if (r_type >= (unsigned int) R_RX_max)
     {
       /* xgettext:c-format */
-      _bfd_error_handler (_("%pB: unsupported relocation type %#x"),
-			  abfd, r_type);
-      bfd_set_error (bfd_error_bad_value);
-      return FALSE;
+      _bfd_error_handler (_("%B: invalid RX reloc number: %d"), abfd, r_type);
+      r_type = 0;
     }
   cache_ptr->howto = rx_elf_howto_table + r_type;
-  if (cache_ptr->howto->name == NULL)
-    {
-      /* xgettext:c-format */
-      _bfd_error_handler (_("%pB: unsupported relocation type %#x"),
-			  abfd, r_type);
-      bfd_set_error (bfd_error_bad_value);
-      return FALSE;
-    }
-  return TRUE;
 }
 
 static bfd_vma
@@ -602,14 +592,14 @@ rx_elf_relocate_section
 	  if (table_end_cache <= entry_vma || entry_vma < table_start_cache)
 	    {
 	      /* xgettext:c-format */
-	      _bfd_error_handler (_("%pB:%pA: table entry %s outside table"),
+	      _bfd_error_handler (_("%B:%A: table entry %s outside table"),
 				  input_bfd, input_section,
 				  name);
 	    }
 	  else if ((int) (entry_vma - table_start_cache) % 4)
 	    {
 	      /* xgettext:c-format */
-	      _bfd_error_handler (_("%pB:%pA: table entry %s not word-aligned within table"),
+	      _bfd_error_handler (_("%B:%A: table entry %s not word-aligned within table"),
 				  input_bfd, input_section,
 				  name);
 	    }
@@ -670,20 +660,13 @@ rx_elf_relocate_section
 
       r = bfd_reloc_ok;
 
-#define RANGE(a,b) \
-  if (a > (long) relocation || (long) relocation > b)		\
-    r = bfd_reloc_overflow
-#define ALIGN(m) \
-  if (relocation & m)						\
-    r = bfd_reloc_other
-#define OP(i) \
-  (contents[rel->r_offset + (i)])
+#define RANGE(a,b) if (a > (long) relocation || (long) relocation > b) r = bfd_reloc_overflow
+#define ALIGN(m)   if (relocation & m) r = bfd_reloc_other;
+#define OP(i)      (contents[rel->r_offset + (i)])
 #define WARN_REDHAT(type) \
-  /* xgettext:c-format */					\
-  _bfd_error_handler						\
-    (_("%pB:%pA: warning: deprecated Red Hat reloc "		\
-       "%s detected against: %s"),				\
-     input_bfd, input_section, #type, name)
+      /* xgettext:c-format */ \
+      _bfd_error_handler (_("%B:%A: Warning: deprecated Red Hat reloc " type " detected against: %s."), \
+      input_bfd, input_section, name)
 
       /* Check for unsafe relocs in PID mode.  These are any relocs where
 	 an absolute address is being computed.  There are special cases
@@ -701,12 +684,9 @@ rx_elf_relocate_section
 	  && strcmp (name, "__romdatastart") != 0			\
 	  && !saw_subtract)						\
 	/* xgettext:c-format */						\
-	_bfd_error_handler (_("%pB(%pA): unsafe PID relocation %s "	\
-			      "at %#" PRIx64 " (against %s in %s)"),	\
+	_bfd_error_handler (_("%B(%A): unsafe PID relocation %s at %#Lx (against %s in %s)"), \
 			    input_bfd, input_section, howto->name,	\
-			    (uint64_t) (input_section->output_section->vma \
-					+ input_section->output_offset	\
-					+ rel->r_offset),		\
+			    input_section->output_section->vma + input_section->output_offset + rel->r_offset, \
 			    name, sec->name);				\
     }									\
   while (0)
@@ -1284,8 +1264,7 @@ rx_elf_relocate_section
 			       + sec->output_offset
 			       + rel->r_addend);
 	      else
-		_bfd_error_handler
-		  (_("warning: RX_SYM reloc with an unknown symbol"));
+		_bfd_error_handler (_("Warning: RX_SYM reloc with an unknown symbol"));
 	    }
 	  break;
 
@@ -1453,7 +1432,7 @@ rx_elf_relocate_section
 		 and emit a more helpful error message.  */
 	      if (r_type == R_RX_DIR24S_PCREL)
 		/* xgettext:c-format */
-		msg = _("%pB(%pA): error: call to undefined function '%s'");
+		msg = _("%B(%A): error: call to undefined function '%s'");
 	      else
 		(*info->callbacks->reloc_overflow)
 		  (info, (h ? &h->root : NULL), name, howto->name, (bfd_vma) 0,
@@ -1467,27 +1446,27 @@ rx_elf_relocate_section
 
 	    case bfd_reloc_other:
 	      /* xgettext:c-format */
-	      msg = _("%pB(%pA): warning: unaligned access to symbol '%s' in the small data area");
+	      msg = _("%B(%A): warning: unaligned access to symbol '%s' in the small data area");
 	      break;
 
 	    case bfd_reloc_outofrange:
 	      /* xgettext:c-format */
-	      msg = _("%pB(%pA): internal error: out of range error");
+	      msg = _("%B(%A): internal error: out of range error");
 	      break;
 
 	    case bfd_reloc_notsupported:
 	      /* xgettext:c-format */
-	      msg = _("%pB(%pA): internal error: unsupported relocation error");
+	      msg = _("%B(%A): internal error: unsupported relocation error");
 	      break;
 
 	    case bfd_reloc_dangerous:
 	      /* xgettext:c-format */
-	      msg = _("%pB(%pA): internal error: dangerous relocation");
+	      msg = _("%B(%A): internal error: dangerous relocation");
 	      break;
 
 	    default:
 	      /* xgettext:c-format */
-	      msg = _("%pB(%pA): internal error: unknown error");
+	      msg = _("%B(%A): internal error: unknown error");
 	      break;
 	    }
 
@@ -3164,8 +3143,8 @@ rx_elf_merge_private_bfd_data (bfd * ibfd, struct bfd_link_info *info)
 	    }
 	  else
 	    {
-	      _bfd_error_handler (_("there is a conflict merging the"
-				    " ELF header flags from %pB"),
+	      _bfd_error_handler (_("There is a conflict merging the"
+				    " ELF header flags from %B"),
 				  ibfd);
 	      _bfd_error_handler (_("  the input  file's flags: %s"),
 				  describe_flags (new_flags));
@@ -3212,12 +3191,7 @@ elf32_rx_machine (bfd * abfd ATTRIBUTE_UNUSED)
 	 For now we assume that the flags are OK.  */
   if ((elf_elfheader (abfd)->e_flags & EF_RX_CPU_MASK) == EF_RX_CPU_RX)
 #endif
-    if ((elf_elfheader (abfd)->e_flags & E_FLAG_RX_V2))
-      return bfd_mach_rx_v2;
-    else if ((elf_elfheader (abfd)->e_flags & E_FLAG_RX_V3))
-      return bfd_mach_rx_v3;
-    else
-      return bfd_mach_rx;
+    return bfd_mach_rx;
 
   return 0;
 }
@@ -3312,13 +3286,6 @@ rx_elf_object_p (bfd * abfd)
 	}
     }
 
-  return TRUE;
-}
-
-static bfd_boolean
-rx_linux_object_p (bfd * abfd)
-{
-  bfd_default_set_arch_mach (abfd, bfd_arch_rx, elf32_rx_machine (abfd));
   return TRUE;
 }
  
@@ -3788,7 +3755,7 @@ rx_table_find (struct bfd_hash_entry *vent, void *vinfo)
 	     && h->type != bfd_link_hash_defweak))
     {
       /* xgettext:c-format */
-      _bfd_error_handler (_("%pB:%pA: table %s missing corresponding %s"),
+      _bfd_error_handler (_("%B:%A: table %s missing corresponding %s"),
 			  abfd, sec, name, buf);
       return TRUE;
     }
@@ -3796,7 +3763,7 @@ rx_table_find (struct bfd_hash_entry *vent, void *vinfo)
   if (h->u.def.section != ent->u.def.section)
     {
       /* xgettext:c-format */
-      _bfd_error_handler (_("%pB:%pA: %s and %s must be in the same input section"),
+      _bfd_error_handler (_("%B:%A: %s and %s must be in the same input section"),
 			  h->u.def.section->owner, h->u.def.section,
 			  name, buf);
       return TRUE;
@@ -4068,20 +4035,5 @@ rx_additional_link_map_text (bfd *obfd, struct bfd_link_info *info, FILE *mapfil
 
 #undef	elf32_bed
 #define elf32_bed				elf32_rx_be_ns_bed
-
-#include "elf32-target.h"
-
-#undef	TARGET_LITTLE_SYM
-#define TARGET_LITTLE_SYM	rx_elf32_linux_le_vec
-#undef  TARGET_LITTLE_NAME
-#define TARGET_LITTLE_NAME	"elf32-rx-linux"
-#undef  TARGET_BIG_SYM
-#undef  TARGET_BIG_NAME
-
-#undef  elf_backend_object_p
-#define elf_backend_object_p			rx_linux_object_p
-#undef  elf_symbol_leading_char
-#undef	elf32_bed
-#define	elf32_bed				elf32_rx_le_linux_bed
 
 #include "elf32-target.h"

@@ -1,6 +1,6 @@
 /* Target-dependent code for the i386.
 
-   Copyright (C) 2001-2019 Free Software Foundation, Inc.
+   Copyright (C) 2001-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -200,10 +200,6 @@ struct gdbarch_tdep
   /* PKEYS register names.  */
   const char **pkeys_register_names;
 
-  /* Register number for %fsbase.  Set this to -1 to indicate the
-     absence of segment base registers.  */
-  int fsbase_regnum;
-
   /* Target description.  */
   const struct target_desc *tdesc;
 
@@ -300,9 +296,7 @@ enum i386_regnum
   I386_K7_REGNUM = I386_K0_REGNUM + 7,
   I386_ZMM0H_REGNUM,		/* %zmm0h */
   I386_ZMM7H_REGNUM = I386_ZMM0H_REGNUM + 7,
-  I386_PKRU_REGNUM,
-  I386_FSBASE_REGNUM,
-  I386_GSBASE_REGNUM
+  I386_PKRU_REGNUM
 };
 
 /* Register numbers of RECORD_REGMAP.  */
@@ -343,7 +337,6 @@ enum record_i386_regnum
 #define I386_MPX_NUM_REGS	(I386_BNDSTATUS_REGNUM + 1)
 #define I386_AVX512_NUM_REGS	(I386_ZMM7H_REGNUM + 1)
 #define I386_PKEYS_NUM_REGS	(I386_PKRU_REGNUM + 1)
-#define I386_NUM_REGS		(I386_GSBASE_REGNUM + 1)
 
 /* Size of the largest register.  */
 #define I386_MAX_REGISTER_SIZE	64
@@ -371,7 +364,7 @@ extern struct type *i386_pseudo_register_type (struct gdbarch *gdbarch,
 					       int regnum);
 
 extern void i386_pseudo_register_read_into_value (struct gdbarch *gdbarch,
-						  readable_regcache *regcache,
+						  struct regcache *regcache,
 						  int regnum,
 						  struct value *result);
 
@@ -447,8 +440,7 @@ extern int i386_svr4_reg_to_regnum (struct gdbarch *gdbarch, int reg);
 
 extern int i386_process_record (struct gdbarch *gdbarch,
                                 struct regcache *regcache, CORE_ADDR addr);
-extern const struct target_desc *i386_target_description (uint64_t xcr0,
-							  bool segments);
+extern const struct target_desc *i386_target_description (uint64_t xcr0);
 
 /* Return true iff the current target is MPX enabled.  */
 extern int i386_mpx_enabled (void);

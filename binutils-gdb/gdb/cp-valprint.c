@@ -1,6 +1,6 @@
 /* Support for printing C++ values for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2019 Free Software Foundation, Inc.
+   Copyright (C) 1986-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -35,7 +35,40 @@
 #include "language.h"
 #include "extension.h"
 #include "typeprint.h"
-#include "common/byte-vector.h"
+#include "byte-vector.h"
+
+/* Controls printing of vtbl's.  */
+static void
+show_vtblprint (struct ui_file *file, int from_tty,
+		struct cmd_list_element *c, const char *value)
+{
+  fprintf_filtered (file, _("\
+Printing of C++ virtual function tables is %s.\n"),
+		    value);
+}
+
+/* Controls looking up an object's derived type using what we find in
+   its vtables.  */
+static void
+show_objectprint (struct ui_file *file, int from_tty,
+		  struct cmd_list_element *c,
+		  const char *value)
+{
+  fprintf_filtered (file, _("\
+Printing of object's derived type based on vtable info is %s.\n"),
+		    value);
+}
+
+static void
+show_static_field_print (struct ui_file *file, int from_tty,
+			 struct cmd_list_element *c,
+			 const char *value)
+{
+  fprintf_filtered (file,
+		    _("Printing of C++ static members is %s.\n"),
+		    value);
+}
+
 
 static struct obstack dont_print_vb_obstack;
 static struct obstack dont_print_statmem_obstack;
@@ -62,7 +95,7 @@ extern const char vtbl_ptr_name[] = "__vtbl_ptr_type";
 int
 cp_is_vtbl_ptr_type (struct type *type)
 {
-  const char *type_name = TYPE_NAME (type);
+  const char *type_name = type_name_no_tag (type);
 
   return (type_name != NULL && !strcmp (type_name, vtbl_ptr_name));
 }
@@ -202,11 +235,7 @@ cp_print_value_fields (struct type *type, struct type *real_type,
 	    continue;
 
 	  if (fields_seen)
-	    {
-	      fputs_filtered (",", stream);
-	      if (!options->prettyformat)
-		fputs_filtered (" ", stream);
-	    }
+	    fprintf_filtered (stream, ", ");
 	  else if (n_baseclasses > 0)
 	    {
 	      if (options->prettyformat)
@@ -214,8 +243,8 @@ cp_print_value_fields (struct type *type, struct type *real_type,
 		  fprintf_filtered (stream, "\n");
 		  print_spaces_filtered (2 + 2 * recurse, stream);
 		  fputs_filtered ("members of ", stream);
-		  fputs_filtered (TYPE_NAME (type), stream);
-		  fputs_filtered (":", stream);
+		  fputs_filtered (type_name_no_tag (type), stream);
+		  fputs_filtered (": ", stream);
 		}
 	    }
 	  fields_seen = 1;
@@ -239,23 +268,10 @@ cp_print_value_fields (struct type *type, struct type *real_type,
 				   current_language->la_language,
 				   DMGL_PARAMS | DMGL_ANSI);
 	  annotate_field_name_end ();
-
-	  /* We tweak various options in a few cases below.  */
-	  value_print_options options_copy = *options;
-	  value_print_options *opts = &options_copy;
-
 	  /* Do not print leading '=' in case of anonymous
 	     unions.  */
 	  if (strcmp (TYPE_FIELD_NAME (type, i), ""))
 	    fputs_filtered (" = ", stream);
-	  else
-	    {
-	      /* If this is an anonymous field then we want to consider it
-		 as though it is at its parent's depth when it comes to the
-		 max print depth.  */
-	      if (opts->max_depth != -1 && opts->max_depth < INT_MAX)
-		++opts->max_depth;
-	    }
 	  annotate_field_value ();
 
 	  if (!field_is_static (&TYPE_FIELD (type, i))
@@ -279,12 +295,14 @@ cp_print_value_fields (struct type *type, struct type *real_type,
 		}
 	      else
 		{
-		  opts->deref_ref = 0;
+		  struct value_print_options opts = *options;
+
+		  opts.deref_ref = 0;
 
 		  v = value_field_bitfield (type, i, valaddr, offset, val);
 
-		  common_val_print (v, stream, recurse + 1,
-				    opts, current_language);
+		  common_val_print (v, stream, recurse + 1, &opts,
+				    current_language);
 		}
 	    }
 	  else
@@ -296,20 +314,24 @@ cp_print_value_fields (struct type *type, struct type *real_type,
 		}
 	      else if (field_is_static (&TYPE_FIELD (type, i)))
 		{
-		  try
-		    {
-		      struct value *v = value_static_field (type, i);
+		  struct value *v = NULL;
 
-		      cp_print_static_field (TYPE_FIELD_TYPE (type, i),
-					     v, stream, recurse + 1,
-					     options);
+		  TRY
+		    {
+		      v = value_static_field (type, i);
 		    }
-		  catch (const gdb_exception_error &ex)
+
+		  CATCH (ex, RETURN_MASK_ERROR)
 		    {
 		      fprintf_filtered (stream,
 					_("<error reading variable: %s>"),
-					ex.what ());
+					ex.message);
 		    }
+		  END_CATCH
+
+		  cp_print_static_field (TYPE_FIELD_TYPE (type, i),
+					 v, stream, recurse + 1,
+					 options);
 		}
 	      else if (i == vptr_fieldno && type == vptr_basetype)
 		{
@@ -321,18 +343,20 @@ cp_print_value_fields (struct type *type, struct type *real_type,
 		      CORE_ADDR addr;
 		      
 		      addr = extract_typed_address (valaddr + i_offset, i_type);
-		      print_function_pointer_address (opts,
+		      print_function_pointer_address (options,
 						      get_type_arch (type),
 						      addr, stream);
 		    }
 		}
 	      else
 		{
-		  opts->deref_ref = 0;
+		  struct value_print_options opts = *options;
+
+		  opts.deref_ref = 0;
 		  val_print (TYPE_FIELD_TYPE (type, i),
 			     offset + TYPE_FIELD_BITPOS (type, i) / 8,
 			     address,
-			     stream, recurse + 1, val, opts,
+			     stream, recurse + 1, val, &opts,
 			     current_language);
 		}
 	    }
@@ -354,7 +378,7 @@ cp_print_value_fields (struct type *type, struct type *real_type,
 
 	  if (last_set_recurse != recurse)
 	    {
-	      obstack_final_size =
+	      size_t obstack_final_size =
 		obstack_object_size (&dont_print_stat_array_obstack);
 	      
 	      if (obstack_final_size > stat_array_obstack_initial_size)
@@ -481,17 +505,18 @@ cp_print_value (struct type *type, struct type *real_type,
       thisoffset = offset;
       thistype = real_type;
 
-      try
+      TRY
 	{
 	  boffset = baseclass_offset (type, i, valaddr, offset, address, val);
 	}
-      catch (const gdb_exception_error &ex)
+      CATCH (ex, RETURN_MASK_ERROR)
 	{
 	  if (ex.error == NOT_AVAILABLE_ERROR)
 	    skip = -1;
 	  else
 	    skip = 1;
 	}
+      END_CATCH
 
       if (skip == 0)
 	{
@@ -548,35 +573,25 @@ cp_print_value (struct type *type, struct type *real_type,
 	{
 	  int result = 0;
 
-	  if (options->max_depth > -1
-	      && recurse >= options->max_depth)
-	    {
-	      const struct language_defn *language = current_language;
-	      gdb_assert (language->la_struct_too_deep_ellipsis != NULL);
-	      fputs_filtered (language->la_struct_too_deep_ellipsis, stream);
-	    }
-	  else
-	    {
-	      /* Attempt to run an extension language pretty-printer on the
-		 baseclass if possible.  */
-	      if (!options->raw)
-		result
-		  = apply_ext_lang_val_pretty_printer (baseclass,
-						       thisoffset + boffset,
-						       value_address (base_val),
-						       stream, recurse,
-						       base_val, options,
-						       current_language);
+	  /* Attempt to run an extension language pretty-printer on the
+	     baseclass if possible.  */
+	  if (!options->raw)
+	    result
+	      = apply_ext_lang_val_pretty_printer (baseclass,
+						   thisoffset + boffset,
+						   value_address (base_val),
+						   stream, recurse,
+						   base_val, options,
+						   current_language);
 
-	      if (!result)
-		cp_print_value_fields (baseclass, thistype,
-				       thisoffset + boffset,
-				       value_address (base_val),
-				       stream, recurse, base_val, options,
-				       ((struct type **)
-					obstack_base (&dont_print_vb_obstack)),
-				       0);
-	    }
+	  if (!result)
+	    cp_print_value_fields (baseclass, thistype,
+				   thisoffset + boffset,
+				   value_address (base_val),
+				   stream, recurse, base_val, options,
+				   ((struct type **)
+				    obstack_base (&dont_print_vb_obstack)),
+				   0);
 	}
       fputs_filtered (", ", stream);
 
@@ -618,8 +633,7 @@ cp_print_static_field (struct type *type,
       return;
     }
 
-  struct type *real_type = check_typedef (type);
-  if (TYPE_CODE (real_type) == TYPE_CODE_STRUCT)
+  if (TYPE_CODE (type) == TYPE_CODE_STRUCT)
     {
       CORE_ADDR *first_dont_print;
       CORE_ADDR addr;
@@ -644,6 +658,7 @@ cp_print_static_field (struct type *type,
       addr = value_address (val);
       obstack_grow (&dont_print_statmem_obstack, (char *) &addr,
 		    sizeof (CORE_ADDR));
+      type = check_typedef (type);
       cp_print_value_fields (type, value_enclosing_type (val),
 			     value_embedded_offset (val), addr,
 			     stream, recurse, val,
@@ -651,7 +666,7 @@ cp_print_static_field (struct type *type,
       return;
     }
 
-  if (TYPE_CODE (real_type) == TYPE_CODE_ARRAY)
+  if (TYPE_CODE (type) == TYPE_CODE_ARRAY)
     {
       struct type **first_dont_print;
       int i;
@@ -772,7 +787,7 @@ cp_print_class_member (const gdb_byte *valaddr, struct type *type,
       const char *name;
 
       fputs_filtered (prefix, stream);
-      name = TYPE_NAME (self_type);
+      name = type_name_no_tag (self_type);
       if (name)
 	fputs_filtered (name, stream);
       else
@@ -788,6 +803,30 @@ cp_print_class_member (const gdb_byte *valaddr, struct type *type,
 void
 _initialize_cp_valprint (void)
 {
+  add_setshow_boolean_cmd ("static-members", class_support,
+			   &user_print_options.static_field_print, _("\
+Set printing of C++ static members."), _("\
+Show printing of C++ static members."), NULL,
+			   NULL,
+			   show_static_field_print,
+			   &setprintlist, &showprintlist);
+
+  add_setshow_boolean_cmd ("vtbl", class_support,
+			   &user_print_options.vtblprint, _("\
+Set printing of C++ virtual function tables."), _("\
+Show printing of C++ virtual function tables."), NULL,
+			   NULL,
+			   show_vtblprint,
+			   &setprintlist, &showprintlist);
+
+  add_setshow_boolean_cmd ("object", class_support,
+			   &user_print_options.objectprint, _("\
+Set printing of object's derived type based on vtable info."), _("\
+Show printing of object's derived type based on vtable info."), NULL,
+			   NULL,
+			   show_objectprint,
+			   &setprintlist, &showprintlist);
+
   obstack_begin (&dont_print_stat_array_obstack,
 		 32 * sizeof (struct type *));
   obstack_begin (&dont_print_statmem_obstack,

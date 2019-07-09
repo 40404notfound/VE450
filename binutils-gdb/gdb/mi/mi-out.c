@@ -1,6 +1,6 @@
 /* MI Command Set - output generating routines.
 
-   Copyright (C) 2000-2019 Free Software Foundation, Inc.
+   Copyright (C) 2000-2018 Free Software Foundation, Inc.
 
    Contributed by Cygnus Solutions (a Red Hat company).
 
@@ -20,13 +20,9 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "defs.h"
-#include "mi-out.h"
-
-#include <vector>
-
-#include "interps.h"
 #include "ui-out.h"
-#include "utils.h"
+#include "mi-out.h"
+#include <vector>
 
 /* Mark beginning of a table.  */
 
@@ -69,10 +65,8 @@ mi_ui_out::do_table_header (int width, ui_align alignment,
   open (NULL, ui_out_type_tuple);
   do_field_int (0, 0, ui_center, "width", width);
   do_field_int (0, 0, ui_center, "alignment", alignment);
-  do_field_string (0, 0, ui_center, "col_name", col_name.c_str (),
-		   ui_out_style_kind::DEFAULT);
-  do_field_string (0, width, alignment, "colhdr", col_hdr.c_str (),
-		   ui_out_style_kind::DEFAULT);
+  do_field_string (0, 0, ui_center, "col_name", col_name.c_str ());
+  do_field_string (0, width, alignment, "colhdr", col_hdr.c_str ());
   close (ui_out_type_tuple);
 }
 
@@ -101,8 +95,7 @@ mi_ui_out::do_field_int (int fldno, int width, ui_align alignment,
   char buffer[20];	/* FIXME: how many chars long a %d can become? */
 
   xsnprintf (buffer, sizeof (buffer), "%d", value);
-  do_field_string (fldno, width, alignment, fldname, buffer,
-		   ui_out_style_kind::DEFAULT);
+  do_field_string (fldno, width, alignment, fldname, buffer);
 }
 
 /* Used to omit a field.  */
@@ -118,8 +111,7 @@ mi_ui_out::do_field_skip (int fldno, int width, ui_align alignment,
 
 void
 mi_ui_out::do_field_string (int fldno, int width, ui_align align,
-			    const char *fldname, const char *string,
-			    ui_out_style_kind style)
+			    const char *fldname, const char *string)
 {
   ui_file *stream = m_streams.back ();
   field_separator ();
@@ -131,6 +123,8 @@ mi_ui_out::do_field_string (int fldno, int width, ui_align align,
     fputstr_unfiltered (string, '"', stream);
   fprintf_unfiltered (stream, "\"");
 }
+
+/* This is the only field function that does not align.  */
 
 void
 mi_ui_out::do_field_fmt (int fldno, int width, ui_align align,
@@ -280,9 +274,7 @@ mi_ui_out::version ()
 /* Constructor for an `mi_out_data' object.  */
 
 mi_ui_out::mi_ui_out (int mi_version)
-: ui_out (mi_version >= 3
-	  ? fix_multi_location_breakpoint_output : (ui_out_flag) 0),
-  m_suppress_field_separator (false),
+: m_suppress_field_separator (false),
   m_suppress_output (false),
   m_mi_version (mi_version)
 {
@@ -294,21 +286,12 @@ mi_ui_out::~mi_ui_out ()
 {
 }
 
-/* See mi/mi-out.h.  */
+/* Initialize private members at startup.  */
 
 mi_ui_out *
-mi_out_new (const char *mi_version)
+mi_out_new (int mi_version)
 {
-  if (streq (mi_version, INTERP_MI3) ||  streq (mi_version, INTERP_MI))
-    return new mi_ui_out (3);
-
-  if (streq (mi_version, INTERP_MI2))
-    return new mi_ui_out (2);
-
-  if (streq (mi_version, INTERP_MI1))
-    return new mi_ui_out (1);
-
-  return nullptr;
+  return new mi_ui_out (mi_version);
 }
 
 /* Helper function to return the given UIOUT as an mi_ui_out.  It is an error

@@ -1,6 +1,6 @@
 /* XML target description support for GDB.
 
-   Copyright (C) 2006-2019 Free Software Foundation, Inc.
+   Copyright (C) 2006-2018 Free Software Foundation, Inc.
 
    Contributed by CodeSourcery.
 
@@ -66,7 +66,7 @@ tdesc_parse_xml (const char *document, xml_fetch_another fetcher,
    then we will create unnecessary duplicate gdbarches.  See
    gdbarch_list_lookup_by_info.  */
 
-static std::unordered_map<std::string, target_desc_up> xml_cache;
+static std::unordered_map<std::string, target_desc *> xml_cache;
 
 /* Callback data for target description parsing.  */
 
@@ -637,22 +637,25 @@ tdesc_parse_xml (const char *document, xml_fetch_another fetcher,
      previously parsed.  */
   const auto it = xml_cache.find (expanded_text);
   if (it != xml_cache.end ())
-    return it->second.get ();
+    return it->second;
 
   memset (&data, 0, sizeof (struct tdesc_parsing_data));
-  target_desc_up description (allocate_target_description ());
-  data.tdesc = description.get ();
+  data.tdesc = allocate_target_description ();
+  struct cleanup *result_cleanup
+    = make_cleanup_free_target_description (data.tdesc);
 
   if (gdb_xml_parse_quick (_("target description"), "gdb-target.dtd",
 			   tdesc_elements, expanded_text.c_str (), &data) == 0)
     {
       /* Parsed successfully.  */
-      xml_cache.emplace (std::move (expanded_text), std::move (description));
+      xml_cache.emplace (std::move (expanded_text), data.tdesc);
+      discard_cleanups (result_cleanup);
       return data.tdesc;
     }
   else
     {
       warning (_("Could not load XML target description; ignoring"));
+      do_cleanups (result_cleanup);
       return NULL;
     }
 }
@@ -665,15 +668,15 @@ tdesc_parse_xml (const char *document, xml_fetch_another fetcher,
 const struct target_desc *
 file_read_description_xml (const char *filename)
 {
-  gdb::optional<gdb::char_vector> tdesc_str
+  gdb::unique_xmalloc_ptr<char> tdesc_str
     = xml_fetch_content_from_file (filename, NULL);
-  if (!tdesc_str)
+  if (tdesc_str == NULL)
     {
       warning (_("Could not open \"%s\""), filename);
       return NULL;
     }
 
-  return tdesc_parse_xml (tdesc_str->data (), xml_fetch_content_from_file,
+  return tdesc_parse_xml (tdesc_str.get (), xml_fetch_content_from_file,
 			  (void *) ldirname (filename).c_str ());
 }
 
@@ -684,7 +687,7 @@ file_read_description_xml (const char *filename)
    is "target.xml".  Other calls may be performed for the DTD or
    for <xi:include>.  */
 
-static gdb::optional<gdb::char_vector>
+static gdb::unique_xmalloc_ptr<char>
 fetch_available_features_from_target (const char *name, void *baton_)
 {
   struct target_ops *ops = (struct target_ops *) baton_;
@@ -703,12 +706,12 @@ fetch_available_features_from_target (const char *name, void *baton_)
 const struct target_desc *
 target_read_description_xml (struct target_ops *ops)
 {
-  gdb::optional<gdb::char_vector> tdesc_str
+  gdb::unique_xmalloc_ptr<char> tdesc_str
     = fetch_available_features_from_target ("target.xml", ops);
-  if (!tdesc_str)
+  if (tdesc_str == NULL)
     return NULL;
 
-  return tdesc_parse_xml (tdesc_str->data (),
+  return tdesc_parse_xml (tdesc_str.get (),
 			  fetch_available_features_from_target,
 			  ops);
 }
@@ -732,15 +735,15 @@ target_fetch_description_xml (struct target_ops *ops)
 
   return {};
 #else
-  gdb::optional<gdb::char_vector>
+  gdb::unique_xmalloc_ptr<char>
     tdesc_str = fetch_available_features_from_target ("target.xml", ops);
-  if (!tdesc_str)
+  if (tdesc_str == NULL)
     return {};
 
   std::string output;
   if (!xml_process_xincludes (output,
 			      _("target description"),
-			      tdesc_str->data (),
+			      tdesc_str.get (),
 			      fetch_available_features_from_target, ops, 0))
     {
       warning (_("Could not load XML target description; ignoring"));
@@ -748,16 +751,4 @@ target_fetch_description_xml (struct target_ops *ops)
     }
   return output;
 #endif
-}
-
-/* See xml-tdesc.h.  */
-
-const struct target_desc *
-string_read_description_xml (const char *xml)
-{
-  return tdesc_parse_xml (xml, [] (const char *href, void *baton)
-    {
-      error (_("xincludes are unsupported with this method"));
-      return gdb::optional<gdb::char_vector> ();
-    }, nullptr);
 }

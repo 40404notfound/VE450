@@ -1,5 +1,5 @@
 /* BFD back-end for Renesas Super-H COFF binaries.
-   Copyright (C) 1993-2019 Free Software Foundation, Inc.
+   Copyright (C) 1993-2018 Free Software Foundation, Inc.
    Contributed by Cygnus Support.
    Written by Steve Chamberlain, <sac@cygnus.com>.
    Relaxing code written by Ian Lance Taylor, <ian@cygnus.com>.
@@ -492,7 +492,7 @@ static const struct shcoff_reloc_map sh_reloc_map[] =
 #define coff_bfd_reloc_name_lookup sh_coff_reloc_name_lookup
 
 static reloc_howto_type *
-sh_coff_reloc_type_lookup (bfd *abfd,
+sh_coff_reloc_type_lookup (bfd * abfd ATTRIBUTE_UNUSED,
 			   bfd_reloc_code_real_type code)
 {
   unsigned int i;
@@ -501,8 +501,7 @@ sh_coff_reloc_type_lookup (bfd *abfd,
     if (sh_reloc_map[i].bfd_reloc_val == code)
       return &sh_coff_howtos[(int) sh_reloc_map[i].shcoff_reloc_val];
 
-  _bfd_error_handler (_("%pB: unsupported relocation type %#x"),
-		      abfd, (unsigned int) code);
+  _bfd_error_handler (_("SH Error: unknown reloc type %d"), code);
   return NULL;
 }
 
@@ -776,9 +775,8 @@ sh_relax_section (bfd *abfd,
       if (laddr >= sec->size)
 	{
 	  /* xgettext: c-format */
-	  _bfd_error_handler
-	    (_("%pB: %#" PRIx64 ": warning: bad R_SH_USES offset"),
-	     abfd, (uint64_t) irel->r_vaddr);
+	  _bfd_error_handler (_("%B: %#Lx: warning: bad R_SH_USES offset"),
+			      abfd, irel->r_vaddr);
 	  continue;
 	}
       insn = bfd_get_16 (abfd, contents + laddr);
@@ -788,8 +786,8 @@ sh_relax_section (bfd *abfd,
 	{
 	  _bfd_error_handler
 	    /* xgettext: c-format */
-	    (_("%pB: %#" PRIx64 ": warning: R_SH_USES points to unrecognized insn %#x"),
-	     abfd, (uint64_t) irel->r_vaddr, insn);
+	    (_("%B: %#Lx: warning: R_SH_USES points to unrecognized insn %#x"),
+	     abfd, irel->r_vaddr, insn);
 	  continue;
 	}
 
@@ -806,8 +804,8 @@ sh_relax_section (bfd *abfd,
 	{
 	  _bfd_error_handler
 	    /* xgettext: c-format */
-	    (_("%pB: %#" PRIx64 ": warning: bad R_SH_USES load offset"),
-	     abfd, (uint64_t) irel->r_vaddr);
+	    (_("%B: %#Lx: warning: bad R_SH_USES load offset"),
+	     abfd, irel->r_vaddr);
 	  continue;
 	}
 
@@ -831,8 +829,8 @@ sh_relax_section (bfd *abfd,
 	{
 	  _bfd_error_handler
 	    /* xgettext: c-format */
-	    (_("%pB: %#" PRIx64 ": warning: could not find expected reloc"),
-	     abfd, (uint64_t) paddr);
+	    (_("%B: %#Lx: warning: could not find expected reloc"),
+	     abfd, paddr);
 	  continue;
 	}
 
@@ -848,8 +846,8 @@ sh_relax_section (bfd *abfd,
 	{
 	  _bfd_error_handler
 	    /* xgettext: c-format */
-	    (_("%pB: %#" PRIx64 ": warning: symbol in unexpected section"),
-	     abfd, (uint64_t) paddr);
+	    (_("%B: %#Lx: warning: symbol in unexpected section"),
+	     abfd, paddr);
 	  continue;
 	}
 
@@ -974,8 +972,8 @@ sh_relax_section (bfd *abfd,
 	{
 	  _bfd_error_handler
 	    /* xgettext: c-format */
-	    (_("%pB: %#" PRIx64 ": warning: could not find expected COUNT reloc"),
-	     abfd, (uint64_t) paddr);
+	    (_("%B: %#Lx: warning: could not find expected COUNT reloc"),
+	     abfd, paddr);
 	  continue;
 	}
 
@@ -984,8 +982,8 @@ sh_relax_section (bfd *abfd,
       if (irelcount->r_offset == 0)
 	{
 	  /* xgettext: c-format */
-	  _bfd_error_handler (_("%pB: %#" PRIx64 ": warning: bad count"),
-			      abfd, (uint64_t) paddr);
+	  _bfd_error_handler (_("%B: %#Lx: warning: bad count"),
+			      abfd, paddr);
 	  continue;
 	}
 
@@ -1356,8 +1354,8 @@ sh_relax_delete_bytes (bfd *abfd,
 	    {
 	      _bfd_error_handler
 		/* xgettext: c-format */
-		(_("%pB: %#" PRIx64 ": fatal: reloc overflow while relaxing"),
-		 abfd, (uint64_t) irel->r_vaddr);
+		(_("%B: %#Lx: fatal: reloc overflow while relaxing"),
+		 abfd, irel->r_vaddr);
 	      bfd_set_error (bfd_error_bad_value);
 	      return FALSE;
 	    }
@@ -1451,7 +1449,7 @@ sh_relax_delete_bytes (bfd *abfd,
       || obj_raw_syments (abfd) != NULL)
     {
       _bfd_error_handler
-	(_("%pB: fatal: generic symbols retrieved before relaxing"), abfd);
+	(_("%B: fatal: generic symbols retrieved before relaxing"), abfd);
       bfd_set_error (bfd_error_invalid_operation);
       return FALSE;
     }
@@ -2644,8 +2642,8 @@ sh_swap_insns (bfd *      abfd,
 	    {
 	      _bfd_error_handler
 		/* xgettext: c-format */
-		(_("%pB: %#" PRIx64 ": fatal: reloc overflow while relaxing"),
-		 abfd, (uint64_t) irel->r_vaddr);
+		(_("%B: %#Lx: fatal: reloc overflow while relaxing"),
+		 abfd, irel->r_vaddr);
 	      bfd_set_error (bfd_error_bad_value);
 	      return FALSE;
 	    }
@@ -2782,7 +2780,7 @@ sh_relocate_section (bfd *output_bfd ATTRIBUTE_UNUSED,
 	    {
 	      _bfd_error_handler
 		/* xgettext: c-format */
-		(_("%pB: illegal symbol index %ld in relocs"),
+		(_("%B: illegal symbol index %ld in relocs"),
 		 input_bfd, symndx);
 	      bfd_set_error (bfd_error_bad_value);
 	      return FALSE;
@@ -3132,9 +3130,9 @@ const bfd_target sh_coff_small_vec =
   BFD_ENDIAN_BIG,		/* data byte order is big */
   BFD_ENDIAN_BIG,		/* header byte order is big */
 
-  (HAS_RELOC | EXEC_P		/* object flags */
-   | HAS_LINENO | HAS_DEBUG
-   | HAS_SYMS | HAS_LOCALS | WP_TEXT | BFD_IS_RELAXABLE),
+  (HAS_RELOC | EXEC_P |		/* object flags */
+   HAS_LINENO | HAS_DEBUG |
+   HAS_SYMS | HAS_LOCALS | WP_TEXT | BFD_IS_RELAXABLE),
 
   (SEC_HAS_CONTENTS | SEC_ALLOC | SEC_LOAD | SEC_RELOC),
   '_',				/* leading symbol underscore */
@@ -3148,24 +3146,12 @@ const bfd_target sh_coff_small_vec =
   bfd_getb32, bfd_getb_signed_32, bfd_putb32,
   bfd_getb16, bfd_getb_signed_16, bfd_putb16, /* hdrs */
 
-  {				/* bfd_check_format */
-    _bfd_dummy_target,
-    coff_small_object_p,
-    bfd_generic_archive_p,
-    _bfd_dummy_target
-  },
-  {				/* bfd_set_format */
-    _bfd_bool_bfd_false_error,
-    coff_mkobject,
-    _bfd_generic_mkarchive,
-    _bfd_bool_bfd_false_error
-  },
-  {				/* bfd_write_contents */
-    _bfd_bool_bfd_false_error,
-    coff_write_object_contents,
-    _bfd_write_archive_contents,
-    _bfd_bool_bfd_false_error
-  },
+  {_bfd_dummy_target, coff_small_object_p, /* bfd_check_format */
+     bfd_generic_archive_p, _bfd_dummy_target},
+  {bfd_false, coff_mkobject, _bfd_generic_mkarchive, /* bfd_set_format */
+     bfd_false},
+  {bfd_false, coff_write_object_contents, /* bfd_write_contents */
+     _bfd_write_archive_contents, bfd_false},
 
   BFD_JUMP_TABLE_GENERIC (coff_small),
   BFD_JUMP_TABLE_COPY (coff),
@@ -3177,9 +3163,9 @@ const bfd_target sh_coff_small_vec =
   BFD_JUMP_TABLE_LINK (coff),
   BFD_JUMP_TABLE_DYNAMIC (_bfd_nodynamic),
 
-  &sh_coff_small_le_vec,
+  & sh_coff_small_le_vec,
 
-  &bfd_coff_small_swap_table
+  & bfd_coff_small_swap_table
 };
 
 const bfd_target sh_coff_small_le_vec =
@@ -3189,9 +3175,9 @@ const bfd_target sh_coff_small_le_vec =
   BFD_ENDIAN_LITTLE,		/* data byte order is little */
   BFD_ENDIAN_LITTLE,		/* header byte order is little endian too*/
 
-  (HAS_RELOC | EXEC_P		/* object flags */
-   | HAS_LINENO | HAS_DEBUG
-   | HAS_SYMS | HAS_LOCALS | WP_TEXT | BFD_IS_RELAXABLE),
+  (HAS_RELOC | EXEC_P |		/* object flags */
+   HAS_LINENO | HAS_DEBUG |
+   HAS_SYMS | HAS_LOCALS | WP_TEXT | BFD_IS_RELAXABLE),
 
   (SEC_HAS_CONTENTS | SEC_ALLOC | SEC_LOAD | SEC_RELOC),
   '_',				/* leading symbol underscore */
@@ -3205,24 +3191,12 @@ const bfd_target sh_coff_small_le_vec =
   bfd_getl32, bfd_getl_signed_32, bfd_putl32,
   bfd_getl16, bfd_getl_signed_16, bfd_putl16, /* hdrs */
 
-  {				/* bfd_check_format */
-    _bfd_dummy_target,
-    coff_small_object_p,
-    bfd_generic_archive_p,
-    _bfd_dummy_target
-  },
-  {				/* bfd_set_format */
-    _bfd_bool_bfd_false_error,
-    coff_mkobject,
-    _bfd_generic_mkarchive,
-    _bfd_bool_bfd_false_error
-  },
-  {				/* bfd_write_contents */
-    _bfd_bool_bfd_false_error,
-    coff_write_object_contents,
-    _bfd_write_archive_contents,
-    _bfd_bool_bfd_false_error
-  },
+  {_bfd_dummy_target, coff_small_object_p, /* bfd_check_format */
+     bfd_generic_archive_p, _bfd_dummy_target},
+  {bfd_false, coff_mkobject, _bfd_generic_mkarchive, /* bfd_set_format */
+     bfd_false},
+  {bfd_false, coff_write_object_contents, /* bfd_write_contents */
+     _bfd_write_archive_contents, bfd_false},
 
   BFD_JUMP_TABLE_GENERIC (coff_small),
   BFD_JUMP_TABLE_COPY (coff),
@@ -3234,8 +3208,8 @@ const bfd_target sh_coff_small_le_vec =
   BFD_JUMP_TABLE_LINK (coff),
   BFD_JUMP_TABLE_DYNAMIC (_bfd_nodynamic),
 
-  &sh_coff_small_vec,
+  & sh_coff_small_vec,
 
-  &bfd_coff_small_swap_table
+  & bfd_coff_small_swap_table
 };
 #endif

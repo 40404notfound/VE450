@@ -1,6 +1,6 @@
 # name: NOP<c> instructions
 # objdump: -dr --prefix-addresses --show-raw-insn
-# skip: *-*-pe *-*-wince
+# skip: *-*-*coff *-*-pe *-*-wince *-*-*aout* *-*-netbsd
 
 .*: +file format .*arm.*
 

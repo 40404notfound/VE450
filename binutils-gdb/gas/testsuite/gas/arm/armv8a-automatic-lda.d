@@ -1,6 +1,6 @@
 # readelf: -A
 # This test is only valid on ELF based ports.
-#notarget: *-*-pe *-*-wince
+#not-target: *-*-*coff *-*-pe *-*-wince *-*-*aout* *-*-netbsd *-*-riscix*
 Attribute Section: aeabi
 File Attributes
   Tag_CPU_arch: v8

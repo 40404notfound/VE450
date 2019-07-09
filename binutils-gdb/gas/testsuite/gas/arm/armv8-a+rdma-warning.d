@@ -1,5 +1,6 @@
 #name: Accepted v8-a with ARMv8.1 AdvSIMD.
 #as: -march=armv8-a+simd
-#skip: *-*-pe *-*-wince
+#objdump: -dr
+#skip: *-*-*coff *-*-pe *-*-wince *-*-*aout* *-*-netbsd
 #source: armv8-a+rdma.s
-#warning_output: armv8-a+rdma.l
+#error-output: armv8-a+rdma.l

@@ -1,5 +1,5 @@
 /* .eh_frame section optimization.
-   Copyright (C) 2001-2019 Free Software Foundation, Inc.
+   Copyright (C) 2001-2018 Free Software Foundation, Inc.
    Written by Jakub Jelinek <jakub@redhat.com>.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -797,8 +797,6 @@ _bfd_elf_parse_eh_frame (bfd *abfd, struct bfd_link_info *info,
 	      while (*aug != '\0')
 		switch (*aug++)
 		  {
-		  case 'B':
-		    break;
 		  case 'L':
 		    REQUIRE (read_byte (&buf, end, &cie->lsda_encoding));
 		    ENSURE_NO_RELOCS (buf);
@@ -941,7 +939,7 @@ _bfd_elf_parse_eh_frame (bfd *abfd, struct bfd_link_info *info,
 	    {
 	      (*info->callbacks->minfo)
 		/* xgettext:c-format */
-		(_("discarding zero address range FDE in %pB(%pA).\n"),
+		(_("discarding zero address range FDE in %B(%A).\n"),
 		 abfd, sec);
 	      this_inf->u.fde.cie_inf = NULL;
 	    }
@@ -1044,9 +1042,9 @@ _bfd_elf_parse_eh_frame (bfd *abfd, struct bfd_link_info *info,
   goto success;
 
  free_no_table:
-  _bfd_error_handler
+  (*info->callbacks->einfo)
     /* xgettext:c-format */
-    (_("error in %pB(%pA); no .eh_frame_hdr table will be created"),
+    (_("%P: error in %B(%A); no .eh_frame_hdr table will be created.\n"),
      abfd, sec);
   hdr_info->u.dwarf.table = FALSE;
   if (sec_info)
@@ -1534,16 +1532,16 @@ _bfd_elf_discard_section_eh_frame
 		hdr_info->u.dwarf.table = FALSE;
 		if (num_warnings_issued < 10)
 		  {
-		    _bfd_error_handler
+		    (*info->callbacks->einfo)
 		      /* xgettext:c-format */
-		      (_("FDE encoding in %pB(%pA) prevents .eh_frame_hdr"
-			 " table being created"), abfd, sec);
+		      (_("%P: FDE encoding in %B(%A) prevents .eh_frame_hdr"
+			 " table being created.\n"), abfd, sec);
 		    num_warnings_issued ++;
 		  }
 		else if (num_warnings_issued == 10)
 		  {
-		    _bfd_error_handler
-		      (_("further warnings about FDE encoding preventing .eh_frame_hdr generation dropped"));
+		    (*info->callbacks->einfo)
+		      (_("%P: Further warnings about FDE encoding preventing .eh_frame_hdr generation dropped.\n"));
 		    num_warnings_issued ++;
 		  }
 	      }
@@ -1865,7 +1863,7 @@ _bfd_elf_write_section_eh_frame_entry (bfd *abfd, struct bfd_link_info *info,
       if (addr <= last_addr)
 	{
 	  /* xgettext:c-format */
-	  _bfd_error_handler (_("%pB: %pA not in order"), sec->owner, sec);
+	  _bfd_error_handler (_("%B: %A not in order"), sec->owner, sec);
 	  return FALSE;
 	}
 
@@ -1879,7 +1877,7 @@ _bfd_elf_write_section_eh_frame_entry (bfd *abfd, struct bfd_link_info *info,
   if (addr & 1)
     {
       /* xgettext:c-format */
-      _bfd_error_handler (_("%pB: %pA invalid input section size"),
+      _bfd_error_handler (_("%B: %A invalid input section size"),
 			  sec->owner, sec);
       bfd_set_error (bfd_error_bad_value);
       return FALSE;
@@ -1887,7 +1885,7 @@ _bfd_elf_write_section_eh_frame_entry (bfd *abfd, struct bfd_link_info *info,
   if (last_addr >= addr + sec->rawsize)
     {
       /* xgettext:c-format */
-      _bfd_error_handler (_("%pB: %pA points past end of text section"),
+      _bfd_error_handler (_("%B: %A points past end of text section"),
 			  sec->owner, sec);
       bfd_set_error (bfd_error_bad_value);
       return FALSE;
@@ -1993,7 +1991,7 @@ _bfd_elf_write_section_eh_frame (bfd *abfd,
 	      || ent->u.cie.per_encoding_relative)
 	    {
 	      char *aug;
-	      unsigned int version, action, extra_string, extra_data;
+	      unsigned int action, extra_string, extra_data;
 	      unsigned int per_width, per_encoding;
 
 	      /* Need to find 'R' or 'L' augmentation's argument and modify
@@ -2004,17 +2002,13 @@ _bfd_elf_write_section_eh_frame (bfd *abfd,
 	      extra_string = extra_augmentation_string_bytes (ent);
 	      extra_data = extra_augmentation_data_bytes (ent);
 
-	      /* Skip length, id.  */
-	      buf += 8;
-	      version = *buf++;
+	      /* Skip length, id and version.  */
+	      buf += 9;
 	      aug = (char *) buf;
 	      buf += strlen (aug) + 1;
 	      skip_leb128 (&buf, end);
 	      skip_leb128 (&buf, end);
-	      if (version == 1)
-		skip_bytes (&buf, end, 1);
-	      else
-		skip_leb128 (&buf, end);
+	      skip_leb128 (&buf, end);
 	      if (*aug == 'z')
 		{
 		  /* The uleb128 will always be a single byte for the kind
@@ -2139,9 +2133,9 @@ _bfd_elf_write_section_eh_frame (bfd *abfd,
 			address += elf_gp (abfd);
 			break;
 		      default:
-			_bfd_error_handler
-			  (_("DW_EH_PE_datarel unspecified"
-			     " for this architecture"));
+			(*info->callbacks->einfo)
+			  (_("%P: DW_EH_PE_datarel unspecified"
+			     " for this architecture.\n"));
 			/* Fall thru */
 		      case bfd_arch_frv:
 		      case bfd_arch_i386:
@@ -2310,7 +2304,7 @@ _bfd_elf_fixup_eh_frame_hdr (struct bfd_link_info *info)
       if (sec->output_section != osec)
 	{
 	  _bfd_error_handler
-	    (_("invalid output section for .eh_frame_entry: %pA"),
+	    (_("Invalid output section for .eh_frame_entry: %A"),
 	     sec->output_section);
 	  return FALSE;
 	}
@@ -2333,7 +2327,7 @@ _bfd_elf_fixup_eh_frame_hdr (struct bfd_link_info *info)
   if (i != 0)
     {
       _bfd_error_handler
-	(_("invalid contents in %pA section"), osec);
+	(_("Invalid contents in %A section"), osec);
       return FALSE;
     }
 
@@ -2489,9 +2483,10 @@ write_dwarf_eh_frame_hdr (bfd *abfd, struct bfd_link_info *info)
 	    overlap = TRUE;
 	}
       if (overflow)
-	_bfd_error_handler (_(".eh_frame_hdr entry overflow"));
+	(*info->callbacks->einfo) (_("%P: .eh_frame_hdr entry overflow.\n"));
       if (overlap)
-	_bfd_error_handler (_(".eh_frame_hdr refers to overlapping FDEs"));
+	(*info->callbacks->einfo)
+	  (_("%P: .eh_frame_hdr refers to overlapping FDEs.\n"));
       if (overflow || overlap)
 	{
 	  bfd_set_error (bfd_error_bad_value);

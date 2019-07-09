@@ -1,6 +1,6 @@
 /* Python frame unwinder interface.
 
-   Copyright (C) 2015-2019 Free Software Foundation, Inc.
+   Copyright (C) 2015-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -23,11 +23,12 @@
 #include "gdb_obstack.h"
 #include "gdbcmd.h"
 #include "language.h"
-#include "observable.h"
+#include "observer.h"
 #include "python-internal.h"
 #include "regcache.h"
 #include "valprint.h"
 #include "user-regs.h"
+#include "py-ref.h"
 
 #define TRACE_PY_UNWIND(level, args...) if (pyuw_debug >= level)  \
   { fprintf_unfiltered (gdb_stdlog, args); }
@@ -45,17 +46,12 @@ typedef struct
 
 /* Saved registers array item.  */
 
-struct saved_reg
+typedef struct
 {
-  saved_reg (int n, gdbpy_ref<> &&v)
-    : number (n),
-      value (std::move (v))
-  {
-  }
-
   int number;
-  gdbpy_ref<> value;
-};
+  PyObject *value;
+} saved_reg;
+DEF_VEC_O (saved_reg);
 
 /* The data we keep for the PyUnwindInfo: pending_frame, saved registers
    and frame ID.  */
@@ -71,7 +67,7 @@ typedef struct
   struct frame_id frame_id;
 
   /* Saved registers array.  */
-  std::vector<saved_reg> *saved_regs;
+  VEC (saved_reg) *saved_regs;
 } unwind_info_object;
 
 /* The data we keep for a frame we can unwind: frame ID and an array of
@@ -141,7 +137,7 @@ pyuw_value_obj_to_pointer (PyObject *pyo_value, CORE_ADDR *addr)
   int rc = 0;
   struct value *value;
 
-  try
+  TRY
     {
       if ((value = value_object_to_value (pyo_value)) != NULL)
         {
@@ -150,10 +146,11 @@ pyuw_value_obj_to_pointer (PyObject *pyo_value, CORE_ADDR *addr)
           rc = 1;
         }
     }
-  catch (const gdb_exception &except)
+  CATCH (except, RETURN_MASK_ALL)
     {
       gdbpy_convert_exception (except);
     }
+  END_CATCH
   return rc;
 }
 
@@ -199,26 +196,29 @@ unwind_infopy_str (PyObject *self)
   fprint_frame_id (&stb, unwind_info->frame_id);
   {
     const char *sep = "";
+    int i;
     struct value_print_options opts;
+    saved_reg *reg;
 
     get_user_print_options (&opts);
     stb.printf ("\nSaved registers: (");
-    for (const saved_reg &reg : *unwind_info->saved_regs)
+    for (i = 0; VEC_iterate (saved_reg, unwind_info->saved_regs, i, reg); i++)
       {
-        struct value *value = value_object_to_value (reg.value.get ());
+        struct value *value = value_object_to_value (reg->value);
 
-        stb.printf ("%s(%d, ", sep, reg.number);
+        stb.printf ("%s(%d, ", sep, reg->number);
         if (value != NULL)
           {
-            try
+            TRY
               {
                 value_print (value, &stb, &opts);
                 stb.puts (")");
               }
-            catch (const gdb_exception &except)
+            CATCH (except, RETURN_MASK_ALL)
               {
                 GDB_PY_HANDLE_EXCEPTION (except);
               }
+            END_CATCH
           }
         else
           stb.puts ("<BAD>)");
@@ -249,7 +249,7 @@ pyuw_create_unwind_info (PyObject *pyo_pending_frame,
   unwind_info->frame_id = frame_id;
   Py_INCREF (pyo_pending_frame);
   unwind_info->pending_frame = pyo_pending_frame;
-  unwind_info->saved_regs = new std::vector<saved_reg>;
+  unwind_info->saved_regs = VEC_alloc (saved_reg, 4);
   return (PyObject *) unwind_info;
 }
 
@@ -303,19 +303,24 @@ unwind_infopy_add_saved_register (PyObject *self, PyObject *args)
       }
   }
   {
-    gdbpy_ref<> new_value = gdbpy_ref<>::new_reference (pyo_reg_value);
-    bool found = false;
-    for (saved_reg &reg : *unwind_info->saved_regs)
+    int i;
+    saved_reg *reg;
+
+    for (i = 0; VEC_iterate (saved_reg, unwind_info->saved_regs, i, reg); i++)
       {
-        if (regnum == reg.number)
+        if (regnum == reg->number)
           {
-	    found = true;
-	    reg.value = std::move (new_value);
+            Py_DECREF (reg->value);
             break;
           }
       }
-    if (!found)
-      unwind_info->saved_regs->emplace_back (regnum, std::move (new_value));
+    if (reg == NULL)
+      {
+        reg = VEC_safe_push (saved_reg, unwind_info->saved_regs, NULL);
+        reg->number = regnum;
+      }
+    Py_INCREF (pyo_reg_value);
+    reg->value = pyo_reg_value;
   }
   Py_RETURN_NONE;
 }
@@ -326,9 +331,13 @@ static void
 unwind_infopy_dealloc (PyObject *self)
 {
   unwind_info_object *unwind_info = (unwind_info_object *) self;
+  int i;
+  saved_reg *reg;
 
   Py_XDECREF (unwind_info->pending_frame);
-  delete unwind_info->saved_regs;
+  for (i = 0; VEC_iterate (saved_reg, unwind_info->saved_regs, i, reg); i++)
+      Py_DECREF (reg->value);
+  VEC_free (saved_reg, unwind_info->saved_regs);
   Py_TYPE (self)->tp_free (self);
 }
 
@@ -344,15 +353,16 @@ pending_framepy_str (PyObject *self)
 
   if (frame == NULL)
     return PyString_FromString ("Stale PendingFrame instance");
-  try
+  TRY
     {
       sp_str = core_addr_to_string_nz (get_frame_sp (frame));
       pc_str = core_addr_to_string_nz (get_frame_pc (frame));
     }
-  catch (const gdb_exception &except)
+  CATCH (except, RETURN_MASK_ALL)
     {
       GDB_PY_HANDLE_EXCEPTION (except);
     }
+  END_CATCH
 
   return PyString_FromFormat ("SP=%s,PC=%s", sp_str, pc_str);
 }
@@ -382,7 +392,7 @@ pending_framepy_read_register (PyObject *self, PyObject *args)
       return NULL;
     }
 
-  try
+  TRY
     {
       /* Fetch the value associated with a register, whether it's
 	 a real register or a so called "user" register, like "pc",
@@ -395,10 +405,11 @@ pending_framepy_read_register (PyObject *self, PyObject *args)
                       "Cannot read register %d from frame.",
                       regnum);
     }
-  catch (const gdb_exception &except)
+  CATCH (except, RETURN_MASK_ALL)
     {
       GDB_PY_HANDLE_EXCEPTION (except);
     }
+  END_CATCH
 
   return val == NULL ? NULL : value_to_value_object (val);
 }
@@ -530,7 +541,12 @@ pyuw_sniffer (const struct frame_unwind *self, struct frame_info *this_frame,
     {
       /* If the unwinder is cancelled due to a Ctrl-C, then propagate
 	 the Ctrl-C as a GDB exception instead of swallowing it.  */
-      gdbpy_print_stack_or_quit ();
+      if (PyErr_ExceptionMatches (PyExc_KeyboardInterrupt))
+	{
+	  PyErr_Clear ();
+	  quit ();
+	}
+      gdbpy_print_stack ();
       return 0;
     }
   if (pyo_unwind_info == Py_None)
@@ -544,7 +560,9 @@ pyuw_sniffer (const struct frame_unwind *self, struct frame_info *this_frame,
   {
     unwind_info_object *unwind_info =
       (unwind_info_object *) pyo_unwind_info.get ();
-    int reg_count = unwind_info->saved_regs->size ();
+    int reg_count = VEC_length (saved_reg, unwind_info->saved_regs);
+    saved_reg *reg;
+    int i;
 
     cached_frame
       = ((cached_frame_info *)
@@ -555,11 +573,9 @@ pyuw_sniffer (const struct frame_unwind *self, struct frame_info *this_frame,
     cached_frame->reg_count = reg_count;
 
     /* Populate registers array.  */
-    for (int i = 0; i < unwind_info->saved_regs->size (); ++i)
+    for (i = 0; VEC_iterate (saved_reg, unwind_info->saved_regs, i, reg); i++)
       {
-	saved_reg *reg = &(*unwind_info->saved_regs)[i];
-
-        struct value *value = value_object_to_value (reg->value.get ());
+        struct value *value = value_object_to_value (reg->value);
         size_t data_size = register_size (gdbarch, reg->number);
 
 	cached_frame->reg[i].num = reg->number;
@@ -567,6 +583,7 @@ pyuw_sniffer (const struct frame_unwind *self, struct frame_info *this_frame,
         /* `value' validation was done before, just assert.  */
         gdb_assert (value != NULL);
         gdb_assert (data_size == TYPE_LENGTH (value_type (value)));
+        gdb_assert (data_size <= MAX_REGISTER_SIZE);
 
 	cached_frame->reg[i].data = (gdb_byte *) xmalloc (data_size);
         memcpy (cached_frame->reg[i].data, value_contents (value), data_size);
@@ -646,7 +663,7 @@ gdbpy_initialize_unwind (void)
         &setdebuglist, &showdebuglist);
   pyuw_gdbarch_data
       = gdbarch_data_register_post_init (pyuw_gdbarch_data_init);
-  gdb::observers::architecture_changed.attach (pyuw_on_new_gdbarch);
+  observer_attach_architecture_changed (pyuw_on_new_gdbarch);
 
   if (PyType_Ready (&pending_frame_object_type) < 0)
     return -1;

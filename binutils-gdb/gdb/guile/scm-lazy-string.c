@@ -1,6 +1,6 @@
 /* Scheme interface to lazy strings.
 
-   Copyright (C) 2010-2019 Free Software Foundation, Inc.
+   Copyright (C) 2010-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -309,7 +309,7 @@ lsscm_safe_lazy_string_to_value (SCM string, int arg_pos,
       return NULL;
     }
 
-  try
+  TRY
     {
       struct type *type = tyscm_scm_to_type (ls_smob->type);
       struct type *realtype = check_typedef (type);
@@ -336,11 +336,12 @@ lsscm_safe_lazy_string_to_value (SCM string, int arg_pos,
 	  break;
 	}
     }
-  catch (const gdb_exception &except)
+  CATCH (except, RETURN_MASK_ALL)
     {
-      *except_scmp = gdbscm_scm_from_gdb_exception (unpack (except));
+      *except_scmp = gdbscm_scm_from_gdb_exception (except);
       return NULL;
     }
+  END_CATCH
 
   return value;
 }

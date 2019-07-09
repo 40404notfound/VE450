@@ -1,6 +1,6 @@
 /* Target-dependent code for Motorola 68HC11 & 68HC12
 
-   Copyright (C) 1999-2019 Free Software Foundation, Inc.
+   Copyright (C) 1999-2018 Free Software Foundation, Inc.
 
    Contributed by Stephane Carrez, stcarrez@nerim.fr
 
@@ -279,7 +279,7 @@ m68hc11_which_soft_register (CORE_ADDR addr)
    fetch into a memory read.  */
 static enum register_status
 m68hc11_pseudo_register_read (struct gdbarch *gdbarch,
-			      readable_regcache *regcache,
+			      struct regcache *regcache,
 			      int regno, gdb_byte *buf)
 {
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
@@ -292,14 +292,14 @@ m68hc11_pseudo_register_read (struct gdbarch *gdbarch,
       const int regsize = 4;
       enum register_status status;
 
-      status = regcache->cooked_read (HARD_PC_REGNUM, &pc);
+      status = regcache_cooked_read_unsigned (regcache, HARD_PC_REGNUM, &pc);
       if (status != REG_VALID)
 	return status;
       if (pc >= 0x8000 && pc < 0xc000)
         {
           ULONGEST page;
 
-	  regcache->cooked_read (HARD_PAGE_REGNUM, &page);
+          regcache_cooked_read_unsigned (regcache, HARD_PAGE_REGNUM, &page);
           pc -= 0x8000;
           pc += (page << 14);
           pc += 0x1000000;
@@ -757,6 +757,16 @@ m68hc11_skip_prologue (struct gdbarch *gdbarch, CORE_ADDR pc)
   return pc;
 }
 
+static CORE_ADDR
+m68hc11_unwind_pc (struct gdbarch *gdbarch, struct frame_info *next_frame)
+{
+  ULONGEST pc;
+
+  pc = frame_unwind_register_unsigned (next_frame,
+				       gdbarch_pc_regnum (gdbarch));
+  return pc;
+}
+
 /* Put here the code to store, into fi->saved_regs, the addresses of
    the saved registers of frame described by FRAME_INFO.  This
    includes special registers such as pc and fp saved in special ways
@@ -844,7 +854,10 @@ m68hc11_frame_unwind_cache (struct frame_info *this_frame,
 
   /* Adjust all the saved registers so that they contain addresses and not
      offsets.  */
-  for (i = 0; i < gdbarch_num_cooked_regs (gdbarch); i++)
+  for (i = 0;
+       i < gdbarch_num_regs (gdbarch)
+	   + gdbarch_num_pseudo_regs (gdbarch) - 1;
+       i++)
     if (trad_frame_addr_p (info->saved_regs, i))
       {
         info->saved_regs[i].addr += this_base;
@@ -906,11 +919,13 @@ m68hc11_frame_prev_register (struct frame_info *this_frame,
           CORE_ADDR page;
 
 	  release_value (value);
+	  value_free (value);
 
 	  value = trad_frame_get_prev_register (this_frame, info->saved_regs,
 						HARD_PAGE_REGNUM);
 	  page = value_as_long (value);
 	  release_value (value);
+	  value_free (value);
 
           pc -= 0x08000;
           pc += ((page & 0x0ff) << 14);
@@ -963,6 +978,14 @@ static const struct frame_base m68hc11_frame_base = {
   m68hc11_frame_base_address,
   m68hc11_frame_args_address
 };
+
+static CORE_ADDR
+m68hc11_unwind_sp (struct gdbarch *gdbarch, struct frame_info *next_frame)
+{
+  ULONGEST sp;
+  sp = frame_unwind_register_unsigned (next_frame, HARD_SP_REGNUM);
+  return sp;
+}
 
 /* Assuming THIS_FRAME is a dummy, return the frame ID of that dummy
    frame.  The frame ID's base needs to match the TOS value saved by
@@ -1136,8 +1159,7 @@ static CORE_ADDR
 m68hc11_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
                          struct regcache *regcache, CORE_ADDR bp_addr,
                          int nargs, struct value **args, CORE_ADDR sp,
-			 function_call_return_method return_method,
-			 CORE_ADDR struct_addr)
+                         int struct_return, CORE_ADDR struct_addr)
 {
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
   int argnum;
@@ -1147,8 +1169,10 @@ m68hc11_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
   gdb_byte buf[2];
   
   first_stack_argnum = 0;
-  if (return_method == return_method_struct)
-    regcache_cooked_write_unsigned (regcache, HARD_D_REGNUM, struct_addr);
+  if (struct_return)
+    {
+      regcache_cooked_write_unsigned (regcache, HARD_D_REGNUM, struct_addr);
+    }
   else if (nargs > 0)
     {
       type = value_type (args[0]);
@@ -1237,11 +1261,12 @@ m68hc11_store_return_value (struct type *type, struct regcache *regcache,
 
   /* First argument is passed in D and X registers.  */
   if (len <= 2)
-    regcache->raw_write_part (HARD_D_REGNUM, 2 - len, len, valbuf);
+    regcache_raw_write_part (regcache, HARD_D_REGNUM, 2 - len, len, valbuf);
   else if (len <= 4)
     {
-      regcache->raw_write_part (HARD_X_REGNUM, 4 - len, len - 2, valbuf);
-      regcache->raw_write (HARD_D_REGNUM, valbuf + (len - 2));
+      regcache_raw_write_part (regcache, HARD_X_REGNUM, 4 - len,
+                               len - 2, valbuf);
+      regcache_raw_write (regcache, HARD_D_REGNUM, valbuf + (len - 2));
     }
   else
     error (_("return of value > 4 is not supported."));
@@ -1257,7 +1282,7 @@ m68hc11_extract_return_value (struct type *type, struct regcache *regcache,
 {
   gdb_byte buf[M68HC11_REG_SIZE];
 
-  regcache->raw_read (HARD_D_REGNUM, buf);
+  regcache_raw_read (regcache, HARD_D_REGNUM, buf);
   switch (TYPE_LENGTH (type))
     {
     case 1:
@@ -1270,13 +1295,13 @@ m68hc11_extract_return_value (struct type *type, struct regcache *regcache,
 
     case 3:
       memcpy ((char*) valbuf + 1, buf, 2);
-      regcache->raw_read (HARD_X_REGNUM, buf);
+      regcache_raw_read (regcache, HARD_X_REGNUM, buf);
       memcpy (valbuf, buf + 1, 1);
       break;
 
     case 4:
       memcpy ((char*) valbuf + 2, buf, 2);
-      regcache->raw_read (HARD_X_REGNUM, buf);
+      regcache_raw_read (regcache, HARD_X_REGNUM, buf);
       memcpy (valbuf, buf, 2);
       break;
 
@@ -1469,6 +1494,9 @@ m68hc11_gdbarch_init (struct gdbarch_info info,
   /* Characters are unsigned.  */
   set_gdbarch_char_signed (gdbarch, 0);
 
+  set_gdbarch_unwind_pc (gdbarch, m68hc11_unwind_pc);
+  set_gdbarch_unwind_sp (gdbarch, m68hc11_unwind_sp);
+
   /* Set register info.  */
   set_gdbarch_fp0_regnum (gdbarch, -1);
 
@@ -1502,6 +1530,9 @@ m68hc11_gdbarch_init (struct gdbarch_info info,
      stack address must match the SP value returned by
      PUSH_DUMMY_CALL, and saved by generic_save_dummy_frame_tos.  */
   set_gdbarch_dummy_id (gdbarch, m68hc11_dummy_id);
+
+  /* Return the unwound PC value.  */
+  set_gdbarch_unwind_pc (gdbarch, m68hc11_unwind_pc);
 
   /* Minsymbol frobbing.  */
   set_gdbarch_elf_make_msymbol_special (gdbarch,

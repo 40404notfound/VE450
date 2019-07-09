@@ -1,5 +1,5 @@
 /* tc-alpha.c - Processor-specific code for the DEC Alpha AXP CPU.
-   Copyright (C) 1989-2019 Free Software Foundation, Inc.
+   Copyright (C) 1989-2018 Free Software Foundation, Inc.
    Contributed by Carnegie Mellon University, 1993.
    Written by Alessandro Forin, based on earlier gas-1.38 target CPU files.
    Modified by Ken Raeburn for gas-2.x and ECOFF support.
@@ -49,6 +49,7 @@
 
 #include "as.h"
 #include "subsegs.h"
+#include "struc-symbol.h"
 #include "ecoff.h"
 
 #include "opcode/alpha.h"
@@ -3399,9 +3400,7 @@ add_to_link_pool (symbolS *sym, offsetT addend)
 	    && fixp->fx_offset == (valueT)addend
 	    && fixp->tc_fix_data.info
 	    && fixp->tc_fix_data.info->sym
-	    && symbol_symbolS (fixp->tc_fix_data.info->sym)
-	    && (symbol_get_value_expression (fixp->tc_fix_data.info->sym)
-		->X_op_symbol == basesym))
+	    && fixp->tc_fix_data.info->sym->sy_value.X_op_symbol == basesym)
 	  return fixp->tc_fix_data.info->sym;
       }
 
@@ -3629,7 +3628,7 @@ s_alpha_comm (int ignore ATTRIBUTE_UNUSED)
     }
 
 #ifndef OBJ_EVAX
-  know (symbol_get_frag (symbolP) == &zero_address_frag);
+  know (symbolP->sy_frag == &zero_address_frag);
 #endif
   demand_empty_rest_of_line ();
 }
@@ -5770,12 +5769,6 @@ md_apply_fix (fixS *fixP, valueT * valP, segT seg)
       md_number_to_chars (fixpos, value, 2);
       break;
 
-    case BFD_RELOC_8:
-      if (fixP->fx_pcrel)
-	fixP->fx_r_type = BFD_RELOC_8_PCREL;
-      size = 1;
-      goto do_reloc_xx;
-
     case BFD_RELOC_16:
       if (fixP->fx_pcrel)
 	fixP->fx_r_type = BFD_RELOC_16_PCREL;
@@ -5878,7 +5871,7 @@ md_apply_fix (fixS *fixP, valueT * valP, segT seg)
 	  return;
 	}
 
-      if (value + (1u << 22) >= (1u << 23))
+      if ((abs (value) >> 2) & ~0xfffff)
 	goto done;
       else
 	{
@@ -5897,7 +5890,7 @@ md_apply_fix (fixS *fixP, valueT * valP, segT seg)
 	  return;
 	}
 
-      if (value + (1u << 15) >= (1u << 16))
+      if ((abs (value)) & ~0x7fff)
 	goto done;
       else
 	{
@@ -5917,7 +5910,7 @@ md_apply_fix (fixS *fixP, valueT * valP, segT seg)
 	  return;
 	}
 
-      if (value + (1u << 22) >= (1u << 23))
+      if ((abs (value) >> 2) & ~0xfffff)
 	{
 	  /* Out of range.  */
 	  if (fixP->fx_r_type == BFD_RELOC_ALPHA_BOH)

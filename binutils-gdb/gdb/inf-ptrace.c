@@ -1,6 +1,6 @@
 /* Low-level child interface to ptrace.
 
-   Copyright (C) 1988-2019 Free Software Foundation, Inc.
+   Copyright (C) 1988-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -25,7 +25,7 @@
 #include "gdbcore.h"
 #include "regcache.h"
 #include "nat/gdb_ptrace.h"
-#include "common/gdb_wait.h"
+#include "gdb_wait.h"
 #include <signal.h>
 
 #include "inf-ptrace.h"
@@ -36,37 +36,19 @@
 
 
 
-/* A unique_ptr helper to unpush a target.  */
-
-struct target_unpusher
-{
-  void operator() (struct target_ops *ops) const
-  {
-    unpush_target (ops);
-  }
-};
-
-/* A unique_ptr that unpushes a target on destruction.  */
-
-typedef std::unique_ptr<struct target_ops, target_unpusher> target_unpush_up;
-
-
-
-inf_ptrace_target::~inf_ptrace_target ()
-{}
-
 #ifdef PT_GET_PROCESS_STATE
 
 /* Target hook for follow_fork.  On entry and at return inferior_ptid is
    the ptid of the followed inferior.  */
 
-int
-inf_ptrace_target::follow_fork (int follow_child, int detach_fork)
+static int
+inf_ptrace_follow_fork (struct target_ops *ops, int follow_child,
+			int detach_fork)
 {
   if (!follow_child)
     {
       struct thread_info *tp = inferior_thread ();
-      pid_t child_pid = tp->pending_follow.value.related_pid.pid ();
+      pid_t child_pid = ptid_get_pid (tp->pending_follow.value.related_pid);
 
       /* Breakpoints have already been detached from the child by
 	 infrun.c.  */
@@ -78,14 +60,14 @@ inf_ptrace_target::follow_fork (int follow_child, int detach_fork)
   return 0;
 }
 
-int
-inf_ptrace_target::insert_fork_catchpoint (int pid)
+static int
+inf_ptrace_insert_fork_catchpoint (struct target_ops *self, int pid)
 {
   return 0;
 }
 
-int
-inf_ptrace_target::remove_fork_catchpoint (int pid)
+static int
+inf_ptrace_remove_fork_catchpoint (struct target_ops *self, int pid)
 {
   return 0;
 }
@@ -108,36 +90,36 @@ inf_ptrace_me (void)
    ENV is the environment vector to pass.  If FROM_TTY is non-zero, be
    chatty about it.  */
 
-void
-inf_ptrace_target::create_inferior (const char *exec_file,
-				    const std::string &allargs,
-				    char **env, int from_tty)
+static void
+inf_ptrace_create_inferior (struct target_ops *ops,
+			    const char *exec_file, const std::string &allargs,
+			    char **env, int from_tty)
 {
   pid_t pid;
   ptid_t ptid;
 
   /* Do not change either targets above or the same target if already present.
      The reason is the target stack is shared across multiple inferiors.  */
-  int ops_already_pushed = target_is_pushed (this);
+  int ops_already_pushed = target_is_pushed (ops);
+  struct cleanup *back_to = make_cleanup (null_cleanup, NULL);
 
-  target_unpush_up unpusher;
   if (! ops_already_pushed)
     {
       /* Clear possible core file with its process_stratum.  */
-      push_target (this);
-      unpusher.reset (this);
+      push_target (ops);
+      make_cleanup_unpush_target (ops);
     }
 
   pid = fork_inferior (exec_file, allargs, env, inf_ptrace_me, NULL,
 		       NULL, NULL, NULL);
 
-  ptid = ptid_t (pid);
+  ptid = pid_to_ptid (pid);
   /* We have something that executes now.  We'll be running through
      the shell at this point (if startup-with-shell is true), but the
      pid shouldn't change.  */
   add_thread_silent (ptid);
 
-  unpusher.release ();
+  discard_cleanups (back_to);
 
   gdb_startup_inferior (pid, START_INFERIOR_TRAPS_EXPECTED);
 
@@ -148,15 +130,15 @@ inf_ptrace_target::create_inferior (const char *exec_file,
 
 #ifdef PT_GET_PROCESS_STATE
 
-void
-inf_ptrace_target::post_startup_inferior (ptid_t pid)
+static void
+inf_ptrace_post_startup_inferior (struct target_ops *self, ptid_t pid)
 {
   ptrace_event_t pe;
 
   /* Set the initial event mask.  */
   memset (&pe, 0, sizeof pe);
   pe.pe_set_event |= PTRACE_FORK;
-  if (ptrace (PT_SET_EVENT_MASK, pid.pid (),
+  if (ptrace (PT_SET_EVENT_MASK, ptid_get_pid (pid),
 	      (PTRACE_TYPE_ARG3)&pe, sizeof pe) == -1)
     perror_with_name (("ptrace"));
 }
@@ -165,8 +147,8 @@ inf_ptrace_target::post_startup_inferior (ptid_t pid)
 
 /* Clean up a rotting corpse of an inferior after it died.  */
 
-void
-inf_ptrace_target::mourn_inferior ()
+static void
+inf_ptrace_mourn_inferior (struct target_ops *ops)
 {
   int status;
 
@@ -174,16 +156,16 @@ inf_ptrace_target::mourn_inferior ()
      Do not check whether this succeeds though, since we may be
      dealing with a process that we attached to.  Such a process will
      only report its exit status to its original parent.  */
-  waitpid (inferior_ptid.pid (), &status, 0);
+  waitpid (ptid_get_pid (inferior_ptid), &status, 0);
 
-  inf_child_target::mourn_inferior ();
+  inf_child_mourn_inferior (ops);
 }
 
 /* Attach to the process specified by ARGS.  If FROM_TTY is non-zero,
    be chatty about it.  */
 
-void
-inf_ptrace_target::attach (const char *args, int from_tty)
+static void
+inf_ptrace_attach (struct target_ops *ops, const char *args, int from_tty)
 {
   char *exec_file;
   pid_t pid;
@@ -191,20 +173,20 @@ inf_ptrace_target::attach (const char *args, int from_tty)
 
   /* Do not change either targets above or the same target if already present.
      The reason is the target stack is shared across multiple inferiors.  */
-  int ops_already_pushed = target_is_pushed (this);
+  int ops_already_pushed = target_is_pushed (ops);
+  struct cleanup *back_to = make_cleanup (null_cleanup, NULL);
 
   pid = parse_pid_to_attach (args);
 
   if (pid == getpid ())		/* Trying to masturbate?  */
     error (_("I refuse to debug myself!"));
 
-  target_unpush_up unpusher;
   if (! ops_already_pushed)
     {
       /* target_pid_to_str already uses the target.  Also clear possible core
 	 file with its process_stratum.  */
-      push_target (this);
-      unpusher.reset (this);
+      push_target (ops);
+      make_cleanup_unpush_target (ops);
     }
 
   if (from_tty)
@@ -213,10 +195,12 @@ inf_ptrace_target::attach (const char *args, int from_tty)
 
       if (exec_file)
 	printf_unfiltered (_("Attaching to program: %s, %s\n"), exec_file,
-			   target_pid_to_str (ptid_t (pid)).c_str ());
+			   target_pid_to_str (pid_to_ptid (pid)));
       else
 	printf_unfiltered (_("Attaching to %s\n"),
-			   target_pid_to_str (ptid_t (pid)).c_str ());
+			   target_pid_to_str (pid_to_ptid (pid)));
+
+      gdb_flush (gdb_stdout);
     }
 
 #ifdef PT_ATTACH
@@ -231,22 +215,19 @@ inf_ptrace_target::attach (const char *args, int from_tty)
   inf = current_inferior ();
   inferior_appeared (inf, pid);
   inf->attach_flag = 1;
-  inferior_ptid = ptid_t (pid);
+  inferior_ptid = pid_to_ptid (pid);
 
   /* Always add a main thread.  If some target extends the ptrace
      target, it should decorate the ptid later with more info.  */
-  thread_info *thr = add_thread_silent (inferior_ptid);
-  /* Don't consider the thread stopped until we've processed its
-     initial SIGSTOP stop.  */
-  set_executing (thr->ptid, true);
+  add_thread_silent (inferior_ptid);
 
-  unpusher.release ();
+  discard_cleanups (back_to);
 }
 
 #ifdef PT_GET_PROCESS_STATE
 
-void
-inf_ptrace_target::post_attach (int pid)
+static void
+inf_ptrace_post_attach (struct target_ops *self, int pid)
 {
   ptrace_event_t pe;
 
@@ -260,14 +241,18 @@ inf_ptrace_target::post_attach (int pid)
 
 #endif
 
-/* Detach from the inferior.  If FROM_TTY is non-zero, be chatty about it.  */
+/* Detach from the inferior, optionally passing it the signal
+   specified by ARGS.  If FROM_TTY is non-zero, be chatty about it.  */
 
-void
-inf_ptrace_target::detach (inferior *inf, int from_tty)
+static void
+inf_ptrace_detach (struct target_ops *ops, const char *args, int from_tty)
 {
-  pid_t pid = inferior_ptid.pid ();
+  pid_t pid = ptid_get_pid (inferior_ptid);
+  int sig = 0;
 
   target_announce_detach (from_tty);
+  if (args)
+    sig = atoi (args);
 
 #ifdef PT_DETACH
   /* We'd better not have left any breakpoints in the program or it'll
@@ -275,33 +260,35 @@ inf_ptrace_target::detach (inferior *inf, int from_tty)
      previously attached to the inferior.  It *might* work if we
      started the process ourselves.  */
   errno = 0;
-  ptrace (PT_DETACH, pid, (PTRACE_TYPE_ARG3)1, 0);
+  ptrace (PT_DETACH, pid, (PTRACE_TYPE_ARG3)1, sig);
   if (errno != 0)
     perror_with_name (("ptrace"));
 #else
   error (_("This system does not support detaching from a process"));
 #endif
 
-  detach_success (inf);
+  inf_ptrace_detach_success (ops);
 }
 
 /* See inf-ptrace.h.  */
 
 void
-inf_ptrace_target::detach_success (inferior *inf)
+inf_ptrace_detach_success (struct target_ops *ops)
 {
-  inferior_ptid = null_ptid;
-  detach_inferior (inf);
+  pid_t pid = ptid_get_pid (inferior_ptid);
 
-  maybe_unpush_target ();
+  inferior_ptid = null_ptid;
+  detach_inferior (pid);
+
+  inf_child_maybe_unpush_target (ops);
 }
 
 /* Kill the inferior.  */
 
-void
-inf_ptrace_target::kill ()
+static void
+inf_ptrace_kill (struct target_ops *ops)
 {
-  pid_t pid = inferior_ptid.pid ();
+  pid_t pid = ptid_get_pid (inferior_ptid);
   int status;
 
   if (pid == 0)
@@ -311,6 +298,19 @@ inf_ptrace_target::kill ()
   waitpid (pid, &status, 0);
 
   target_mourn_inferior (inferior_ptid);
+}
+
+/* Interrupt the inferior.  */
+
+static void
+inf_ptrace_interrupt (struct target_ops *self, ptid_t ptid)
+{
+  /* Send a SIGINT to the process group.  This acts just like the user
+     typed a ^C on the controlling terminal.  Note that using a
+     negative process number in kill() is a System V-ism.  The proper
+     BSD interface is killpg().  However, all modern BSDs support the
+     System V interface too.  */
+  kill (-inferior_process_group (), SIGINT);
 }
 
 /* Return which PID to pass to ptrace in order to observe/control the
@@ -323,9 +323,9 @@ get_ptrace_pid (ptid_t ptid)
 
   /* If we have an LWPID to work with, use it.  Otherwise, we're
      dealing with a non-threaded program/target.  */
-  pid = ptid.lwp ();
+  pid = ptid_get_lwp (ptid);
   if (pid == 0)
-    pid = ptid.pid ();
+    pid = ptid_get_pid (ptid);
   return pid;
 }
 
@@ -333,16 +333,17 @@ get_ptrace_pid (ptid_t ptid)
    STEP is nonzero, single-step it.  If SIGNAL is nonzero, give it
    that signal.  */
 
-void
-inf_ptrace_target::resume (ptid_t ptid, int step, enum gdb_signal signal)
+static void
+inf_ptrace_resume (struct target_ops *ops,
+		   ptid_t ptid, int step, enum gdb_signal signal)
 {
   pid_t pid;
   int request;
 
-  if (minus_one_ptid == ptid)
+  if (ptid_equal (minus_one_ptid, ptid))
     /* Resume all threads.  Traditionally ptrace() only supports
        single-threaded processes, so simply resume the inferior.  */
-    pid = inferior_ptid.pid ();
+    pid = ptid_get_pid (inferior_ptid);
   else
     pid = get_ptrace_pid (ptid);
 
@@ -374,9 +375,9 @@ inf_ptrace_target::resume (ptid_t ptid, int step, enum gdb_signal signal)
    process ID of the child, or MINUS_ONE_PTID in case of error; store
    the status in *OURSTATUS.  */
 
-ptid_t
-inf_ptrace_target::wait (ptid_t ptid, struct target_waitstatus *ourstatus,
-			 int options)
+static ptid_t
+inf_ptrace_wait (struct target_ops *ops,
+		 ptid_t ptid, struct target_waitstatus *ourstatus, int options)
 {
   pid_t pid;
   int status, save_errno;
@@ -387,7 +388,7 @@ inf_ptrace_target::wait (ptid_t ptid, struct target_waitstatus *ourstatus,
 
       do
 	{
-	  pid = waitpid (ptid.pid (), &status, 0);
+	  pid = waitpid (ptid_get_pid (ptid), &status, 0);
 	  save_errno = errno;
 	}
       while (pid == -1 && errno == EINTR);
@@ -407,7 +408,7 @@ inf_ptrace_target::wait (ptid_t ptid, struct target_waitstatus *ourstatus,
 	}
 
       /* Ignore terminated detached child processes.  */
-      if (!WIFSTOPPED (status) && pid != inferior_ptid.pid ())
+      if (!WIFSTOPPED (status) && pid != ptid_get_pid (inferior_ptid))
 	pid = -1;
     }
   while (pid == -1);
@@ -426,7 +427,7 @@ inf_ptrace_target::wait (ptid_t ptid, struct target_waitstatus *ourstatus,
 	{
 	case PTRACE_FORK:
 	  ourstatus->kind = TARGET_WAITKIND_FORKED;
-	  ourstatus->value.related_pid = ptid_t (pe.pe_other_pid);
+	  ourstatus->value.related_pid = pid_to_ptid (pe.pe_other_pid);
 
 	  /* Make sure the other end of the fork is stopped too.  */
 	  fpid = waitpid (pe.pe_other_pid, &status, 0);
@@ -439,19 +440,19 @@ inf_ptrace_target::wait (ptid_t ptid, struct target_waitstatus *ourstatus,
 
 	  gdb_assert (pe.pe_report_event == PTRACE_FORK);
 	  gdb_assert (pe.pe_other_pid == pid);
-	  if (fpid == inferior_ptid.pid ())
+	  if (fpid == ptid_get_pid (inferior_ptid))
 	    {
-	      ourstatus->value.related_pid = ptid_t (pe.pe_other_pid);
-	      return ptid_t (fpid);
+	      ourstatus->value.related_pid = pid_to_ptid (pe.pe_other_pid);
+	      return pid_to_ptid (fpid);
 	    }
 
-	  return ptid_t (pid);
+	  return pid_to_ptid (pid);
 	}
     }
 #endif
 
   store_waitstatus (ourstatus, status);
-  return ptid_t (pid);
+  return pid_to_ptid (pid);
 }
 
 /* Transfer data via ptrace into process PID's memory from WRITEBUF, or
@@ -522,11 +523,11 @@ inf_ptrace_peek_poke (pid_t pid, gdb_byte *readbuf,
 
 /* Implement the to_xfer_partial target_ops method.  */
 
-enum target_xfer_status
-inf_ptrace_target::xfer_partial (enum target_object object,
-				 const char *annex, gdb_byte *readbuf,
-				 const gdb_byte *writebuf,
-				 ULONGEST offset, ULONGEST len, ULONGEST *xfered_len)
+static enum target_xfer_status
+inf_ptrace_xfer_partial (struct target_ops *ops, enum target_object object,
+			 const char *annex, gdb_byte *readbuf,
+			 const gdb_byte *writebuf,
+			 ULONGEST offset, ULONGEST len, ULONGEST *xfered_len)
 {
   pid_t pid = get_ptrace_pid (inferior_ptid);
 
@@ -608,27 +609,27 @@ inf_ptrace_target::xfer_partial (enum target_object object,
 
 /* Return non-zero if the thread specified by PTID is alive.  */
 
-bool
-inf_ptrace_target::thread_alive (ptid_t ptid)
+static int
+inf_ptrace_thread_alive (struct target_ops *ops, ptid_t ptid)
 {
   /* ??? Is kill the right way to do this?  */
-  return (::kill (ptid.pid (), 0) != -1);
+  return (kill (ptid_get_pid (ptid), 0) != -1);
 }
 
 /* Print status information about what we're accessing.  */
 
-void
-inf_ptrace_target::files_info ()
+static void
+inf_ptrace_files_info (struct target_ops *ignore)
 {
   struct inferior *inf = current_inferior ();
 
   printf_filtered (_("\tUsing the running image of %s %s.\n"),
 		   inf->attach_flag ? "attached" : "child",
-		   target_pid_to_str (inferior_ptid).c_str ());
+		   target_pid_to_str (inferior_ptid));
 }
 
-std::string
-inf_ptrace_target::pid_to_str (ptid_t ptid)
+static const char *
+inf_ptrace_pid_to_str (struct target_ops *ops, ptid_t ptid)
 {
   return normal_pid_to_str (ptid);
 }
@@ -640,9 +641,9 @@ inf_ptrace_target::pid_to_str (ptid_t ptid)
    Return -1 if there is insufficient buffer for a whole entry.
    Return 1 if an entry was read into *TYPEP and *VALP.  */
 
-int
-inf_ptrace_target::auxv_parse (gdb_byte **readptr, gdb_byte *endptr,
-			       CORE_ADDR *typep, CORE_ADDR *valp)
+static int
+inf_ptrace_auxv_parse (struct target_ops *ops, gdb_byte **readptr,
+		       gdb_byte *endptr, CORE_ADDR *typep, CORE_ADDR *valp)
 {
   struct type *int_type = builtin_type (target_gdbarch ())->builtin_int;
   struct type *ptr_type = builtin_type (target_gdbarch ())->builtin_data_ptr;
@@ -667,4 +668,173 @@ inf_ptrace_target::auxv_parse (gdb_byte **readptr, gdb_byte *endptr,
 }
 
 #endif
+
+/* Create a prototype ptrace target.  The client can override it with
+   local methods.  */
+
+struct target_ops *
+inf_ptrace_target (void)
+{
+  struct target_ops *t = inf_child_target ();
+
+  t->to_attach = inf_ptrace_attach;
+  t->to_detach = inf_ptrace_detach;
+  t->to_resume = inf_ptrace_resume;
+  t->to_wait = inf_ptrace_wait;
+  t->to_files_info = inf_ptrace_files_info;
+  t->to_kill = inf_ptrace_kill;
+  t->to_create_inferior = inf_ptrace_create_inferior;
+#ifdef PT_GET_PROCESS_STATE
+  t->to_follow_fork = inf_ptrace_follow_fork;
+  t->to_insert_fork_catchpoint = inf_ptrace_insert_fork_catchpoint;
+  t->to_remove_fork_catchpoint = inf_ptrace_remove_fork_catchpoint;
+  t->to_post_startup_inferior = inf_ptrace_post_startup_inferior;
+  t->to_post_attach = inf_ptrace_post_attach;
+#endif
+  t->to_mourn_inferior = inf_ptrace_mourn_inferior;
+  t->to_thread_alive = inf_ptrace_thread_alive;
+  t->to_pid_to_str = inf_ptrace_pid_to_str;
+  t->to_interrupt = inf_ptrace_interrupt;
+  t->to_xfer_partial = inf_ptrace_xfer_partial;
+#if defined (PT_IO) && defined (PIOD_READ_AUXV)
+  t->to_auxv_parse = inf_ptrace_auxv_parse;
+#endif
+
+  return t;
+}
 
+
+/* Pointer to a function that returns the offset within the user area
+   where a particular register is stored.  */
+static CORE_ADDR (*inf_ptrace_register_u_offset)(struct gdbarch *, int, int);
+
+/* Fetch register REGNUM from the inferior.  */
+
+static void
+inf_ptrace_fetch_register (struct regcache *regcache, int regnum)
+{
+  struct gdbarch *gdbarch = regcache->arch ();
+  CORE_ADDR addr;
+  size_t size;
+  PTRACE_TYPE_RET *buf;
+  pid_t pid;
+  int i;
+
+  /* This isn't really an address, but ptrace thinks of it as one.  */
+  addr = inf_ptrace_register_u_offset (gdbarch, regnum, 0);
+  if (addr == (CORE_ADDR)-1
+      || gdbarch_cannot_fetch_register (gdbarch, regnum))
+    {
+      regcache_raw_supply (regcache, regnum, NULL);
+      return;
+    }
+
+  pid = get_ptrace_pid (regcache_get_ptid (regcache));
+
+  size = register_size (gdbarch, regnum);
+  gdb_assert ((size % sizeof (PTRACE_TYPE_RET)) == 0);
+  buf = (PTRACE_TYPE_RET *) alloca (size);
+
+  /* Read the register contents from the inferior a chunk at a time.  */
+  for (i = 0; i < size / sizeof (PTRACE_TYPE_RET); i++)
+    {
+      errno = 0;
+      buf[i] = ptrace (PT_READ_U, pid, (PTRACE_TYPE_ARG3)(uintptr_t)addr, 0);
+      if (errno != 0)
+	error (_("Couldn't read register %s (#%d): %s."),
+	       gdbarch_register_name (gdbarch, regnum),
+	       regnum, safe_strerror (errno));
+
+      addr += sizeof (PTRACE_TYPE_RET);
+    }
+  regcache_raw_supply (regcache, regnum, buf);
+}
+
+/* Fetch register REGNUM from the inferior.  If REGNUM is -1, do this
+   for all registers.  */
+
+static void
+inf_ptrace_fetch_registers (struct target_ops *ops,
+			    struct regcache *regcache, int regnum)
+{
+  if (regnum == -1)
+    for (regnum = 0;
+	 regnum < gdbarch_num_regs (regcache->arch ());
+	 regnum++)
+      inf_ptrace_fetch_register (regcache, regnum);
+  else
+    inf_ptrace_fetch_register (regcache, regnum);
+}
+
+/* Store register REGNUM into the inferior.  */
+
+static void
+inf_ptrace_store_register (const struct regcache *regcache, int regnum)
+{
+  struct gdbarch *gdbarch = regcache->arch ();
+  CORE_ADDR addr;
+  size_t size;
+  PTRACE_TYPE_RET *buf;
+  pid_t pid;
+  int i;
+
+  /* This isn't really an address, but ptrace thinks of it as one.  */
+  addr = inf_ptrace_register_u_offset (gdbarch, regnum, 1);
+  if (addr == (CORE_ADDR)-1 
+      || gdbarch_cannot_store_register (gdbarch, regnum))
+    return;
+
+  pid = get_ptrace_pid (regcache_get_ptid (regcache));
+
+  size = register_size (gdbarch, regnum);
+  gdb_assert ((size % sizeof (PTRACE_TYPE_RET)) == 0);
+  buf = (PTRACE_TYPE_RET *) alloca (size);
+
+  /* Write the register contents into the inferior a chunk at a time.  */
+  regcache_raw_collect (regcache, regnum, buf);
+  for (i = 0; i < size / sizeof (PTRACE_TYPE_RET); i++)
+    {
+      errno = 0;
+      ptrace (PT_WRITE_U, pid, (PTRACE_TYPE_ARG3)(uintptr_t)addr, buf[i]);
+      if (errno != 0)
+	error (_("Couldn't write register %s (#%d): %s."),
+	       gdbarch_register_name (gdbarch, regnum),
+	       regnum, safe_strerror (errno));
+
+      addr += sizeof (PTRACE_TYPE_RET);
+    }
+}
+
+/* Store register REGNUM back into the inferior.  If REGNUM is -1, do
+   this for all registers.  */
+
+static void
+inf_ptrace_store_registers (struct target_ops *ops,
+			    struct regcache *regcache, int regnum)
+{
+  if (regnum == -1)
+    for (regnum = 0;
+	 regnum < gdbarch_num_regs (regcache->arch ());
+	 regnum++)
+      inf_ptrace_store_register (regcache, regnum);
+  else
+    inf_ptrace_store_register (regcache, regnum);
+}
+
+/* Create a "traditional" ptrace target.  REGISTER_U_OFFSET should be
+   a function returning the offset within the user area where a
+   particular register is stored.  */
+
+struct target_ops *
+inf_ptrace_trad_target (CORE_ADDR (*register_u_offset)
+					(struct gdbarch *, int, int))
+{
+  struct target_ops *t = inf_ptrace_target();
+
+  gdb_assert (register_u_offset);
+  inf_ptrace_register_u_offset = register_u_offset;
+  t->to_fetch_registers = inf_ptrace_fetch_registers;
+  t->to_store_registers = inf_ptrace_store_registers;
+
+  return t;
+}

@@ -1,5 +1,5 @@
 /* 32-bit ELF support for S+core.
-   Copyright (C) 2006-2019 Free Software Foundation, Inc.
+   Copyright (C) 2006-2018 Free Software Foundation, Inc.
    Contributed by
    Brain.lin (brain.lin@sunplusct.com)
    Mei Ligang (ligang@sunnorth.com.cn)
@@ -2375,7 +2375,7 @@ score_elf_final_link_relocate (reloc_howto_type *howto,
 }
 
 /* Score backend functions.  */
-static bfd_boolean
+static void
 s3_bfd_score_info_to_howto (bfd *abfd ATTRIBUTE_UNUSED,
 			    arelent *bfd_reloc,
 			    Elf_Internal_Rela *elf_reloc)
@@ -2384,10 +2384,9 @@ s3_bfd_score_info_to_howto (bfd *abfd ATTRIBUTE_UNUSED,
 
   r_type = ELF32_R_TYPE (elf_reloc->r_info);
   if (r_type >= ARRAY_SIZE (elf32_score_howto_table))
-    return FALSE;
-
-  bfd_reloc->howto = &elf32_score_howto_table[r_type];
-  return TRUE;
+    bfd_reloc->howto = NULL;
+  else
+    bfd_reloc->howto = &elf32_score_howto_table[r_type];
 }
 
 /* Relocate an score ELF section.  */
@@ -2449,8 +2448,7 @@ s3_bfd_score_elf_relocate_section (bfd *output_bfd,
       r_symndx = ELF32_R_SYM (rel->r_info);
       r_type = ELF32_R_TYPE (rel->r_info);
 
-      if (! s3_bfd_score_info_to_howto (input_bfd, &bfd_reloc, (Elf_Internal_Rela *) rel))
-	continue;
+      s3_bfd_score_info_to_howto (input_bfd, &bfd_reloc, (Elf_Internal_Rela *) rel);
       howto = bfd_reloc.howto;
 
       h = NULL;
@@ -2743,7 +2741,7 @@ s3_bfd_score_elf_relocate_section (bfd *output_bfd,
 
 	    /* Use bfd_reloc_other to check lw48, sw48 word align.  */
 	    case bfd_reloc_other:
-	      msg = _("address not word aligned");
+	      msg = _("address not word align");
 	      goto common_error;
 
 	    default:
@@ -2824,7 +2822,7 @@ s3_bfd_score_elf_check_relocs (bfd *abfd,
 	{
 	  _bfd_error_handler
 	    /* xgettext:c-format */
-	    (_("%pB: malformed reloc detected for section %pA"), abfd, sec);
+	    (_("%B: Malformed reloc detected for section %A"), abfd, sec);
 	  bfd_set_error (bfd_error_bad_value);
 	  return FALSE;
 	}
@@ -2878,8 +2876,8 @@ s3_bfd_score_elf_check_relocs (bfd *abfd,
 	    {
 	      _bfd_error_handler
 		/* xgettext:c-format */
-		(_("%pB: CALL15 reloc at %#" PRIx64 " not against global symbol"),
-		 abfd, (uint64_t) rel->r_offset);
+		(_("%B: CALL15 reloc at %#Lx not against global symbol"),
+		 abfd, rel->r_offset);
 	      bfd_set_error (bfd_error_bad_value);
 	      return FALSE;
 	    }
@@ -4047,7 +4045,7 @@ s3_elf32_score_merge_private_bfd_data (bfd *ibfd, struct bfd_link_info *info)
 
   if (((in_flags & EF_SCORE_PIC) != 0) != ((out_flags & EF_SCORE_PIC) != 0))
     _bfd_error_handler
-      (_("%pB: warning: linking PIC files with non-PIC files"), ibfd);
+      (_("%B: warning: linking PIC files with non-PIC files"), ibfd);
 
   /* FIXME: Maybe dependency fix compatibility should be checked here.  */
 
@@ -4071,7 +4069,7 @@ s3_elf32_score_new_section_hook (bfd *abfd, asection *sec)
 /*****************************************************************************/
 
 /* s3_s7: backend hooks.  */
-static bfd_boolean
+static void
 _bfd_score_info_to_howto (bfd *abfd ATTRIBUTE_UNUSED,
 			  arelent *bfd_reloc,
 			  Elf_Internal_Rela *elf_reloc)
@@ -4452,7 +4450,7 @@ _bfd_score_elf_common_definition (Elf_Internal_Sym *sym)
 #define ELF_MACHINE_ALT1		EM_SCORE_OLD
 #define ELF_MAXPAGESIZE			0x8000
 
-#define elf_info_to_howto		NULL
+#define elf_info_to_howto		0
 #define elf_info_to_howto_rel		_bfd_score_info_to_howto
 #define elf_backend_relocate_section	_bfd_score_elf_relocate_section
 #define elf_backend_check_relocs	_bfd_score_elf_check_relocs
@@ -4468,7 +4466,8 @@ _bfd_score_elf_common_definition (Elf_Internal_Sym *sym)
   _bfd_score_elf_always_size_sections
 #define elf_backend_size_dynamic_sections \
   _bfd_score_elf_size_dynamic_sections
-#define elf_backend_omit_section_dynsym   _bfd_elf_omit_section_dynsym_all
+#define elf_backend_omit_section_dynsym \
+  ((bfd_boolean (*) (bfd *, struct bfd_link_info *, asection *)) bfd_true)
 #define elf_backend_create_dynamic_sections \
   _bfd_score_elf_create_dynamic_sections
 #define elf_backend_finish_dynamic_symbol \

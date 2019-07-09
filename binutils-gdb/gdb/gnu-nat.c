@@ -1,5 +1,5 @@
 /* Interface GDB to the GNU Hurd.
-   Copyright (C) 1992-2019 Free Software Foundation, Inc.
+   Copyright (C) 1992-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -19,9 +19,6 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
-
-/* Include this first, to pick up the <mach.h> 'thread_info' diversion.  */
-#include "gnu-nat.h"
 
 /* Mach/Hurd headers are not yet ready for C++ compilation.  */
 extern "C"
@@ -63,14 +60,14 @@ extern "C"
 #include "value.h"
 #include "language.h"
 #include "target.h"
-#include "common/gdb_wait.h"
+#include "gdb_wait.h"
 #include "gdbcmd.h"
 #include "gdbcore.h"
 #include "gdbthread.h"
 #include "gdb_obstack.h"
 #include "tid-parse.h"
-#include "nat/fork-inferior.h"
 
+#include "gnu-nat.h"
 #include "inf-child.h"
 
 /* MIG stubs are not yet ready for C++ compilation.  */
@@ -1099,11 +1096,11 @@ inf_validate_procs (struct inf *inf)
 	    last = thread;
 	    proc_debug (thread, "new thread: %lu", threads[i]);
 
-	    ptid = ptid_t (inf->pid, thread->tid, 0);
+	    ptid = ptid_build (inf->pid, thread->tid, 0);
 
 	    /* Tell GDB's generic thread code.  */
 
-	    if (inferior_ptid == ptid_t (inf->pid))
+	    if (ptid_equal (inferior_ptid, pid_to_ptid (inf->pid)))
 	      /* This is the first time we're hearing about thread
 		 ids, after a fork-child.  */
 	      thread_change_ptid (inferior_ptid, ptid);
@@ -1464,10 +1461,9 @@ extern "C" int notify_server (mach_msg_header_t *, mach_msg_header_t *);
 extern "C" int process_reply_server (mach_msg_header_t *, mach_msg_header_t *);
 
 /* Wait for something to happen in the inferior, returning what in STATUS.  */
-
-ptid_t
-gnu_nat_target::wait (ptid_t ptid, struct target_waitstatus *status,
-		      int options)
+static ptid_t
+gnu_wait (struct target_ops *ops,
+	  ptid_t ptid, struct target_waitstatus *status, int options)
 {
   struct msg
     {
@@ -1493,7 +1489,7 @@ gnu_nat_target::wait (ptid_t ptid, struct target_waitstatus *status,
 
   waiting_inf = inf;
 
-  inf_debug (inf, "waiting for: %s", target_pid_to_str (ptid).c_str ());
+  inf_debug (inf, "waiting for: %s", target_pid_to_str (ptid));
 
 rewait:
   if (proc_wait_pid != inf->pid && !inf->no_wait)
@@ -1619,17 +1615,17 @@ rewait:
 
   thread = inf->wait.thread;
   if (thread)
-    ptid = ptid_t (inf->pid, thread->tid, 0);
-  else if (ptid == minus_one_ptid)
+    ptid = ptid_build (inf->pid, thread->tid, 0);
+  else if (ptid_equal (ptid, minus_one_ptid))
     thread = inf_tid_to_thread (inf, -1);
   else
-    thread = inf_tid_to_thread (inf, ptid.lwp ());
+    thread = inf_tid_to_thread (inf, ptid_get_lwp (ptid));
 
   if (!thread || thread->port == MACH_PORT_NULL)
     {
       /* TID is dead; try and find a new thread.  */
       if (inf_update_procs (inf) && inf->threads)
-	ptid = ptid_t (inf->pid, inf->threads->tid, 0); /* The first
+	ptid = ptid_build (inf->pid, inf->threads->tid, 0); /* The first
 							       available
 							       thread.  */
       else
@@ -1637,7 +1633,7 @@ rewait:
     }
 
   if (thread
-      && ptid != minus_one_ptid
+      && !ptid_equal (ptid, minus_one_ptid)
       && status->kind != TARGET_WAITKIND_SPURIOUS
       && inf->pause_sc == 0 && thread->pause_sc == 0)
     /* If something actually happened to THREAD, make sure we
@@ -1647,9 +1643,15 @@ rewait:
       inf_update_suspends (inf);
     }
 
-  inf_debug (inf, "returning ptid = %s, %s",
-	     target_pid_to_str (ptid).c_str (),
-	     target_waitstatus_to_string (status).c_str ());
+  inf_debug (inf, "returning ptid = %s, status = %s (%d)",
+	     target_pid_to_str (ptid),
+	     status->kind == TARGET_WAITKIND_EXITED ? "EXITED"
+	     : status->kind == TARGET_WAITKIND_STOPPED ? "STOPPED"
+	     : status->kind == TARGET_WAITKIND_SIGNALLED ? "SIGNALLED"
+	     : status->kind == TARGET_WAITKIND_LOADED ? "LOADED"
+	     : status->kind == TARGET_WAITKIND_SPURIOUS ? "SPURIOUS"
+	     : "?",
+	     status->value.integer);
 
   return ptid;
 }
@@ -1874,19 +1876,17 @@ ILL_RPC (S_proc_setmsgport_reply,
 	 mach_port_t oldmsgport)
 ILL_RPC (S_proc_getmsgport_reply,
 	 mach_port_t reply_port, kern_return_t return_code,
-	 mach_port_t msgports, mach_msg_type_name_t msgportsPoly)
+	 mach_port_t msgports)
 ILL_RPC (S_proc_pid2task_reply,
 	 mach_port_t reply_port, kern_return_t return_code, mach_port_t task)
 ILL_RPC (S_proc_task2pid_reply,
 	 mach_port_t reply_port, kern_return_t return_code, pid_t pid)
 ILL_RPC (S_proc_task2proc_reply,
-	 mach_port_t reply_port, kern_return_t return_code,
-	 mach_port_t proc, mach_msg_type_name_t procPoly)
+	 mach_port_t reply_port, kern_return_t return_code, mach_port_t proc)
 ILL_RPC (S_proc_proc2task_reply,
 	 mach_port_t reply_port, kern_return_t return_code, mach_port_t task)
 ILL_RPC (S_proc_pid2proc_reply,
-	 mach_port_t reply_port, kern_return_t return_code,
-	 mach_port_t proc, mach_msg_type_name_t procPoly)
+	 mach_port_t reply_port, kern_return_t return_code, mach_port_t proc)
 ILL_RPC (S_proc_getprocinfo_reply,
 	 mach_port_t reply_port, kern_return_t return_code,
 	 int flags, procinfo_t procinfo, mach_msg_type_number_t procinfoCnt,
@@ -1998,15 +1998,16 @@ port_msgs_queued (mach_port_t port)
    still unprocessed from the last resume we did (any given resume may result
    in multiple events returned by wait).  */
 
-void
-gnu_nat_target::resume (ptid_t ptid, int step, enum gdb_signal sig)
+static void
+gnu_resume (struct target_ops *ops,
+	    ptid_t ptid, int step, enum gdb_signal sig)
 {
   struct proc *step_thread = 0;
   int resume_all;
   struct inf *inf = gnu_current_inf;
 
   inf_debug (inf, "ptid = %s, step = %d, sig = %d",
-	     target_pid_to_str (ptid).c_str (), step, sig);
+	     target_pid_to_str (ptid), step, sig);
 
   inf_validate_procinfo (inf);
 
@@ -2035,38 +2036,36 @@ gnu_nat_target::resume (ptid_t ptid, int step, enum gdb_signal sig)
   inf_update_procs (inf);
 
   /* A specific PTID means `step only this process id'.  */
-  resume_all = ptid == minus_one_ptid;
+  resume_all = ptid_equal (ptid, minus_one_ptid);
 
   if (resume_all)
     /* Allow all threads to run, except perhaps single-stepping one.  */
     {
       inf_debug (inf, "running all threads; tid = %d",
-		 inferior_ptid.pid ());
+		 ptid_get_pid (inferior_ptid));
       ptid = inferior_ptid;	/* What to step.  */
       inf_set_threads_resume_sc (inf, 0, 1);
     }
   else
     /* Just allow a single thread to run.  */
     {
-      struct proc *thread = inf_tid_to_thread (inf, ptid.lwp ());
+      struct proc *thread = inf_tid_to_thread (inf, ptid_get_lwp (ptid));
 
       if (!thread)
 	error (_("Can't run single thread id %s: no such thread!"),
-	       target_pid_to_str (ptid).c_str ());
-      inf_debug (inf, "running one thread: %s",
-		 target_pid_to_str (ptid).c_str ());
+	       target_pid_to_str (ptid));
+      inf_debug (inf, "running one thread: %s", target_pid_to_str (ptid));
       inf_set_threads_resume_sc (inf, thread, 0);
     }
 
   if (step)
     {
-      step_thread = inf_tid_to_thread (inf, ptid.lwp ());
+      step_thread = inf_tid_to_thread (inf, ptid_get_lwp (ptid));
       if (!step_thread)
 	warning (_("Can't step thread id %s: no such thread."),
-		 target_pid_to_str (ptid).c_str ());
+		 target_pid_to_str (ptid));
       else
-	inf_debug (inf, "stepping thread: %s",
-		   target_pid_to_str (ptid).c_str ());
+	inf_debug (inf, "stepping thread: %s", target_pid_to_str (ptid));
     }
   if (step_thread != inf->step_thread)
     inf_set_step_thread (inf, step_thread);
@@ -2076,8 +2075,8 @@ gnu_nat_target::resume (ptid_t ptid, int step, enum gdb_signal sig)
 }
 
 
-void
-gnu_nat_target::kill ()
+static void
+gnu_kill_inferior (struct target_ops *ops)
 {
   struct proc *task = gnu_current_inf->task;
 
@@ -2091,12 +2090,12 @@ gnu_nat_target::kill ()
 }
 
 /* Clean up after the inferior dies.  */
-void
-gnu_nat_target::mourn_inferior ()
+static void
+gnu_mourn_inferior (struct target_ops *ops)
 {
   inf_debug (gnu_current_inf, "rip");
   inf_detach (gnu_current_inf);
-  inf_child_target::mourn_inferior ();
+  inf_child_mourn_inferior (ops);
 }
 
 
@@ -2132,11 +2131,11 @@ gnu_ptrace_me (void)
     trace_start_error_with_name ("ptrace");
 }
 
-void
-gnu_nat_target::create_inferior (const char *exec_file,
-				 const std::string &allargs,
-				 char **env,
-				 int from_tty)
+static void
+gnu_create_inferior (struct target_ops *ops, 
+		     const char *exec_file, const std::string &allargs,
+		     char **env,
+		     int from_tty)
 {
   struct inf *inf = cur_inf ();
   int pid;
@@ -2149,14 +2148,14 @@ gnu_nat_target::create_inferior (const char *exec_file,
   /* We have something that executes now.  We'll be running through
      the shell at this point (if startup-with-shell is true), but the
      pid shouldn't change.  */
-  add_thread_silent (ptid_t (pid));
+  add_thread_silent (pid_to_ptid (pid));
 
   /* Attach to the now stopped child, which is actually a shell...  */
   inf_debug (inf, "attaching to child: %d", pid);
 
   inf_attach (inf, pid);
 
-  push_target (this);
+  push_target (ops);
 
   inf->pending_execs = 1;
   inf->nomsg = 1;
@@ -2168,7 +2167,7 @@ gnu_nat_target::create_inferior (const char *exec_file,
 
   /* We now have thread info.  */
   thread_change_ptid (inferior_ptid,
-		      ptid_t (inf->pid, inf_pick_first_thread (), 0));
+		      ptid_build (inf->pid, inf_pick_first_thread (), 0));
 
   gdb_startup_inferior (pid, START_INFERIOR_TRAPS_EXPECTED);
 
@@ -2191,8 +2190,8 @@ gnu_nat_target::create_inferior (const char *exec_file,
 
 /* Attach to process PID, then initialize for debugging it
    and wait for the trace-trap that results from attaching.  */
-void
-gnu_nat_target::attach (const char *args, int from_tty)
+static void
+gnu_attach (struct target_ops *ops, const char *args, int from_tty)
 {
   int pid;
   char *exec_file;
@@ -2213,13 +2212,15 @@ gnu_nat_target::attach (const char *args, int from_tty)
 			   exec_file, pid);
       else
 	printf_unfiltered ("Attaching to pid %d\n", pid);
+
+      gdb_flush (gdb_stdout);
     }
 
   inf_debug (inf, "attaching to pid: %d", pid);
 
   inf_attach (inf, pid);
 
-  push_target (this);
+  push_target (ops);
 
   inferior = current_inferior ();
   inferior_appeared (inferior, pid);
@@ -2227,7 +2228,7 @@ gnu_nat_target::attach (const char *args, int from_tty)
 
   inf_update_procs (inf);
 
-  inferior_ptid = ptid_t (pid, inf_pick_first_thread (), 0);
+  inferior_ptid = ptid_build (pid, inf_pick_first_thread (), 0);
 
   /* We have to initialize the terminal settings now, since the code
      below might try to restore them.  */
@@ -2253,8 +2254,8 @@ gnu_nat_target::attach (const char *args, int from_tty)
    to work, it may be necessary for the process to have been
    previously attached.  It *might* work if the program was
    started via fork.  */
-void
-gnu_nat_target::detach (inferior *inf, int from_tty)
+static void
+gnu_detach (struct target_ops *ops, const char *args, int from_tty)
 {
   int pid;
 
@@ -2267,6 +2268,7 @@ gnu_nat_target::detach (inferior *inf, int from_tty)
 			   exec_file, gnu_current_inf->pid);
       else
 	printf_unfiltered ("Detaching from pid %d\n", gnu_current_inf->pid);
+      gdb_flush (gdb_stdout);
     }
 
   pid = gnu_current_inf->pid;
@@ -2274,24 +2276,24 @@ gnu_nat_target::detach (inferior *inf, int from_tty)
   inf_detach (gnu_current_inf);
 
   inferior_ptid = null_ptid;
-  detach_inferior (find_inferior_pid (pid));
+  detach_inferior (pid);
 
-  maybe_unpush_target ();
+  inf_child_maybe_unpush_target (ops);
 }
 
 
-void
-gnu_nat_target::stop (ptid_t ptid)
+static void
+gnu_stop (struct target_ops *self, ptid_t ptid)
 {
-  error (_("stop target function not implemented"));
+  error (_("to_stop target function not implemented"));
 }
 
-bool
-gnu_nat_target::thread_alive (ptid_t ptid)
+static int
+gnu_thread_alive (struct target_ops *ops, ptid_t ptid)
 {
   inf_update_procs (gnu_current_inf);
   return !!inf_tid_to_thread (gnu_current_inf,
-			      ptid.lwp ());
+			      ptid_get_lwp (ptid));
 }
 
 
@@ -2356,7 +2358,7 @@ gnu_write_inferior (task_t task, CORE_ADDR addr,
   mach_msg_type_number_t copy_count;
   int deallocate = 0;
 
-  const char *errstr = "Bug in gnu_write_inferior";
+  char *errstr = "Bug in gnu_write_inferior";
 
   struct vm_region_list *region_element;
   struct vm_region_list *region_head = NULL;
@@ -2597,11 +2599,11 @@ gnu_xfer_auxv (gdb_byte *readbuf, const gdb_byte *writebuf,
 
 /* Target to_xfer_partial implementation.  */
 
-enum target_xfer_status
-gnu_nat_target::xfer_partial (enum target_object object,
-			      const char *annex, gdb_byte *readbuf,
-			      const gdb_byte *writebuf, ULONGEST offset,
-			      ULONGEST len, ULONGEST *xfered_len)
+static enum target_xfer_status
+gnu_xfer_partial (struct target_ops *ops, enum target_object object,
+		  const char *annex, gdb_byte *readbuf,
+		  const gdb_byte *writebuf, ULONGEST offset, ULONGEST len,
+		  ULONGEST *xfered_len)
 {
   switch (object)
     {
@@ -2615,10 +2617,9 @@ gnu_nat_target::xfer_partial (enum target_object object,
 }
 
 /* Call FUNC on each memory region in the task.  */
-
-int
-gnu_nat_target::find_memory_regions (find_memory_region_ftype func,
-				     void *data)
+static int
+gnu_find_memory_regions (struct target_ops *self,
+			 find_memory_region_ftype func, void *data)
 {
   kern_return_t err;
   task_t task;
@@ -2710,17 +2711,48 @@ proc_string (struct proc *proc)
   return tid_str;
 }
 
-std::string
-gnu_nat_target::pid_to_str (ptid_t ptid)
+static const char *
+gnu_pid_to_str (struct target_ops *ops, ptid_t ptid)
 {
   struct inf *inf = gnu_current_inf;
-  int tid = ptid.lwp ();
+  int tid = ptid_get_lwp (ptid);
   struct proc *thread = inf_tid_to_thread (inf, tid);
 
   if (thread)
     return proc_string (thread);
   else
-    return string_printf ("bogus thread id %d", tid);
+    {
+      static char tid_str[80];
+
+      xsnprintf (tid_str, sizeof (tid_str), "bogus thread id %d", tid);
+      return tid_str;
+    }
+}
+
+
+/* Create a prototype generic GNU/Hurd target.  The client can
+   override it with local methods.  */
+
+struct target_ops *
+gnu_target (void)
+{
+  struct target_ops *t = inf_child_target ();
+
+  t->to_attach = gnu_attach;
+  t->to_attach_no_wait = 1;
+  t->to_detach = gnu_detach;
+  t->to_resume = gnu_resume;
+  t->to_wait = gnu_wait;
+  t->to_xfer_partial = gnu_xfer_partial;
+  t->to_find_memory_regions = gnu_find_memory_regions;
+  t->to_kill = gnu_kill_inferior;
+  t->to_create_inferior = gnu_create_inferior;
+  t->to_mourn_inferior = gnu_mourn_inferior;
+  t->to_thread_alive = gnu_thread_alive;
+  t->to_pid_to_str = gnu_pid_to_str;
+  t->to_stop = gnu_stop;
+
+  return t;
 }
 
 
@@ -2768,7 +2800,7 @@ show_thread_default_cmd (const char *args, int from_tty)
 }
 
 static int
-parse_int_arg (const char *args, const char *cmd_prefix)
+parse_int_arg (const char *args, char *cmd_prefix)
 {
   if (args)
     {
@@ -2783,8 +2815,7 @@ parse_int_arg (const char *args, const char *cmd_prefix)
 }
 
 static int
-_parse_bool_arg (const char *args, const char *t_val, const char *f_val,
-		 const char *cmd_prefix)
+_parse_bool_arg (const char *args, char *t_val, char *f_val, char *cmd_prefix)
 {
   if (!args || strcmp (args, t_val) == 0)
     return 1;
@@ -2800,7 +2831,7 @@ _parse_bool_arg (const char *args, const char *t_val, const char *f_val,
   _parse_bool_arg (args, "on", "off", cmd_prefix)
 
 static void
-check_empty (const char *args, const char *cmd_prefix)
+check_empty (const char *args, char *cmd_prefix)
 {
   if (args)
     error (_("Garbage after \"%s\" command: `%s'"), cmd_prefix, args);
@@ -2812,7 +2843,7 @@ cur_thread (void)
 {
   struct inf *inf = cur_inf ();
   struct proc *thread = inf_tid_to_thread (inf,
-					   inferior_ptid.lwp ());
+					   ptid_get_lwp (inferior_ptid));
   if (!thread)
     error (_("No current thread."));
   return thread;
@@ -3012,7 +3043,7 @@ set_sig_thread_cmd (const char *args, int from_tty)
   else
     {
       struct thread_info *tp = parse_thread_id (args, NULL);
-      inf->signal_thread = inf_tid_to_thread (inf, tp->ptid.lwp ());
+      inf->signal_thread = inf_tid_to_thread (inf, ptid_get_lwp (tp->ptid));
     }
 }
 
@@ -3423,9 +3454,8 @@ thread_takeover_sc_cmd (const char *args, int from_tty)
   thread_basic_info_data_t _info;
   thread_basic_info_t info = &_info;
   mach_msg_type_number_t info_len = THREAD_BASIC_INFO_COUNT;
-  kern_return_t err
-    = mach_thread_info (thread->port, THREAD_BASIC_INFO,
-			(int *) &info, &info_len);
+  kern_return_t err =
+  thread_info (thread->port, THREAD_BASIC_INFO, (int *) &info, &info_len);
   if (err)
     error (("%s."), safe_strerror (err));
   thread->sc = info->suspend_count;

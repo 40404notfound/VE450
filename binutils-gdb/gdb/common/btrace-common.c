@@ -1,4 +1,4 @@
-/* Copyright (C) 2014-2019 Free Software Foundation, Inc.
+/* Copyright (C) 2014-2018 Free Software Foundation, Inc.
 
    Contributed by Intel Corp. <markus.t.metzger@intel.com>
 
@@ -64,20 +64,28 @@ btrace_format_short_string (enum btrace_format format)
 /* See btrace-common.h.  */
 
 void
-btrace_data::fini ()
+btrace_data_init (struct btrace_data *data)
 {
-  switch (format)
+  data->format = BTRACE_FORMAT_NONE;
+}
+
+/* See btrace-common.h.  */
+
+void
+btrace_data_fini (struct btrace_data *data)
+{
+  switch (data->format)
     {
     case BTRACE_FORMAT_NONE:
       /* Nothing to do.  */
       return;
 
     case BTRACE_FORMAT_BTS:
-      VEC_free (btrace_block_s, variant.bts.blocks);
+      VEC_free (btrace_block_s, data->variant.bts.blocks);
       return;
 
     case BTRACE_FORMAT_PT:
-      xfree (variant.pt.data);
+      xfree (data->variant.pt.data);
       return;
     }
 
@@ -86,19 +94,19 @@ btrace_data::fini ()
 
 /* See btrace-common.h.  */
 
-bool
-btrace_data::empty () const
+int
+btrace_data_empty (struct btrace_data *data)
 {
-  switch (format)
+  switch (data->format)
     {
     case BTRACE_FORMAT_NONE:
-      return true;
+      return 1;
 
     case BTRACE_FORMAT_BTS:
-      return VEC_empty (btrace_block_s, variant.bts.blocks);
+      return VEC_empty (btrace_block_s, data->variant.bts.blocks);
 
     case BTRACE_FORMAT_PT:
-      return (variant.pt.size == 0);
+      return (data->variant.pt.size == 0);
     }
 
   internal_error (__FILE__, __LINE__, _("Unkown branch trace format."));
@@ -107,10 +115,10 @@ btrace_data::empty () const
 /* See btrace-common.h.  */
 
 void
-btrace_data::clear ()
+btrace_data_clear (struct btrace_data *data)
 {
-  fini ();
-  format = BTRACE_FORMAT_NONE;
+  btrace_data_fini (data);
+  btrace_data_init (data);
 }
 
 /* See btrace-common.h.  */

@@ -1,5 +1,5 @@
 /* COFF specific linker code.
-   Copyright (C) 1994-2019 Free Software Foundation, Inc.
+   Copyright (C) 1994-2018 Free Software Foundation, Inc.
    Written by Ian Lance Taylor, Cygnus Support.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -221,7 +221,7 @@ coff_link_check_archive_element (bfd *abfd,
     return TRUE;
   *pneeded = TRUE;
 
-  return bfd_link_add_symbols (abfd, info);
+  return coff_link_add_object_symbols (abfd, info);
 }
 
 /* Add all the symbols from an object file to the hash table.  */
@@ -310,9 +310,7 @@ coff_link_add_symbols (bfd *abfd,
 	    case COFF_SYMBOL_GLOBAL:
 	      flags = BSF_EXPORT | BSF_GLOBAL;
 	      section = coff_section_from_bfd_index (abfd, sym.n_scnum);
-	      if (discarded_section (section))
-		section = bfd_und_section_ptr;
-	      else if (! obj_pe (abfd))
+	      if (! obj_pe (abfd))
 		value -= section->vma;
 	      break;
 
@@ -329,8 +327,6 @@ coff_link_add_symbols (bfd *abfd,
 	    case COFF_SYMBOL_PE_SECTION:
 	      flags = BSF_SECTION_SYM | BSF_GLOBAL;
 	      section = coff_section_from_bfd_index (abfd, sym.n_scnum);
-	      if (discarded_section (section))
-		section = bfd_und_section_ptr;
 	      break;
 	    }
 
@@ -353,7 +349,7 @@ coff_link_add_symbols (bfd *abfd,
 		      && (*sym_hash)->root.type != bfd_link_hash_undefined
 		      && (*sym_hash)->root.type != bfd_link_hash_undefweak)
 		    _bfd_error_handler
-		      (_("warning: symbol `%s' is both section and non-section"),
+		      (_("Warning: symbol `%s' is both section and non-section"),
 		       name);
 
 		  addit = FALSE;
@@ -455,8 +451,8 @@ coff_link_add_symbols (bfd *abfd,
 				   || BTYPE (sym.n_type) == T_NULL)))
 			_bfd_error_handler
 			  /* xgettext: c-format */
-			  (_("warning: type of symbol `%s' changed"
-			     " from %d to %d in %pB"),
+			  (_("Warning: type of symbol `%s' changed"
+			     " from %d to %d in %B"),
 			   name, (*sym_hash)->type, sym.n_type, abfd);
 
 		      /* We don't want to change from a meaningful
@@ -1843,7 +1839,7 @@ _bfd_coff_link_input_bfd (struct coff_final_link_info *flaginfo, bfd *input_bfd)
 
 	    case C_FCN:
 	      if (obj_pe (input_bfd)
-		  && memcmp (isym.n_name, ".bf", sizeof ".bf") != 0
+		  && strcmp (isym.n_name, ".bf") != 0
 		  && isym.n_scnum > 0)
 		{
 		  /* For PE, .lf and .ef get their value left alone,
@@ -2374,7 +2370,7 @@ _bfd_coff_link_input_bfd (struct coff_final_link_info *flaginfo, bfd *input_bfd)
 	    {
 	      _bfd_error_handler
 		/* xgettext: c-format */
-		(_("%pB: relocs in section `%pA', but it has no contents"),
+		(_("%B: relocs in section `%A', but it has no contents"),
 		 input_bfd, o);
 	      bfd_set_error (bfd_error_no_contents);
 	      return FALSE;
@@ -2437,8 +2433,8 @@ _bfd_coff_link_input_bfd (struct coff_final_link_info *flaginfo, bfd *input_bfd)
 	      if (ps->flags & SEC_EXCLUDE)
 		(*flaginfo->info->callbacks->einfo)
 		  /* xgettext: c-format */
-		  (_("%X`%s' referenced in section `%pA' of %pB: "
-		     "defined in discarded section `%pA' of %pB\n"),
+		  (_("%X`%s' referenced in section `%A' of %B: "
+		     "defined in discarded section `%A' of %B\n"),
 		   h->root.root.string, o, input_bfd, ps, ps->owner);
 	    }
 
@@ -2735,7 +2731,7 @@ _bfd_coff_write_global_sym (struct bfd_hash_entry *bh, void *data)
 		      || bfd_link_relocatable (flaginfo->info)))
 		_bfd_error_handler
 		  /* xgettext: c-format */
-		  (_("%pB: %pA: reloc overflow: %#x > 0xffff"),
+		  (_("%B: %A: reloc overflow: %#x > 0xffff"),
 		   output_bfd, sec, sec->reloc_count);
 
 	      if (sec->lineno_count > 0xffff
@@ -2743,7 +2739,7 @@ _bfd_coff_write_global_sym (struct bfd_hash_entry *bh, void *data)
 		      || bfd_link_relocatable (flaginfo->info)))
 		_bfd_error_handler
 		  /* xgettext: c-format */
-		  (_("%pB: warning: %pA: line number overflow: %#x > 0xffff"),
+		  (_("%B: warning: %A: line number overflow: %#x > 0xffff"),
 		   output_bfd, sec, sec->lineno_count);
 
 	      auxp->x_scn.x_nreloc = sec->reloc_count;
@@ -2966,7 +2962,7 @@ _bfd_coff_generic_relocate_section (bfd *output_bfd,
 	{
 	  _bfd_error_handler
 	    /* xgettext: c-format */
-	    (_("%pB: illegal symbol index %ld in relocs"), input_bfd, symndx);
+	    (_("%B: illegal symbol index %ld in relocs"), input_bfd, symndx);
 	  return FALSE;
 	}
       else
@@ -3084,7 +3080,7 @@ _bfd_coff_generic_relocate_section (bfd *output_bfd,
       if (sec != NULL && discarded_section (sec))
 	{
 	  _bfd_clear_contents (howto, input_bfd, input_section,
-			       contents, rel->r_vaddr - input_section->vma);
+			       contents + (rel->r_vaddr - input_section->vma));
 	  continue;
 	}
 
@@ -3128,8 +3124,8 @@ _bfd_coff_generic_relocate_section (bfd *output_bfd,
 	case bfd_reloc_outofrange:
 	  _bfd_error_handler
 	    /* xgettext: c-format */
-	    (_("%pB: bad reloc address %#" PRIx64 " in section `%pA'"),
-	     input_bfd, (uint64_t) rel->r_vaddr, input_section);
+	    (_("%B: bad reloc address %#Lx in section `%A'"),
+	     input_bfd, rel->r_vaddr, input_section);
 	  return FALSE;
 	case bfd_reloc_overflow:
 	  {

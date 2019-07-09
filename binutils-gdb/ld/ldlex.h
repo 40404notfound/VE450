@@ -1,5 +1,5 @@
 /* ldlex.h -
-   Copyright (C) 1991-2019 Free Software Foundation, Inc.
+   Copyright (C) 1991-2018 Free Software Foundation, Inc.
 
    This file is part of the GNU Binutils.
 
@@ -143,13 +143,10 @@ enum option_values
   OPTION_IGNORE_UNRESOLVED_SYMBOL,
   OPTION_PUSH_STATE,
   OPTION_POP_STATE,
-  OPTION_DISABLE_MULTIPLE_DEFS_ABS,
   OPTION_PRINT_MEMORY_USAGE,
   OPTION_REQUIRE_DEFINED_SYMBOL,
   OPTION_ORPHAN_HANDLING,
   OPTION_FORCE_GROUP_ALLOCATION,
-  OPTION_PRINT_MAP_DISCARDED,
-  OPTION_NO_PRINT_MAP_DISCARDED,
 };
 
 /* The initial parser states.  */
@@ -179,6 +176,7 @@ extern void ldlex_version_file (void);
 extern void ldlex_defsym (void);
 extern void ldlex_expression (void);
 extern void ldlex_both (void);
+extern void ldlex_command (void);
 extern void ldlex_popstate (void);
 extern const char* ldlex_filename (void);
 

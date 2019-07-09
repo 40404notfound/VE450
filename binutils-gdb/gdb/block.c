@@ -1,6 +1,6 @@
 /* Block-related functions for the GNU debugger, GDB.
 
-   Copyright (C) 2003-2019 Free Software Foundation, Inc.
+   Copyright (C) 2003-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -31,10 +31,10 @@
    C++ files, namely using declarations and the current namespace in
    scope.  */
 
-struct block_namespace_info : public allocate_on_obstack
+struct block_namespace_info
 {
-  const char *scope = nullptr;
-  struct using_direct *using_decl = nullptr;
+  const char *scope;
+  struct using_direct *using_decl;
 };
 
 static void block_initialize_namespace (struct block *block,
@@ -131,16 +131,16 @@ block_inlined_p (const struct block *bl)
 /* A helper function that checks whether PC is in the blockvector BL.
    It returns the containing block if there is one, or else NULL.  */
 
-static const struct block *
+static struct block *
 find_block_in_blockvector (const struct blockvector *bl, CORE_ADDR pc)
 {
-  const struct block *b;
+  struct block *b;
   int bot, top, half;
 
   /* If we have an addrmap mapping code addresses to blocks, then use
      that.  */
   if (BLOCKVECTOR_MAP (bl))
-    return (const struct block *) addrmap_find (BLOCKVECTOR_MAP (bl), pc);
+    return (struct block *) addrmap_find (BLOCKVECTOR_MAP (bl), pc);
 
   /* Otherwise, use binary search to find the last block that starts
      before PC.
@@ -186,7 +186,7 @@ blockvector_for_pc_sect (CORE_ADDR pc, struct obj_section *section,
 			 struct compunit_symtab *cust)
 {
   const struct blockvector *bl;
-  const struct block *b;
+  struct block *b;
 
   if (cust == NULL)
     {
@@ -350,7 +350,11 @@ static void
 block_initialize_namespace (struct block *block, struct obstack *obstack)
 {
   if (BLOCK_NAMESPACE (block) == NULL)
-    BLOCK_NAMESPACE (block) = new (obstack) struct block_namespace_info ();
+    {
+      BLOCK_NAMESPACE (block) = XOBNEW (obstack, struct block_namespace_info);
+      BLOCK_NAMESPACE (block)->scope = NULL;
+      BLOCK_NAMESPACE (block)->using_decl = NULL;
+    }
 }
 
 /* Return the static block associated to BLOCK.  Return NULL if block
@@ -387,9 +391,9 @@ block_global_block (const struct block *block)
    zero/NULL.  This is useful for creating "dummy" blocks that don't
    correspond to actual source files.
 
-   Warning: it sets the block's BLOCK_MULTIDICT to NULL, which isn't a
+   Warning: it sets the block's BLOCK_DICT to NULL, which isn't a
    valid value.  If you really don't want the block to have a
-   dictionary, then you should subsequently set its BLOCK_MULTIDICT to
+   dictionary, then you should subsequently set its BLOCK_DICT to
    dict_create_linear (obstack, NULL).  */
 
 struct block *
@@ -544,11 +548,10 @@ block_iterator_step (struct block_iterator *iterator, int first)
 
 	  block = BLOCKVECTOR_BLOCK (COMPUNIT_BLOCKVECTOR (cust),
 				     iterator->which);
-	  sym = mdict_iterator_first (BLOCK_MULTIDICT (block),
-				      &iterator->mdict_iter);
+	  sym = dict_iterator_first (BLOCK_DICT (block), &iterator->dict_iter);
 	}
       else
-	sym = mdict_iterator_next (&iterator->mdict_iter);
+	sym = dict_iterator_next (&iterator->dict_iter);
 
       if (sym != NULL)
 	return sym;
@@ -570,7 +573,7 @@ block_iterator_first (const struct block *block,
   initialize_block_iterator (block, iterator);
 
   if (iterator->which == FIRST_LOCAL_BLOCK)
-    return mdict_iterator_first (block->multidict, &iterator->mdict_iter);
+    return dict_iterator_first (block->dict, &iterator->dict_iter);
 
   return block_iterator_step (iterator, 1);
 }
@@ -581,7 +584,7 @@ struct symbol *
 block_iterator_next (struct block_iterator *iterator)
 {
   if (iterator->which == FIRST_LOCAL_BLOCK)
-    return mdict_iterator_next (&iterator->mdict_iter);
+    return dict_iterator_next (&iterator->dict_iter);
 
   return block_iterator_step (iterator, 0);
 }
@@ -613,11 +616,11 @@ block_iter_match_step (struct block_iterator *iterator,
 
 	  block = BLOCKVECTOR_BLOCK (COMPUNIT_BLOCKVECTOR (cust),
 				     iterator->which);
-	  sym = mdict_iter_match_first (BLOCK_MULTIDICT (block), name,
-					&iterator->mdict_iter);
+	  sym = dict_iter_match_first (BLOCK_DICT (block), name,
+				       &iterator->dict_iter);
 	}
       else
-	sym = mdict_iter_match_next (name, &iterator->mdict_iter);
+	sym = dict_iter_match_next (name, &iterator->dict_iter);
 
       if (sym != NULL)
 	return sym;
@@ -640,8 +643,7 @@ block_iter_match_first (const struct block *block,
   initialize_block_iterator (block, iterator);
 
   if (iterator->which == FIRST_LOCAL_BLOCK)
-    return mdict_iter_match_first (block->multidict, name,
-				   &iterator->mdict_iter);
+    return dict_iter_match_first (block->dict, name, &iterator->dict_iter);
 
   return block_iter_match_step (iterator, name, 1);
 }
@@ -653,7 +655,7 @@ block_iter_match_next (const lookup_name_info &name,
 		       struct block_iterator *iterator)
 {
   if (iterator->which == FIRST_LOCAL_BLOCK)
-    return mdict_iter_match_next (name, &iterator->mdict_iter);
+    return dict_iter_match_next (name, &iterator->dict_iter);
 
   return block_iter_match_step (iterator, name, 0);
 }
@@ -733,7 +735,7 @@ block_lookup_symbol_primary (const struct block *block, const char *name,
 			     const domain_enum domain)
 {
   struct symbol *sym, *other;
-  struct mdict_iterator mdict_iter;
+  struct dict_iterator dict_iter;
 
   lookup_name_info lookup_name (name, symbol_name_match_type::FULL);
 
@@ -742,10 +744,9 @@ block_lookup_symbol_primary (const struct block *block, const char *name,
 	      || BLOCK_SUPERBLOCK (BLOCK_SUPERBLOCK (block)) == NULL);
 
   other = NULL;
-  for (sym
-	 = mdict_iter_match_first (block->multidict, lookup_name, &mdict_iter);
+  for (sym = dict_iter_match_first (block->dict, lookup_name, &dict_iter);
        sym != NULL;
-       sym = mdict_iter_match_next (lookup_name, &mdict_iter))
+       sym = dict_iter_match_next (lookup_name, &dict_iter))
     {
       if (SYMBOL_DOMAIN (sym) == domain)
 	return sym;
@@ -810,24 +811,3 @@ block_find_non_opaque_type_preferred (struct symbol *sym, void *data)
   *best = sym;
   return 0;
 }
-
-/* See block.h.  */
-
-struct blockranges *
-make_blockranges (struct objfile *objfile,
-                  const std::vector<blockrange> &rangevec)
-{
-  struct blockranges *blr;
-  size_t n = rangevec.size();
-
-  blr = (struct blockranges *)
-    obstack_alloc (&objfile->objfile_obstack,
-                   sizeof (struct blockranges)
-		   + (n - 1) * sizeof (struct blockrange));
-
-  blr->nranges = n;
-  for (int i = 0; i < n; i++)
-    blr->range[i] = rangevec[i];
-  return blr;
-}
-

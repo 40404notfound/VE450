@@ -1,6 +1,6 @@
 /* Evaluate expressions for GDB.
 
-   Copyright (C) 1986-2019 Free Software Foundation, Inc.
+   Copyright (C) 1986-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -69,20 +69,27 @@ struct value *
 evaluate_subexp (struct type *expect_type, struct expression *exp,
 		 int *pos, enum noside noside)
 {
+  struct cleanup *cleanups;
   struct value *retval;
+  int cleanup_temps = 0;
 
-  gdb::optional<enable_thread_stack_temporaries> stack_temporaries;
   if (*pos == 0 && target_has_execution
       && exp->language_defn->la_language == language_cplus
-      && !thread_stack_temporaries_enabled_p (inferior_thread ()))
-    stack_temporaries.emplace (inferior_thread ());
+      && !thread_stack_temporaries_enabled_p (inferior_ptid))
+    {
+      cleanups = enable_thread_stack_temporaries (inferior_ptid);
+      cleanup_temps = 1;
+    }
 
   retval = (*exp->language_defn->la_exp_desc->evaluate_exp)
     (expect_type, exp, pos, noside);
 
-  if (stack_temporaries.has_value ()
-      && value_in_thread_stack_temporaries (retval, inferior_thread ()))
-    retval = value_non_lval (retval);
+  if (cleanup_temps)
+    {
+      if (value_in_thread_stack_temporaries (retval, inferior_ptid))
+	retval = value_non_lval (retval);
+      do_cleanups (cleanups);
+    }
 
   return retval;
 }
@@ -123,7 +130,7 @@ parse_and_eval (const char *exp)
 struct value *
 parse_to_comma_and_eval (const char **expp)
 {
-  expression_up expr = parse_exp_1 (expp, 0, nullptr, 1);
+  expression_up expr = parse_exp_1 (expp, 0, (struct block *) 0, 1);
 
   return evaluate_expression (expr.get ());
 }
@@ -179,14 +186,14 @@ evaluate_subexpression_type (struct expression *exp, int subexp)
    set to any referenced values.  *VALP will never be a lazy value.
    This is the value which we store in struct breakpoint.
 
-   If VAL_CHAIN is non-NULL, the values put into *VAL_CHAIN will be
-   released from the value chain.  If VAL_CHAIN is NULL, all generated
-   values will be left on the value chain.  */
+   If VAL_CHAIN is non-NULL, *VAL_CHAIN will be released from the
+   value chain.  The caller must free the values individually.  If
+   VAL_CHAIN is NULL, all generated values will be left on the value
+   chain.  */
 
 void
 fetch_subexp_value (struct expression *exp, int *pc, struct value **valp,
-		    struct value **resultp,
-		    std::vector<value_ref_ptr> *val_chain,
+		    struct value **resultp, struct value **val_chain,
 		    int preserve_errors)
 {
   struct value *mark, *new_mark, *result;
@@ -195,17 +202,17 @@ fetch_subexp_value (struct expression *exp, int *pc, struct value **valp,
   if (resultp)
     *resultp = NULL;
   if (val_chain)
-    val_chain->clear ();
+    *val_chain = NULL;
 
   /* Evaluate the expression.  */
   mark = value_mark ();
   result = NULL;
 
-  try
+  TRY
     {
       result = evaluate_subexp (NULL_TYPE, exp, pc, EVAL_NORMAL);
     }
-  catch (const gdb_exception &ex)
+  CATCH (ex, RETURN_MASK_ALL)
     {
       /* Ignore memory errors if we want watchpoints pointing at
 	 inaccessible memory to still be created; otherwise, throw the
@@ -215,12 +222,12 @@ fetch_subexp_value (struct expression *exp, int *pc, struct value **valp,
 	case MEMORY_ERROR:
 	  if (!preserve_errors)
 	    break;
-	  /* Fall through.  */
 	default:
-	  throw;
+	  throw_exception (ex);
 	  break;
 	}
     }
+  END_CATCH
 
   new_mark = value_mark ();
   if (mark == new_mark)
@@ -237,14 +244,15 @@ fetch_subexp_value (struct expression *exp, int *pc, struct value **valp,
       else
 	{
 
-	  try
+	  TRY
 	    {
 	      value_fetch_lazy (result);
 	      *valp = result;
 	    }
-	  catch (const gdb_exception_error &except)
+	  CATCH (except, RETURN_MASK_ERROR)
 	    {
 	    }
+	  END_CATCH
 	}
     }
 
@@ -252,7 +260,8 @@ fetch_subexp_value (struct expression *exp, int *pc, struct value **valp,
     {
       /* Return the chain of intermediate values.  We use this to
 	 decide which addresses to watch.  */
-      *val_chain = value_release_to_mark (mark);
+      *val_chain = new_mark;
+      value_release_to_mark (mark);
     }
 }
 
@@ -263,7 +272,7 @@ fetch_subexp_value (struct expression *exp, int *pc, struct value **valp,
    subexpression of the left-hand-side of the dereference.  This is
    used when completing field names.  */
 
-const char *
+char *
 extract_field_op (struct expression *exp, int *subexp)
 {
   int tem;
@@ -681,13 +690,9 @@ fake_method::fake_method (type_instance_flags flags,
 	}
     }
 
-  /* We don't use TYPE_ZALLOC here to allocate space as TYPE is owned by
-     neither an objfile nor a gdbarch.  As a result we must manually
-     allocate memory for auxiliary fields, and free the memory ourselves
-     when we are done with it.  */
   TYPE_NFIELDS (type) = num_types;
   TYPE_FIELDS (type) = (struct field *)
-    xzalloc (sizeof (struct field) * num_types);
+    TYPE_ZALLOC (type, sizeof (struct field) * num_types);
 
   while (num_types-- > 0)
     TYPE_FIELD_TYPE (type, num_types) = param_types[num_types];
@@ -714,18 +719,19 @@ evaluate_var_value (enum noside noside, const block *blk, symbol *var)
 
   struct value *ret = NULL;
 
-  try
+  TRY
     {
       ret = value_of_variable (var, blk);
     }
 
-  catch (const gdb_exception_error &except)
+  CATCH (except, RETURN_MASK_ERROR)
     {
       if (noside != EVAL_AVOID_SIDE_EFFECTS)
-	throw;
+	throw_exception (except);
 
       ret = value_zero (SYMBOL_TYPE (var), not_lval);
     }
+  END_CATCH
 
   return ret;
 }
@@ -736,13 +742,17 @@ value *
 evaluate_var_msym_value (enum noside noside,
 			 struct objfile *objfile, minimal_symbol *msymbol)
 {
-  CORE_ADDR address;
-  type *the_type = find_minsym_type_and_address (msymbol, objfile, &address);
-
-  if (noside == EVAL_AVOID_SIDE_EFFECTS && !TYPE_GNU_IFUNC (the_type))
-    return value_zero (the_type, not_lval);
+  if (noside == EVAL_AVOID_SIDE_EFFECTS)
+    {
+      type *the_type = find_minsym_type_and_address (msymbol, objfile, NULL);
+      return value_zero (the_type, not_lval);
+    }
   else
-    return value_at_lazy (the_type, address);
+    {
+      CORE_ADDR address;
+      type *the_type = find_minsym_type_and_address (msymbol, objfile, &address);
+      return value_at_lazy (the_type, address);
+    }
 }
 
 /* Helper for returning a value when handling EVAL_SKIP.  */
@@ -786,9 +796,7 @@ eval_call (expression *exp, enum noside noside,
       else if (TYPE_CODE (ftype) == TYPE_CODE_XMETHOD)
 	{
 	  type *return_type
-	    = result_type_of_xmethod (argvec[0],
-				      gdb::make_array_view (argvec + 1,
-							    nargs));
+	    = result_type_of_xmethod (argvec[0], nargs, argvec + 1);
 
 	  if (return_type == NULL)
 	    error (_("Xmethod is missing return type."));
@@ -797,15 +805,6 @@ eval_call (expression *exp, enum noside noside,
       else if (TYPE_CODE (ftype) == TYPE_CODE_FUNC
 	       || TYPE_CODE (ftype) == TYPE_CODE_METHOD)
 	{
-	  if (TYPE_GNU_IFUNC (ftype))
-	    {
-	      CORE_ADDR address = value_address (argvec[0]);
-	      type *resolved_type = find_gnu_ifunc_target_type (address);
-
-	      if (resolved_type != NULL)
-		ftype = resolved_type;
-	    }
-
 	  type *return_type = TYPE_TARGET_TYPE (ftype);
 
 	  if (return_type == NULL)
@@ -826,10 +825,10 @@ eval_call (expression *exp, enum noside noside,
       return call_internal_function (exp->gdbarch, exp->language_defn,
 				     argvec[0], nargs, argvec + 1);
     case TYPE_CODE_XMETHOD:
-      return call_xmethod (argvec[0], gdb::make_array_view (argvec + 1, nargs));
+      return call_xmethod (argvec[0], nargs, argvec + 1);
     default:
       return call_function_by_hand (argvec[0], default_return_type,
-				    gdb::make_array_view (argvec + 1, nargs));
+				    nargs, argvec + 1);
     }
 }
 
@@ -954,18 +953,19 @@ evaluate_funcall (type *expect_type, expression *exp, int *pos,
 	  while (unop_user_defined_p (op, arg2))
 	    {
 	      struct value *value = NULL;
-	      try
+	      TRY
 		{
 		  value = value_x_unop (arg2, op, noside);
 		}
 
-	      catch (const gdb_exception_error &except)
+	      CATCH (except, RETURN_MASK_ERROR)
 		{
 		  if (except.error == NOT_FOUND_ERROR)
 		    break;
 		  else
-		    throw;
+		    throw_exception (except);
 		}
+	      END_CATCH
 
 		arg2 = value;
 	    }
@@ -992,13 +992,13 @@ evaluate_funcall (type *expect_type, expression *exp, int *pos,
       function_name = NULL;
       if (TYPE_CODE (type) == TYPE_CODE_NAMESPACE)
 	{
-	  function = cp_lookup_symbol_namespace (TYPE_NAME (type),
+	  function = cp_lookup_symbol_namespace (TYPE_TAG_NAME (type),
 						 name,
 						 get_selected_block (0),
 						 VAR_DOMAIN).symbol;
 	  if (function == NULL)
 	    error (_("No symbol \"%s\" in namespace \"%s\"."),
-		   name, TYPE_NAME (type));
+		   name, TYPE_TAG_NAME (type));
 
 	  tem = 1;
 	  /* arg2 is left as NULL on purpose.  */
@@ -1046,13 +1046,13 @@ evaluate_funcall (type *expect_type, expression *exp, int *pos,
 	{
 	  if (op == OP_VAR_MSYM_VALUE)
 	    {
-	      minimal_symbol *msym = exp->elts[*pos + 2].msymbol;
-	      var_func_name = MSYMBOL_PRINT_NAME (msym);
+	      symbol *sym = exp->elts[*pos + 2].symbol;
+	      var_func_name = SYMBOL_PRINT_NAME (sym);
 	    }
 	  else if (op == OP_VAR_VALUE)
 	    {
-	      symbol *sym = exp->elts[*pos + 2].symbol;
-	      var_func_name = SYMBOL_PRINT_NAME (sym);
+	      minimal_symbol *msym = exp->elts[*pos + 2].msymbol;
+	      var_func_name = MSYMBOL_PRINT_NAME (msym);
 	    }
 
 	  argvec[0] = evaluate_subexp_with_coercion (exp, pos, noside);
@@ -1098,8 +1098,7 @@ evaluate_funcall (type *expect_type, expression *exp, int *pos,
       func_name = (char *) alloca (name_len + 1);
       strcpy (func_name, &exp->elts[string_pc + 1].string);
 
-      find_overload_match (gdb::make_array_view (&argvec[1], nargs),
-			   func_name,
+      find_overload_match (&argvec[1], nargs, func_name,
 			   NON_METHOD, /* not method */
 			   NULL, NULL, /* pass NULL symbol since
 					  symbol is unknown */
@@ -1135,8 +1134,7 @@ evaluate_funcall (type *expect_type, expression *exp, int *pos,
 	     evaluation.  */
 	  struct value *valp = NULL;
 
-	  (void) find_overload_match (gdb::make_array_view (&argvec[1], nargs),
-				      tstr,
+	  (void) find_overload_match (&argvec[1], nargs, tstr,
 				      METHOD, /* method */
 				      &arg2,  /* the object */
 				      NULL, &valp, NULL,
@@ -1207,7 +1205,7 @@ evaluate_funcall (type *expect_type, expression *exp, int *pos,
 	  if (op == OP_VAR_VALUE)
 	    function = exp->elts[save_pos1+2].symbol;
 
-	  (void) find_overload_match (gdb::make_array_view (&argvec[1], nargs),
+	  (void) find_overload_match (&argvec[1], nargs,
 				      NULL,        /* no need for name */
 				      NON_METHOD,  /* not method */
 				      NULL, function, /* the function */
@@ -1236,19 +1234,6 @@ evaluate_funcall (type *expect_type, expression *exp, int *pos,
     }
 
   return eval_call (exp, noside, nargs, argvec, var_func_name, expect_type);
-}
-
-/* Helper for skipping all the arguments in an undetermined argument list.
-   This function was designed for use in the OP_F77_UNDETERMINED_ARGLIST
-   case of evaluate_subexp_standard as multiple, but not all, code paths
-   require a generic skip.  */
-
-static void
-skip_undetermined_arglist (int nargs, struct expression *exp, int *pos,
-			   enum noside noside)
-{
-  for (int i = 0; i < nargs; ++i)
-    evaluate_subexp (NULL_TYPE, exp, pos, noside);
 }
 
 struct value *
@@ -1299,19 +1284,16 @@ evaluate_subexp_standard (struct type *expect_type,
 
     case OP_ADL_FUNC:
     case OP_VAR_VALUE:
+      (*pos) += 3;
+      if (noside == EVAL_SKIP)
+	return eval_skip_value (exp);
+
       {
-	(*pos) += 3;
 	symbol *var = exp->elts[pc + 2].symbol;
 	if (TYPE_CODE (SYMBOL_TYPE (var)) == TYPE_CODE_ERROR)
 	  error_unknown_type (SYMBOL_PRINT_NAME (var));
-	if (noside != EVAL_SKIP)
-	    return evaluate_var_value (noside, exp->elts[pc + 1].block, var);
-	else
-	  {
-	    /* Return a dummy value of the correct type when skipping, so
-	       that parent functions know what is to be skipped.  */
-	    return allocate_value (SYMBOL_TYPE (var));
-	  }
+
+	return evaluate_var_value (noside, exp->elts[pc + 1].block, var);
       }
 
     case OP_VAR_MSYM_VALUE:
@@ -1395,7 +1377,8 @@ evaluate_subexp_standard (struct type *expect_type,
            So for these registers, we fetch the register value regardless
            of the evaluation mode.  */
 	if (noside == EVAL_AVOID_SIDE_EFFECTS
-	    && regno < gdbarch_num_cooked_regs (exp->gdbarch))
+	    && regno < gdbarch_num_regs (exp->gdbarch)
+			+ gdbarch_num_pseudo_regs (exp->gdbarch))
 	  val = value_zero (register_type (exp->gdbarch, regno), not_lval);
 	else
 	  val = value_of_register (regno, get_selected_frame (NULL));
@@ -1673,7 +1656,7 @@ evaluate_subexp_standard (struct type *expect_type,
 	   only).  */
 	if (gnu_runtime)
 	  {
-	    type = selector_type;
+	    struct type *type = selector_type;
 
 	    type = lookup_function_type (type);
 	    type = lookup_pointer_type (type);
@@ -1728,12 +1711,12 @@ evaluate_subexp_standard (struct type *expect_type,
 	argvec[3] = value_from_longest (long_type, selector);
 	argvec[4] = 0;
 
-	ret = call_function_by_hand (argvec[0], NULL, {argvec + 1, 3});
+	ret = call_function_by_hand (argvec[0], NULL, 3, argvec + 1);
 	if (gnu_runtime)
 	  {
 	    /* Function objc_msg_lookup returns a pointer.  */
 	    argvec[0] = ret;
-	    ret = call_function_by_hand (argvec[0], NULL, {argvec + 1, 3});
+	    ret = call_function_by_hand (argvec[0], NULL, 3, argvec + 1);
 	  }
 	if (value_as_long (ret) == 0)
 	  error (_("Target does not respond to this message selector."));
@@ -1750,11 +1733,11 @@ evaluate_subexp_standard (struct type *expect_type,
 	argvec[3] = value_from_longest (long_type, selector);
 	argvec[4] = 0;
 
-	ret = call_function_by_hand (argvec[0], NULL, {argvec + 1, 3});
+	ret = call_function_by_hand (argvec[0], NULL, 3, argvec + 1);
 	if (gnu_runtime)
 	  {
 	    argvec[0] = ret;
-	    ret = call_function_by_hand (argvec[0], NULL, {argvec + 1, 3});
+	    ret = call_function_by_hand (argvec[0], NULL, 3, argvec + 1);
 	  }
 
 	/* ret should now be the selector.  */
@@ -1767,7 +1750,7 @@ evaluate_subexp_standard (struct type *expect_type,
 	    /* The address might point to a function descriptor;
 	       resolve it to the actual code address instead.  */
 	    addr = gdbarch_convert_from_func_ptr_addr (exp->gdbarch, addr,
-						       current_top_target ());
+						       &current_target);
 
 	    /* Is it a high_level symbol?  */
 	    sym = find_pc_function (addr);
@@ -1860,18 +1843,18 @@ evaluate_subexp_standard (struct type *expect_type,
 	       it's opinion (ie. through "whatis"), it won't offer
 	       it.  */
 
-	    struct type *callee_type = value_type (called_method);
+	    struct type *type = value_type (called_method);
 
-	    if (callee_type && TYPE_CODE (callee_type) == TYPE_CODE_PTR)
-	      callee_type = TYPE_TARGET_TYPE (callee_type);
-	    callee_type = TYPE_TARGET_TYPE (callee_type);
+	    if (type && TYPE_CODE (type) == TYPE_CODE_PTR)
+	      type = TYPE_TARGET_TYPE (type);
+	    type = TYPE_TARGET_TYPE (type);
 
-	    if (callee_type)
+	    if (type)
 	    {
-	      if ((TYPE_CODE (callee_type) == TYPE_CODE_ERROR) && expect_type)
+	      if ((TYPE_CODE (type) == TYPE_CODE_ERROR) && expect_type)
 		return allocate_value (expect_type);
 	      else
-		return allocate_value (callee_type);
+		return allocate_value (type);
 	    }
 	    else
 	      error (_("Expression of type other than "
@@ -1890,17 +1873,17 @@ evaluate_subexp_standard (struct type *expect_type,
 	  argvec[tem + 3] = evaluate_subexp_with_coercion (exp, pos, noside);
 	argvec[tem + 3] = 0;
 
-	auto call_args = gdb::make_array_view (argvec + 1, nargs + 2);
-
 	if (gnu_runtime && (method != NULL))
 	  {
 	    /* Function objc_msg_lookup returns a pointer.  */
 	    deprecated_set_value_type (argvec[0],
 				       lookup_pointer_type (lookup_function_type (value_type (argvec[0]))));
-	    argvec[0] = call_function_by_hand (argvec[0], NULL, call_args);
+	    argvec[0]
+	      = call_function_by_hand (argvec[0], NULL, nargs + 2, argvec + 1);
 	  }
 
-	return call_function_by_hand (argvec[0], NULL, call_args);
+	ret = call_function_by_hand (argvec[0], NULL, nargs + 2, argvec + 1);
+	return ret;
       }
       break;
 
@@ -1948,34 +1931,19 @@ evaluate_subexp_standard (struct type *expect_type,
 	  if (exp->elts[*pos].opcode == OP_RANGE)
 	    return value_f90_subarray (arg1, exp, pos, noside);
 	  else
-	    {
-	      if (noside == EVAL_SKIP)
-		{
-		  skip_undetermined_arglist (nargs, exp, pos, noside);
-		  /* Return the dummy value with the correct type.  */
-		  return arg1;
-		}
-	      goto multi_f77_subscript;
-	    }
+	    goto multi_f77_subscript;
 
 	case TYPE_CODE_STRING:
 	  if (exp->elts[*pos].opcode == OP_RANGE)
 	    return value_f90_subarray (arg1, exp, pos, noside);
 	  else
 	    {
-	      if (noside == EVAL_SKIP)
-		{
-		  skip_undetermined_arglist (nargs, exp, pos, noside);
-		  /* Return the dummy value with the correct type.  */
-		  return arg1;
-		}
 	      arg2 = evaluate_subexp_with_coercion (exp, pos, noside);
 	      return value_subscript (arg1, value_as_long (arg2));
 	    }
 
 	case TYPE_CODE_PTR:
 	case TYPE_CODE_FUNC:
-	case TYPE_CODE_INTERNAL_FUNCTION:
 	  /* It's a function call.  */
 	  /* Allocate arg vector, including space for the function to be
 	     called in argvec[0] and a terminating NULL.  */
@@ -1984,23 +1952,7 @@ evaluate_subexp_standard (struct type *expect_type,
 	  argvec[0] = arg1;
 	  tem = 1;
 	  for (; tem <= nargs; tem++)
-	    {
-	      argvec[tem] = evaluate_subexp_with_coercion (exp, pos, noside);
-	      /* Arguments in Fortran are passed by address.  Coerce the
-		 arguments here rather than in value_arg_coerce as otherwise
-		 the call to malloc to place the non-lvalue parameters in
-		 target memory is hit by this Fortran specific logic.  This
-		 results in malloc being called with a pointer to an integer
-		 followed by an attempt to malloc the arguments to malloc in
-		 target memory.  Infinite recursion ensues.  */
-	      if (code == TYPE_CODE_PTR || code == TYPE_CODE_FUNC)
-		{
-		  bool is_artificial
-		    = TYPE_FIELD_ARTIFICIAL (value_type (arg1), tem - 1);
-		  argvec[tem] = fortran_argument_convert (argvec[tem],
-							  is_artificial);
-		}
-	    }
+	    argvec[tem] = evaluate_subexp_with_coercion (exp, pos, noside);
 	  argvec[tem] = 0;	/* signal end of arglist */
 	  if (noside == EVAL_SKIP)
 	    return eval_skip_value (exp);
@@ -2043,18 +1995,19 @@ evaluate_subexp_standard (struct type *expect_type,
       while (unop_user_defined_p (op, arg1))
 	{
 	  struct value *value = NULL;
-	  try
+	  TRY
 	    {
 	      value = value_x_unop (arg1, op, noside);
 	    }
 
-	  catch (const gdb_exception_error &except)
+	  CATCH (except, RETURN_MASK_ERROR)
 	    {
 	      if (except.error == NOT_FOUND_ERROR)
 		break;
 	      else
-		throw;
+		throw_exception (except);
 	    }
+	  END_CATCH
 
 	  arg1 = value;
 	}
@@ -2063,15 +2016,15 @@ evaluate_subexp_standard (struct type *expect_type,
 	 with rtti type in order to continue on with successful
 	 lookup of member / method only available in the rtti type.  */
       {
-        struct type *arg_type = value_type (arg1);
+        struct type *type = value_type (arg1);
         struct type *real_type;
         int full, using_enc;
         LONGEST top;
 	struct value_print_options opts;
 
 	get_user_print_options (&opts);
-        if (opts.objectprint && TYPE_TARGET_TYPE (arg_type)
-            && (TYPE_CODE (TYPE_TARGET_TYPE (arg_type)) == TYPE_CODE_STRUCT))
+        if (opts.objectprint && TYPE_TARGET_TYPE(type)
+            && (TYPE_CODE (TYPE_TARGET_TYPE (type)) == TYPE_CODE_STRUCT))
           {
             real_type = value_rtti_indirect_type (arg1, &full, &top,
 						  &using_enc);
@@ -2136,10 +2089,9 @@ evaluate_subexp_standard (struct type *expect_type,
 	for (ix = 0; ix < nargs; ++ix)
 	  arg_types[ix] = exp->elts[pc + 2 + ix + 1].type;
 
-	fake_method fake_expect_type (flags, nargs, arg_types);
+	fake_method expect_type (flags, nargs, arg_types);
 	*(pos) += 4 + nargs;
-	return evaluate_subexp_standard (fake_expect_type.type (), exp, pos,
-					 noside);
+	return evaluate_subexp_standard (expect_type.type (), exp, pos, noside);
       }
 
     case BINOP_CONCAT:
@@ -2718,18 +2670,6 @@ evaluate_subexp_standard (struct type *expect_type,
 	}
       return evaluate_subexp_for_sizeof (exp, pos, noside);
 
-    case UNOP_ALIGNOF:
-      {
-	type = value_type (evaluate_subexp (NULL_TYPE, exp, pos,
-					    EVAL_AVOID_SIDE_EFFECTS));
-	/* FIXME: This should be size_t.  */
-	struct type *size_type = builtin_type (exp->gdbarch)->builtin_int;
-	ULONGEST align = type_align (type);
-	if (align == 0)
-	  error (_("could not determine alignment of type"));
-	return value_from_longest (size_type, align);
-      }
-
     case UNOP_CAST:
       (*pos) += 2;
       type = exp->elts[pc + 1].type;
@@ -2920,7 +2860,7 @@ evaluate_subexp_standard (struct type *expect_type,
 		  || sub_op == STRUCTOP_PTR
 		  || sub_op == OP_SCOPE))
 	    {
-	      type = value_type (result);
+	      struct type *type = value_type (result);
 
 	      if (!TYPE_IS_REFERENCE (type))
 		{
@@ -3194,10 +3134,6 @@ evaluate_subexp_for_sizeof (struct expression *exp, int *pos,
 	{
 	  val = evaluate_subexp (NULL_TYPE, exp, pos, EVAL_NORMAL);
 	  type = value_type (val);
-	  if (TYPE_CODE (type) == TYPE_CODE_ARRAY
-              && is_dynamic_type (TYPE_INDEX_TYPE (type))
-              && TYPE_HIGH_BOUND_UNDEFINED (TYPE_INDEX_TYPE (type)))
-	    return allocate_optimized_out_value (size_type);
 	}
       else
 	(*pos) += 4;
@@ -3208,11 +3144,11 @@ evaluate_subexp_for_sizeof (struct expression *exp, int *pos,
 	(*pos) += 4;
 
 	minimal_symbol *msymbol = exp->elts[pc + 2].msymbol;
-	value *mval = evaluate_var_msym_value (noside,
-					       exp->elts[pc + 1].objfile,
-					       msymbol);
+	value *val = evaluate_var_msym_value (noside,
+					      exp->elts[pc + 1].objfile,
+					      msymbol);
 
-	type = value_type (mval);
+	type = value_type (val);
 	if (TYPE_CODE (type) == TYPE_CODE_ERROR)
 	  error_unknown_type (MSYMBOL_PRINT_NAME (msymbol));
 
@@ -3227,9 +3163,9 @@ evaluate_subexp_for_sizeof (struct expression *exp, int *pos,
     case BINOP_SUBSCRIPT:
       if (noside == EVAL_NORMAL)
 	{
-	  int npc = (*pos) + 1;
+	  int pc = (*pos) + 1;
 
-	  val = evaluate_subexp (NULL_TYPE, exp, &npc, EVAL_AVOID_SIDE_EFFECTS);
+	  val = evaluate_subexp (NULL_TYPE, exp, &pc, EVAL_AVOID_SIDE_EFFECTS);
 	  type = check_typedef (value_type (val));
 	  if (TYPE_CODE (type) == TYPE_CODE_ARRAY)
 	    {

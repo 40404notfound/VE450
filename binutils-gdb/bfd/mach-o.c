@@ -1,5 +1,5 @@
 /* Mach-O support for BFD.
-   Copyright (C) 1999-2019 Free Software Foundation, Inc.
+   Copyright (C) 1999-2018 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -19,11 +19,10 @@
    MA 02110-1301, USA.  */
 
 #include "sysdep.h"
-#include <limits.h>
+#include "mach-o.h"
 #include "bfd.h"
 #include "libbfd.h"
 #include "libiberty.h"
-#include "mach-o.h"
 #include "aout/stab_gnu.h"
 #include "mach-o/reloc.h"
 #include "mach-o/external.h"
@@ -593,124 +592,6 @@ bfd_mach_o_bfd_copy_private_section_data (bfd *ibfd, asection *isection,
   return TRUE;
 }
 
-static const char *
-cputype (unsigned long value)
-{
-  switch (value)
-    {
-    case BFD_MACH_O_CPU_TYPE_VAX: return "VAX";
-    case BFD_MACH_O_CPU_TYPE_MC680x0: return "MC68k";
-    case BFD_MACH_O_CPU_TYPE_I386: return "I386";
-    case BFD_MACH_O_CPU_TYPE_MIPS: return "MIPS";
-    case BFD_MACH_O_CPU_TYPE_MC98000: return "MC98k";
-    case BFD_MACH_O_CPU_TYPE_HPPA: return "HPPA";
-    case BFD_MACH_O_CPU_TYPE_ARM: return "ARM";
-    case BFD_MACH_O_CPU_TYPE_MC88000: return "MC88K";
-    case BFD_MACH_O_CPU_TYPE_SPARC: return "SPARC";
-    case BFD_MACH_O_CPU_TYPE_I860: return "I860";
-    case BFD_MACH_O_CPU_TYPE_ALPHA: return "ALPHA";
-    case BFD_MACH_O_CPU_TYPE_POWERPC: return "PPC";
-    case BFD_MACH_O_CPU_TYPE_POWERPC_64: return "PPC64";
-    case BFD_MACH_O_CPU_TYPE_X86_64: return "X86_64";
-    case BFD_MACH_O_CPU_TYPE_ARM64: return "ARM64";
-    default: return _("<unknown>");
-    }
-}
-
-static const char *
-cpusubtype (unsigned long cputype, unsigned long cpusubtype)
-{
-  static char buffer[128];
-
-  buffer[0] = 0;
-  switch (cpusubtype & BFD_MACH_O_CPU_SUBTYPE_MASK)
-    {
-    case 0:
-      break;
-    case BFD_MACH_O_CPU_SUBTYPE_LIB64:
-      sprintf (buffer, " (LIB64)"); break;
-    default:
-      sprintf (buffer, _("<unknown mask flags>")); break;
-    }
-
-  cpusubtype &= ~ BFD_MACH_O_CPU_SUBTYPE_MASK;
-
-  switch (cputype)
-    {
-    case BFD_MACH_O_CPU_TYPE_X86_64:
-    case BFD_MACH_O_CPU_TYPE_I386:
-      switch (cpusubtype)
-	{
-	case BFD_MACH_O_CPU_SUBTYPE_X86_ALL:
-	  return strcat (buffer, " (X86_ALL)");
-	default:
-	  break;
-	}
-      break;
-
-    case BFD_MACH_O_CPU_TYPE_ARM:
-      switch (cpusubtype)
-	{
-	case BFD_MACH_O_CPU_SUBTYPE_ARM_ALL:
-	  return strcat (buffer, " (ARM_ALL)");
-	case BFD_MACH_O_CPU_SUBTYPE_ARM_V4T:
-	  return strcat (buffer, " (ARM_V4T)");
-	case BFD_MACH_O_CPU_SUBTYPE_ARM_V6:
-	  return strcat (buffer, " (ARM_V6)");
-	case BFD_MACH_O_CPU_SUBTYPE_ARM_V5TEJ:
-	  return strcat (buffer, " (ARM_V5TEJ)");
-	case BFD_MACH_O_CPU_SUBTYPE_ARM_XSCALE:
-	  return strcat (buffer, " (ARM_XSCALE)");
-	case BFD_MACH_O_CPU_SUBTYPE_ARM_V7:
-	  return strcat (buffer, " (ARM_V7)");
-	default:
-	  break;
-	}
-      break;
-
-    case BFD_MACH_O_CPU_TYPE_ARM64:
-      switch (cpusubtype)
-	{
-	case BFD_MACH_O_CPU_SUBTYPE_ARM64_ALL:
-	  return strcat (buffer, " (ARM64_ALL)");
-	case BFD_MACH_O_CPU_SUBTYPE_ARM64_V8:
-	  return strcat (buffer, " (ARM64_V8)");
-	default:
-	  break;
-	}
-      break;
-
-    default:
-      break;
-    }
-
-  if (cpusubtype != 0)
-    return strcat (buffer, _(" (<unknown>)"));
-
-  return buffer;
-}
-
-bfd_boolean
-bfd_mach_o_bfd_print_private_bfd_data (bfd *abfd, void *ptr)
-{
-  FILE * file = (FILE *) ptr;
-  bfd_mach_o_data_struct *mdata = bfd_mach_o_get_data (abfd);
-
-  fprintf (file, _(" MACH-O header:\n"));
-  fprintf (file, _("   magic:      %#lx\n"), (long) mdata->header.magic);
-  fprintf (file, _("   cputype:    %#lx (%s)\n"), (long) mdata->header.cputype,
-	   cputype (mdata->header.cputype));
-  fprintf (file, _("   cpusubtype: %#lx%s\n"), (long) mdata->header.cpusubtype,
-	   cpusubtype (mdata->header.cputype, mdata->header.cpusubtype));
-  fprintf (file, _("   filetype:   %#lx\n"), (long) mdata->header.filetype);
-  fprintf (file, _("   ncmds:      %#lx\n"), (long) mdata->header.ncmds);
-  fprintf (file, _("   sizeocmds:  %#lx\n"), (long) mdata->header.sizeofcmds);
-  fprintf (file, _("   flags:      %#lx\n"), (long) mdata->header.flags);
-  fprintf (file, _("   version:    %x\n"), mdata->header.version);
-
-  return TRUE;
-}
-
 /* Copy any private info we understand from the input bfd
    to the output bfd.  */
 
@@ -733,21 +614,6 @@ bfd_mach_o_bfd_copy_private_header_data (bfd *ibfd, bfd *obfd)
 
   /* Copy header flags.  */
   omdata->header.flags = imdata->header.flags;
-
-  /* PR 23299.  Copy the cputype.  */
-  if (imdata->header.cputype != omdata->header.cputype)
-    {
-      if (omdata->header.cputype == 0)
-	omdata->header.cputype = imdata->header.cputype;
-      else if (imdata->header.cputype != 0)
-	/* Urg - what has happened ?  */
-	_bfd_error_handler (_("incompatible cputypes in mach-o files: %ld vs %ld"),
-			    (long) imdata->header.cputype,
-			    (long) omdata->header.cputype);
-    }
-
-  /* Copy the cpusubtype.  */
-  omdata->header.cpusubtype = imdata->header.cpusubtype;
 
   /* Copy commands.  */
   for (icmd = imdata->first_command; icmd != NULL; icmd = icmd->next)
@@ -1174,9 +1040,15 @@ bfd_mach_o_convert_architecture (bfd_mach_o_cpu_type mtype,
 	  break;
 	}
       break;
+    case BFD_MACH_O_CPU_TYPE_MC88000:
+      *type = bfd_arch_m88k;
+      break;
     case BFD_MACH_O_CPU_TYPE_SPARC:
       *type = bfd_arch_sparc;
       *subtype = bfd_mach_sparc;
+      break;
+    case BFD_MACH_O_CPU_TYPE_I860:
+      *type = bfd_arch_i860;
       break;
     case BFD_MACH_O_CPU_TYPE_ALPHA:
       *type = bfd_arch_alpha;
@@ -1421,14 +1293,7 @@ long
 bfd_mach_o_get_reloc_upper_bound (bfd *abfd ATTRIBUTE_UNUSED,
 				  asection *asect)
 {
-#if SIZEOF_LONG == SIZEOF_INT
-   if (asect->reloc_count >= LONG_MAX / sizeof (arelent *))
-    {
-      bfd_set_error (bfd_error_file_too_big);
-      return -1;
-    }
-#endif
- return (asect->reloc_count + 1) * sizeof (arelent *);
+  return (asect->reloc_count + 1) * sizeof (arelent *);
 }
 
 /* In addition to the need to byte-swap the symbol number, the bit positions
@@ -1436,7 +1301,7 @@ bfd_mach_o_get_reloc_upper_bound (bfd *abfd ATTRIBUTE_UNUSED,
 
 void
 bfd_mach_o_swap_in_non_scattered_reloc (bfd *abfd, bfd_mach_o_reloc_info *rel,
-					unsigned char *fields)
+				       unsigned char *fields)
 {
   unsigned char info = fields[3];
 
@@ -1752,7 +1617,7 @@ bfd_mach_o_canonicalize_dynamic_reloc (bfd *abfd, arelent **rels,
 
 static void
 bfd_mach_o_swap_out_non_scattered_reloc (bfd *abfd, unsigned char *fields,
-					 bfd_mach_o_reloc_info *rel)
+				       bfd_mach_o_reloc_info *rel)
 {
   unsigned char info = 0;
 
@@ -2505,13 +2370,10 @@ bfd_mach_o_mangle_symbols (bfd *abfd)
 	    }
 	  else
 	    s->n_type = BFD_MACH_O_N_SECT;
-	}
 
-      /* Update external symbol bit in case objcopy changed it.  */
-      if (s->symbol.flags & BSF_GLOBAL)
-	s->n_type |= BFD_MACH_O_N_EXT;
-      else
-	s->n_type &= ~BFD_MACH_O_N_EXT;
+	  if (s->symbol.flags & BSF_GLOBAL)
+	    s->n_type |= BFD_MACH_O_N_EXT;
+	}
 
       /* Put the section index in, where required.  */
       if ((s->symbol.section != bfd_abs_section_ptr
@@ -2955,9 +2817,8 @@ bfd_mach_o_build_exec_seg_command (bfd *abfd, bfd_mach_o_segment_command *seg)
 	{
 	  _bfd_error_handler
 	    /* xgettext:c-format */
-	    (_("section address (%#" PRIx64 ") "
-	       "below start of segment (%#" PRIx64 ")"),
-	       (uint64_t) s->addr, (uint64_t) vma);
+	    (_("section address (%#Lx) below start of segment (%#Lx)"),
+	       s->addr, vma);
 	  return FALSE;
 	}
 
@@ -4606,12 +4467,16 @@ bfd_mach_o_read_version_min (bfd *abfd, bfd_mach_o_load_command *command)
 {
   bfd_mach_o_version_min_command *cmd = &command->command.version_min;
   struct mach_o_version_min_command_external raw;
+  unsigned int ver;
 
   if (bfd_bread (&raw, sizeof (raw), abfd) != sizeof (raw))
     return FALSE;
 
-  cmd->version = bfd_get_32 (abfd, raw.version);
-  cmd->sdk = bfd_get_32 (abfd, raw.sdk);
+  ver = bfd_get_32 (abfd, raw.version);
+  cmd->rel = ver >> 16;
+  cmd->maj = ver >> 8;
+  cmd->min = ver;
+  cmd->reserved = bfd_get_32 (abfd, raw.reserved);
   return TRUE;
 }
 
@@ -4682,37 +4547,6 @@ bfd_mach_o_read_source_version (bfd *abfd, bfd_mach_o_load_command *command)
   cmd->b = ver & 0x3ff;
   ver >>= 10;
   cmd->a = ver & 0xffffff;
-  return TRUE;
-}
-
-static bfd_boolean
-bfd_mach_o_read_note (bfd *abfd, bfd_mach_o_load_command *command)
-{
-  bfd_mach_o_note_command *cmd = &command->command.note;
-  struct mach_o_note_command_external raw;
-
-  if (bfd_bread (&raw, sizeof (raw), abfd) != sizeof (raw))
-    return FALSE;
-
-  memcpy (cmd->data_owner, raw.data_owner, 16);
-  cmd->offset = bfd_get_64 (abfd, raw.offset);
-  cmd->size = bfd_get_64 (abfd, raw.size);
-  return TRUE;
-}
-
-static bfd_boolean
-bfd_mach_o_read_build_version (bfd *abfd, bfd_mach_o_load_command *command)
-{
-  bfd_mach_o_build_version_command *cmd = &command->command.build_version;
-  struct mach_o_build_version_command_external raw;
-
-  if (bfd_bread (&raw, sizeof (raw), abfd) != sizeof (raw))
-    return FALSE;
-
-  cmd->platform = bfd_get_32 (abfd, raw.platform);
-  cmd->minos = bfd_get_32 (abfd, raw.minos);
-  cmd->sdk = bfd_get_32 (abfd, raw.sdk);
-  cmd->ntools = bfd_get_32 (abfd, raw.ntools);
   return TRUE;
 }
 
@@ -4912,7 +4746,6 @@ bfd_mach_o_read_command (bfd *abfd, bfd_mach_o_load_command *command)
     case BFD_MACH_O_LC_VERSION_MIN_MACOSX:
     case BFD_MACH_O_LC_VERSION_MIN_IPHONEOS:
     case BFD_MACH_O_LC_VERSION_MIN_WATCHOS:
-    case BFD_MACH_O_LC_VERSION_MIN_TVOS:
       if (!bfd_mach_o_read_version_min (abfd, command))
 	return FALSE;
       break;
@@ -4924,19 +4757,9 @@ bfd_mach_o_read_command (bfd *abfd, bfd_mach_o_load_command *command)
       if (!bfd_mach_o_read_source_version (abfd, command))
 	return FALSE;
       break;
-    case BFD_MACH_O_LC_LINKER_OPTIONS:
-      break;
-    case BFD_MACH_O_LC_NOTE:
-      if (!bfd_mach_o_read_note (abfd, command))
-	return FALSE;
-      break;
-    case BFD_MACH_O_LC_BUILD_VERSION:
-      if (!bfd_mach_o_read_build_version (abfd, command))
-	return FALSE;
-      break;
     default:
       command->len = 0;
-      _bfd_error_handler (_("%pB: unknown load command %#x"),
+      _bfd_error_handler (_("%B: unknown load command %#x"),
 			  abfd, command->type);
       return FALSE;
     }
@@ -5581,13 +5404,6 @@ bfd_mach_o_fat_extract (bfd *abfd,
   return NULL;
 }
 
-static bfd_boolean
-bfd_mach_o_fat_close_and_cleanup (bfd *abfd)
-{
-  _bfd_unlink_from_archive_parent (abfd);
-  return TRUE;
-}
-
 int
 bfd_mach_o_lookup_command (bfd *abfd,
 			   bfd_mach_o_load_command_type type,
@@ -5621,12 +5437,16 @@ bfd_mach_o_stack_addr (enum bfd_mach_o_cpu_type type)
     {
     case BFD_MACH_O_CPU_TYPE_MC680x0:
       return 0x04000000;
+    case BFD_MACH_O_CPU_TYPE_MC88000:
+      return 0xffffe000;
     case BFD_MACH_O_CPU_TYPE_POWERPC:
       return 0xc0000000;
     case BFD_MACH_O_CPU_TYPE_I386:
       return 0xc0000000;
     case BFD_MACH_O_CPU_TYPE_SPARC:
       return 0xf0000000;
+    case BFD_MACH_O_CPU_TYPE_I860:
+      return 0;
     case BFD_MACH_O_CPU_TYPE_HPPA:
       return 0xc0000000 - 0x04000000;
     default:
@@ -6019,8 +5839,7 @@ bfd_mach_o_close_and_cleanup (bfd *abfd)
   return _bfd_generic_close_and_cleanup (abfd);
 }
 
-bfd_boolean
-bfd_mach_o_free_cached_info (bfd *abfd)
+bfd_boolean bfd_mach_o_free_cached_info (bfd *abfd)
 {
   bfd_mach_o_data_struct *mdata = bfd_mach_o_get_data (abfd);
   asection *asect;
@@ -6082,7 +5901,7 @@ bfd_mach_o_free_cached_info (bfd *abfd)
 /* Not yet handled: creating an archive.  */
 #define bfd_mach_o_mkarchive			  _bfd_noarchive_mkarchive
 
-#define bfd_mach_o_close_and_cleanup		  bfd_mach_o_fat_close_and_cleanup
+#define bfd_mach_o_close_and_cleanup		  bfd_true
 
 /* Not used.  */
 #define bfd_mach_o_generic_stat_arch_elt	  bfd_mach_o_fat_stat_arch_elt

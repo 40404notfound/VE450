@@ -1,5 +1,5 @@
 /* Target-machine dependent code for Nios II, for GDB.
-   Copyright (C) 2012-2019 Free Software Foundation, Inc.
+   Copyright (C) 2012-2018 Free Software Foundation, Inc.
    Contributed by Peter Brookes (pbrookes@altera.com)
    and Andrew Draper (adraper@altera.com).
    Contributed by Mentor Graphics, Inc.
@@ -207,13 +207,13 @@ nios2_extract_return_value (struct gdbarch *gdbarch, struct type *valtype,
 
   /* Return values of up to 8 bytes are returned in $r2 $r3.  */
   if (len <= register_size (gdbarch, NIOS2_R2_REGNUM))
-    regcache->cooked_read (NIOS2_R2_REGNUM, valbuf);
+    regcache_cooked_read (regcache, NIOS2_R2_REGNUM, valbuf);
   else
     {
       gdb_assert (len <= (register_size (gdbarch, NIOS2_R2_REGNUM)
 			  + register_size (gdbarch, NIOS2_R3_REGNUM)));
-      regcache->cooked_read (NIOS2_R2_REGNUM, valbuf);
-      regcache->cooked_read (NIOS2_R3_REGNUM, valbuf + 4);
+      regcache_cooked_read (regcache, NIOS2_R2_REGNUM, valbuf);
+      regcache_cooked_read (regcache, NIOS2_R3_REGNUM, valbuf + 4);
     }
 }
 
@@ -228,13 +228,13 @@ nios2_store_return_value (struct gdbarch *gdbarch, struct type *valtype,
 
   /* Return values of up to 8 bytes are returned in $r2 $r3.  */
   if (len <= register_size (gdbarch, NIOS2_R2_REGNUM))
-    regcache->cooked_write (NIOS2_R2_REGNUM, valbuf);
+    regcache_cooked_write (regcache, NIOS2_R2_REGNUM, valbuf);
   else
     {
       gdb_assert (len <= (register_size (gdbarch, NIOS2_R2_REGNUM)
 			  + register_size (gdbarch, NIOS2_R3_REGNUM)));
-      regcache->cooked_write (NIOS2_R2_REGNUM, valbuf);
-      regcache->cooked_write (NIOS2_R3_REGNUM, valbuf + 4);
+      regcache_cooked_write (regcache, NIOS2_R2_REGNUM, valbuf);
+      regcache_cooked_write (regcache, NIOS2_R3_REGNUM, valbuf + 4);
     }
 }
 
@@ -1202,6 +1202,8 @@ nios2_analyze_prologue (struct gdbarch *gdbarch, const CORE_ADDR start_pc,
   struct reg_value *value = cache->reg_value;
   struct reg_value temp_value[NIOS2_NUM_REGS];
 
+  int i;
+
   /* Save the starting PC so we can correct the pc after running
      through the prolog, using symbol info.  */
   CORE_ADDR pc = start_pc;
@@ -1283,7 +1285,7 @@ nios2_analyze_prologue (struct gdbarch *gdbarch, const CORE_ADDR start_pc,
 
 	      /* If any registers were saved on the stack before then
 		 we can't backtrace into them now.  */
-	      for (int i = 0 ; i < NIOS2_NUM_REGS ; i++)
+	      for (i = 0 ; i < NIOS2_NUM_REGS ; i++)
 		{
 		  if (cache->reg_saved[i].basereg == NIOS2_SP_REGNUM)
 		    cache->reg_saved[i].basereg = -1;
@@ -1414,6 +1416,7 @@ nios2_analyze_prologue (struct gdbarch *gdbarch, const CORE_ADDR start_pc,
 	  /* PUSH.N {reglist}, adjust
 	     or
 	     STWM {reglist}, --(SP)[, writeback] */
+	  int i;
 	  int off = 0;
 
 	  if (ra != NIOS2_SP_REGNUM || id != 0)
@@ -1421,7 +1424,7 @@ nios2_analyze_prologue (struct gdbarch *gdbarch, const CORE_ADDR start_pc,
 	       part of the prologue.  */
 	    break;
 
-	  for (int i = 31; i >= 0; i--)
+	  for (i = 31; i >= 0; i--)
 	    if (reglist & (1 << i))
 	      {
 		int orig = value[i].reg;
@@ -1466,9 +1469,9 @@ nios2_analyze_prologue (struct gdbarch *gdbarch, const CORE_ADDR start_pc,
 		 if ra has been stored into r8 beforehand and if it's
 		 before the stack adjust.
 		 Note mcount corrupts r2-r3, r9-r15 & ra.  */
-	      for (int i = 2 ; i <= 3 ; i++)
+	      for (i = 2 ; i <= 3 ; i++)
 		value[i].reg = -1;
-	      for (int i = 9 ; i <= 15 ; i++)
+	      for (i = 9 ; i <= 15 ; i++)
 		value[i].reg = -1;
 	      value[NIOS2_RA_REGNUM].reg = -1;
 
@@ -1618,14 +1621,14 @@ nios2_analyze_prologue (struct gdbarch *gdbarch, const CORE_ADDR start_pc,
 
   /* Adjust all the saved registers such that they contain addresses
      instead of offsets.  */
-  for (int i = 0; i < NIOS2_NUM_REGS; i++)
+  for (i = 0; i < NIOS2_NUM_REGS; i++)
     if (cache->reg_saved[i].basereg == NIOS2_SP_REGNUM)
       {
 	cache->reg_saved[i].basereg = NIOS2_Z_REGNUM;
 	cache->reg_saved[i].addr += frame_high;
       }
 
-  for (int i = 0; i < NIOS2_NUM_REGS; i++)
+  for (i = 0; i < NIOS2_NUM_REGS; i++)
     if (cache->reg_saved[i].basereg == NIOS2_GP_REGNUM)
       {
 	CORE_ADDR gp = get_frame_register_unsigned (this_frame,
@@ -1795,19 +1798,29 @@ nios2_return_value (struct gdbarch *gdbarch, struct value *function,
   return RETURN_VALUE_REGISTER_CONVENTION;
 }
 
+/* Implement the dummy_id gdbarch method.  */
+
+static struct frame_id
+nios2_dummy_id (struct gdbarch *gdbarch, struct frame_info *this_frame)
+{
+  return frame_id_build
+    (get_frame_register_unsigned (this_frame, NIOS2_SP_REGNUM),
+     get_frame_pc (this_frame));
+}
+
 /* Implement the push_dummy_call gdbarch method.  */
 
 static CORE_ADDR
 nios2_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
                        struct regcache *regcache, CORE_ADDR bp_addr,
                        int nargs, struct value **args, CORE_ADDR sp,
-		       function_call_return_method return_method,
-		       CORE_ADDR struct_addr)
+                       int struct_return, CORE_ADDR struct_addr)
 {
   int argreg;
   int argnum;
-  int arg_space = 0;
+  int len = 0;
   int stack_offset = 0;
+  CORE_ADDR func_addr = find_function_addr (function, NULL);
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
 
   /* Set the return address register to point to the entry point of
@@ -1816,15 +1829,15 @@ nios2_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
 
   /* Now make space on the stack for the args.  */
   for (argnum = 0; argnum < nargs; argnum++)
-    arg_space += align_up (TYPE_LENGTH (value_type (args[argnum])), 4);
-  sp -= arg_space;
+    len += align_up (TYPE_LENGTH (value_type (args[argnum])), 4);
+  sp -= len;
 
   /* Initialize the register pointer.  */
   argreg = NIOS2_FIRST_ARGREG;
 
   /* The struct_return pointer occupies the first parameter-passing
      register.  */
-  if (return_method == return_method_struct)
+  if (struct_return)
     regcache_cooked_write_unsigned (regcache, argreg++, struct_addr);
 
   /* Now load as many as possible of the first arguments into
@@ -1884,6 +1897,14 @@ nios2_unwind_pc (struct gdbarch *gdbarch, struct frame_info *next_frame)
 
   frame_unwind_register (next_frame, NIOS2_PC_REGNUM, buf);
   return extract_typed_address (buf, builtin_type (gdbarch)->builtin_func_ptr);
+}
+
+/* Implement the unwind_sp gdbarch method.  */
+
+static CORE_ADDR
+nios2_unwind_sp (struct gdbarch *gdbarch, struct frame_info *this_frame)
+{
+  return frame_unwind_register_unsigned (this_frame, NIOS2_SP_REGNUM);
 }
 
 /* Use prologue analysis to fill in the register cache
@@ -2151,32 +2172,13 @@ nios2_get_next_pc (struct regcache *regcache, CORE_ADDR pc)
 	}
     }
 
-  else if (nios2_match_jmpi (insn, op, mach, &uimm))
+  else if (nios2_match_jmpi (insn, op, mach, &uimm)
+	   || nios2_match_calli (insn, op, mach, &uimm))
     pc = (pc & 0xf0000000) | uimm;
-  else if (nios2_match_calli (insn, op, mach, &uimm))
-    {
-      CORE_ADDR callto = (pc & 0xf0000000) | uimm;
-      if (tdep->is_kernel_helper != NULL
-	  && tdep->is_kernel_helper (callto))
-	/* Step over call to kernel helper, which we cannot debug
-	   from user space.  */
-	pc += op->size;
-      else
-	pc = callto;
-    }
 
-  else if (nios2_match_jmpr (insn, op, mach, &ra))
+  else if (nios2_match_jmpr (insn, op, mach, &ra)
+	   || nios2_match_callr (insn, op, mach, &ra))
     pc = regcache_raw_get_unsigned (regcache, ra);
-  else if (nios2_match_callr (insn, op, mach, &ra))
-    {
-      CORE_ADDR callto = regcache_raw_get_unsigned (regcache, ra);
-      if (tdep->is_kernel_helper != NULL
-	  && tdep->is_kernel_helper (callto))
-	/* Step over call to kernel helper.  */
-	pc += op->size;
-      else
-	pc = callto;
-    }
 
   else if (nios2_match_ldwm (insn, op, mach, &uimm, &ra, &imm, &wb, &id, &ret)
 	   && ret)
@@ -2227,42 +2229,6 @@ nios2_get_longjmp_target (struct frame_info *frame, CORE_ADDR *pc)
 
   *pc = extract_unsigned_integer (buf, 4, byte_order);
   return 1;
-}
-
-/* Implement the type_align gdbarch function.  */
-
-static ULONGEST
-nios2_type_align (struct gdbarch *gdbarch, struct type *type)
-{
-  switch (TYPE_CODE (type))
-    {
-    case TYPE_CODE_PTR:
-    case TYPE_CODE_FUNC:
-    case TYPE_CODE_FLAGS:
-    case TYPE_CODE_INT:
-    case TYPE_CODE_RANGE:
-    case TYPE_CODE_FLT:
-    case TYPE_CODE_ENUM:
-    case TYPE_CODE_REF:
-    case TYPE_CODE_RVALUE_REF:
-    case TYPE_CODE_CHAR:
-    case TYPE_CODE_BOOL:
-    case TYPE_CODE_DECFLOAT:
-    case TYPE_CODE_METHODPTR:
-    case TYPE_CODE_MEMBERPTR:
-      type = check_typedef (type);
-      return std::min<ULONGEST> (4, TYPE_LENGTH (type));
-    default:
-      return 0;
-    }
-}
-
-/* Implement the gcc_target_options gdbarch method.  */
-static char *
-nios2_gcc_target_options (struct gdbarch *gdbarch)
-{
-  /* GCC doesn't know "-m32".  */
-  return NULL;
 }
 
 /* Initialize the Nios II gdbarch.  */
@@ -2328,8 +2294,6 @@ nios2_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_float_bit (gdbarch, 32);
   set_gdbarch_double_bit (gdbarch, 64);
 
-  set_gdbarch_type_align (gdbarch, nios2_type_align);
-
   set_gdbarch_float_format (gdbarch, floatformats_ieee_single);
   set_gdbarch_double_format (gdbarch, floatformats_ieee_double);
 
@@ -2357,7 +2321,9 @@ nios2_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_breakpoint_kind_from_pc (gdbarch, nios2_breakpoint_kind_from_pc);
   set_gdbarch_sw_breakpoint_from_kind (gdbarch, nios2_sw_breakpoint_from_kind);
 
+  set_gdbarch_dummy_id (gdbarch, nios2_dummy_id);
   set_gdbarch_unwind_pc (gdbarch, nios2_unwind_pc);
+  set_gdbarch_unwind_sp (gdbarch, nios2_unwind_sp);
 
   /* The dwarf2 unwinder will normally produce the best results if
      the debug information is available, so register it first.  */
@@ -2367,9 +2333,6 @@ nios2_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 
   /* Single stepping.  */
   set_gdbarch_software_single_step (gdbarch, nios2_software_single_step);
-
-  /* Target options for compile.  */
-  set_gdbarch_gcc_target_options (gdbarch, nios2_gcc_target_options);
 
   /* Hook in ABI-specific overrides, if they have been registered.  */
   gdbarch_init_osabi (info, gdbarch);

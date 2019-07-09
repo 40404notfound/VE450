@@ -1,6 +1,6 @@
 /* Solaris threads debugging interface.
 
-   Copyright (C) 1996-2019 Free Software Foundation, Inc.
+   Copyright (C) 1996-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -63,48 +63,13 @@
 #include "regcache.h"
 #include "solib.h"
 #include "symfile.h"
-#include "observable.h"
+#include "observer.h"
 #include "procfs.h"
 #include "symtab.h"
 #include "minsyms.h"
 #include "objfiles.h"
 
-static const target_info thread_db_target_info = {
-  "solaris-threads",
-  N_("Solaris threads and pthread."),
-  N_("Solaris threads and pthread support.")
-};
-
-class sol_thread_target final : public target_ops
-{
-public:
-  const target_info &info () const override
-  { return thread_db_target_info; }
-
-  strata stratum () const override { return thread_stratum; }
-
-  void detach (inferior *, int) override;
-  ptid_t wait (ptid_t, struct target_waitstatus *, int) override;
-  void resume (ptid_t, int, enum gdb_signal) override;
-  void mourn_inferior () override;
-  std::string pid_to_str (ptid_t) override;
-  ptid_t get_ada_task_ptid (long lwp, long thread) override;
-
-  void fetch_registers (struct regcache *, int) override;
-  void store_registers (struct regcache *, int) override;
-
-  enum target_xfer_status xfer_partial (enum target_object object,
-					const char *annex,
-					gdb_byte *readbuf,
-					const gdb_byte *writebuf,
-					ULONGEST offset, ULONGEST len,
-					ULONGEST *xfered_len) override;
-
-  bool thread_alive (ptid_t ptid) override;
-  void update_thread_list () override;
-};
-
-static sol_thread_target sol_thread_ops;
+struct target_ops sol_thread_ops;
 
 /* Prototypes for supply_gregset etc.  */
 #include "gregset.h"
@@ -127,6 +92,8 @@ struct string_map
 static struct ps_prochandle main_ph;
 static td_thragent_t *main_ta;
 static int sol_thread_active = 0;
+
+static void init_sol_thread_ops (void);
 
 /* Default definitions: These must be defined in tm.h if they are to
    be shared with a process module such as procfs.  */
@@ -299,32 +266,32 @@ thread_to_lwp (ptid_t thread_id, int default_lwp)
   td_thrhandle_t th;
   td_err_e val;
 
-  if (thread_id.lwp_p ())
+  if (ptid_lwp_p (thread_id))
     return thread_id;		/* It's already an LWP ID.  */
 
   /* It's a thread.  Convert to LWP.  */
 
-  val = p_td_ta_map_id2thr (main_ta, thread_id.tid (), &th);
+  val = p_td_ta_map_id2thr (main_ta, ptid_get_tid (thread_id), &th);
   if (val == TD_NOTHR)
-    return ptid_t (-1);	/* Thread must have terminated.  */
+    return pid_to_ptid (-1);	/* Thread must have terminated.  */
   else if (val != TD_OK)
     error (_("thread_to_lwp: td_ta_map_id2thr %s"), td_err_string (val));
 
   val = p_td_thr_get_info (&th, &ti);
   if (val == TD_NOTHR)
-    return ptid_t (-1);	/* Thread must have terminated.  */
+    return pid_to_ptid (-1);	/* Thread must have terminated.  */
   else if (val != TD_OK)
     error (_("thread_to_lwp: td_thr_get_info: %s"), td_err_string (val));
 
   if (ti.ti_state != TD_THR_ACTIVE)
     {
       if (default_lwp != -1)
-	return ptid_t (default_lwp);
+	return pid_to_ptid (default_lwp);
       error (_("thread_to_lwp: thread state not active: %s"),
 	     td_state_string (ti.ti_state));
     }
 
-  return ptid_t (thread_id.pid (), ti.ti_lid, 0);
+  return ptid_build (ptid_get_pid (thread_id), ti.ti_lid, 0);
 }
 
 /* Convert an LWP ID into a POSIX or Solaris thread ID.  If LWP_ID
@@ -339,17 +306,17 @@ lwp_to_thread (ptid_t lwp)
   td_thrhandle_t th;
   td_err_e val;
 
-  if (lwp.tid_p ())
+  if (ptid_tid_p (lwp))
     return lwp;			/* It's already a thread ID.  */
 
   /* It's an LWP.  Convert it to a thread ID.  */
 
   if (!target_thread_alive (lwp))
-    return ptid_t (-1);	/* Must be a defunct LPW.  */
+    return pid_to_ptid (-1);	/* Must be a defunct LPW.  */
 
-  val = p_td_ta_map_lwp2thr (main_ta, lwp.lwp (), &th);
+  val = p_td_ta_map_lwp2thr (main_ta, ptid_get_lwp (lwp), &th);
   if (val == TD_NOTHR)
-    return ptid_t (-1);	/* Thread must have terminated.  */
+    return pid_to_ptid (-1);	/* Thread must have terminated.  */
   else if (val != TD_OK)
     error (_("lwp_to_thread: td_ta_map_lwp2thr: %s."), td_err_string (val));
 
@@ -361,11 +328,11 @@ lwp_to_thread (ptid_t lwp)
 
   val = p_td_thr_get_info (&th, &ti);
   if (val == TD_NOTHR)
-    return ptid_t (-1);	/* Thread must have terminated.  */
+    return pid_to_ptid (-1);	/* Thread must have terminated.  */
   else if (val != TD_OK)
     error (_("lwp_to_thread: td_thr_get_info: %s."), td_err_string (val));
 
-  return ptid_t (lwp.pid (), 0 , ti.ti_tid);
+  return ptid_build (ptid_get_pid (lwp), 0 , ti.ti_tid);
 }
 
 
@@ -380,15 +347,15 @@ lwp_to_thread (ptid_t lwp)
    process to have been previously attached.  It *might* work if the
    program was started via the normal ptrace (PTRACE_TRACEME).  */
 
-void
-sol_thread_target::detach (inferior *inf, int from_tty)
+static void
+sol_thread_detach (struct target_ops *ops, const char *args, int from_tty)
 {
-  target_ops *beneath = this->beneath ();
+  struct target_ops *beneath = find_target_beneath (ops);
 
   sol_thread_active = 0;
-  inferior_ptid = ptid_t (main_ph.ptid.pid ());
-  unpush_target (this);
-  beneath->detach (inf, from_tty);
+  inferior_ptid = pid_to_ptid (ptid_get_pid (main_ph.ptid));
+  unpush_target (ops);
+  beneath->to_detach (beneath, args, from_tty);
 }
 
 /* Resume execution of process PTID.  If STEP is nozero, then just
@@ -396,75 +363,78 @@ sol_thread_target::detach (inferior *inf, int from_tty)
    activated.  We may have to convert PTID from a thread ID to an LWP
    ID for procfs.  */
 
-void
-sol_thread_target::resume (ptid_t ptid, int step, enum gdb_signal signo)
+static void
+sol_thread_resume (struct target_ops *ops,
+		   ptid_t ptid, int step, enum gdb_signal signo)
 {
+  struct target_ops *beneath = find_target_beneath (ops);
+
   scoped_restore save_inferior_ptid = make_scoped_restore (&inferior_ptid);
 
-  inferior_ptid = thread_to_lwp (inferior_ptid, main_ph.ptid.pid ());
-  if (inferior_ptid.pid () == -1)
+  inferior_ptid = thread_to_lwp (inferior_ptid, ptid_get_pid (main_ph.ptid));
+  if (ptid_get_pid (inferior_ptid) == -1)
     inferior_ptid = procfs_first_available ();
 
-  if (ptid.pid () != -1)
+  if (ptid_get_pid (ptid) != -1)
     {
       ptid_t save_ptid = ptid;
 
       ptid = thread_to_lwp (ptid, -2);
-      if (ptid.pid () == -2)		/* Inactive thread.  */
+      if (ptid_get_pid (ptid) == -2)		/* Inactive thread.  */
 	error (_("This version of Solaris can't start inactive threads."));
-      if (info_verbose && ptid.pid () == -1)
+      if (info_verbose && ptid_get_pid (ptid) == -1)
 	warning (_("Specified thread %ld seems to have terminated"),
-		 save_ptid.tid ());
+		 ptid_get_tid (save_ptid));
     }
 
-  beneath ()->resume (ptid, step, signo);
+  beneath->to_resume (beneath, ptid, step, signo);
 }
 
 /* Wait for any threads to stop.  We may have to convert PTID from a
    thread ID to an LWP ID, and vice versa on the way out.  */
 
-ptid_t
-sol_thread_target::wait (ptid_t ptid, struct target_waitstatus *ourstatus,
-			 int options)
+static ptid_t
+sol_thread_wait (struct target_ops *ops,
+		 ptid_t ptid, struct target_waitstatus *ourstatus, int options)
 {
   ptid_t rtnval;
   ptid_t save_ptid;
+  struct target_ops *beneath = find_target_beneath (ops);
 
   save_ptid = inferior_ptid;
   scoped_restore save_inferior_ptid = make_scoped_restore (&inferior_ptid);
 
-  inferior_ptid = thread_to_lwp (inferior_ptid, main_ph.ptid.pid ());
-  if (inferior_ptid.pid () == -1)
+  inferior_ptid = thread_to_lwp (inferior_ptid, ptid_get_pid (main_ph.ptid));
+  if (ptid_get_pid (inferior_ptid) == -1)
     inferior_ptid = procfs_first_available ();
 
-  if (ptid.pid () != -1)
+  if (ptid_get_pid (ptid) != -1)
     {
-      ptid_t ptid_for_warning = ptid;
+      ptid_t save_ptid = ptid;
 
       ptid = thread_to_lwp (ptid, -2);
-      if (ptid.pid () == -2)		/* Inactive thread.  */
+      if (ptid_get_pid (ptid) == -2)		/* Inactive thread.  */
 	error (_("This version of Solaris can't start inactive threads."));
-      if (info_verbose && ptid.pid () == -1)
+      if (info_verbose && ptid_get_pid (ptid) == -1)
 	warning (_("Specified thread %ld seems to have terminated"),
-		 ptid_for_warning.tid ());
+		 ptid_get_tid (save_ptid));
     }
 
-  rtnval = beneath ()->wait (ptid, ourstatus, options);
+  rtnval = beneath->to_wait (beneath, ptid, ourstatus, options);
 
   if (ourstatus->kind != TARGET_WAITKIND_EXITED)
     {
       /* Map the LWP of interest back to the appropriate thread ID.  */
       rtnval = lwp_to_thread (rtnval);
-      if (rtnval.pid () == -1)
+      if (ptid_get_pid (rtnval) == -1)
 	rtnval = save_ptid;
 
       /* See if we have a new thread.  */
-      if (rtnval.tid_p () && rtnval != save_ptid)
-	{
-	  thread_info *thr = find_thread_ptid (rtnval);
-	  if (thr == NULL || thr->state == THREAD_EXITED)
-	    add_thread (rtnval);
-	}
+      if (ptid_tid_p (rtnval)
+	  && !ptid_equal (rtnval, save_ptid)
+	  && (!in_thread_list (rtnval)
+	      || is_exited (rtnval)))
+	add_thread (rtnval);
     }
 
   /* During process initialization, we may get here without the thread
@@ -474,8 +444,9 @@ sol_thread_target::wait (ptid_t ptid, struct target_waitstatus *ourstatus,
   return rtnval;
 }
 
-void
-sol_thread_target::fetch_registers (struct regcache *regcache, int regnum)
+static void
+sol_thread_fetch_registers (struct target_ops *ops,
+			    struct regcache *regcache, int regnum)
 {
   thread_t thread;
   td_thrhandle_t thandle;
@@ -484,17 +455,18 @@ sol_thread_target::fetch_registers (struct regcache *regcache, int regnum)
   prfpregset_t fpregset;
   gdb_gregset_t *gregset_p = &gregset;
   gdb_fpregset_t *fpregset_p = &fpregset;
-  ptid_t ptid = regcache->ptid ();
+  struct target_ops *beneath = find_target_beneath (ops);
+  ptid_t ptid = regcache_get_ptid (regcache);
 
-  if (!ptid.tid_p ())
+  if (!ptid_tid_p (ptid))
     {
       /* It's an LWP; pass the request on to the layer beneath.  */
-      beneath ()->fetch_registers (regcache, regnum);
+      beneath->to_fetch_registers (beneath, regcache, regnum);
       return;
     }
 
   /* Solaris thread: convert PTID into a td_thrhandle_t.  */
-  thread = ptid.tid ();
+  thread = ptid_get_tid (ptid);
   if (thread == 0)
     error (_("sol_thread_fetch_registers: thread == 0"));
 
@@ -528,25 +500,28 @@ sol_thread_target::fetch_registers (struct regcache *regcache, int regnum)
   supply_fpregset (regcache, (const gdb_fpregset_t *) fpregset_p);
 }
 
-void
-sol_thread_target::store_registers (struct regcache *regcache, int regnum)
+static void
+sol_thread_store_registers (struct target_ops *ops,
+			    struct regcache *regcache, int regnum)
 {
   thread_t thread;
   td_thrhandle_t thandle;
   td_err_e val;
   prgregset_t gregset;
   prfpregset_t fpregset;
-  ptid_t ptid = regcache->ptid ();
+  ptid_t ptid = regcache_get_ptid (regcache);
 
-  if (!ptid.tid_p ())
+  if (!ptid_tid_p (ptid))
     {
+      struct target_ops *beneath = find_target_beneath (ops);
+
       /* It's an LWP; pass the request on to the layer beneath.  */
-      beneath ()->store_registers (regcache, regnum);
+      beneath->to_store_registers (beneath, regcache, regnum);
       return;
     }
 
   /* Solaris thread: convert PTID into a td_thrhandle_t.  */
-  thread = ptid.tid ();
+  thread = ptid_get_tid (ptid);
 
   val = p_td_ta_map_id2thr (main_ta, thread, &thandle);
   if (val != TD_OK)
@@ -582,16 +557,17 @@ sol_thread_target::store_registers (struct regcache *regcache, int regnum)
    target_write_partial for details of each variant.  One, and only
    one, of readbuf or writebuf must be non-NULL.  */
 
-enum target_xfer_status
-sol_thread_target::xfer_partial (enum target_object object,
-				 const char *annex, gdb_byte *readbuf,
-				 const gdb_byte *writebuf,
-				 ULONGEST offset, ULONGEST len,
-				 ULONGEST *xfered_len)
+static enum target_xfer_status
+sol_thread_xfer_partial (struct target_ops *ops, enum target_object object,
+			  const char *annex, gdb_byte *readbuf,
+			  const gdb_byte *writebuf,
+			 ULONGEST offset, ULONGEST len, ULONGEST *xfered_len)
 {
+  struct target_ops *beneath = find_target_beneath (ops);
+
   scoped_restore save_inferior_ptid = make_scoped_restore (&inferior_ptid);
 
-  if (inferior_ptid.tid_p () || !target_thread_alive (inferior_ptid))
+  if (ptid_tid_p (inferior_ptid) || !target_thread_alive (inferior_ptid))
     {
       /* It's either a thread or an LWP that isn't alive.  Any live
          LWP will do so use the first available.
@@ -601,7 +577,7 @@ sol_thread_target::xfer_partial (enum target_object object,
       inferior_ptid = procfs_first_available ();
     }
 
-  return beneath ()->xfer_partial (object, annex, readbuf,
+  return beneath->to_xfer_partial (beneath, object, annex, readbuf,
 				   writebuf, offset, len, xfered_len);
 }
 
@@ -612,7 +588,7 @@ check_for_thread_db (void)
   ptid_t ptid;
 
   /* Don't attempt to use thread_db for remote targets.  */
-  if (!(target_can_run () || core_bfd))
+  if (!(target_can_run (&current_target) || core_bfd))
     return;
 
   /* Do nothing if we couldn't load libthread_db.so.1.  */
@@ -652,7 +628,7 @@ check_for_thread_db (void)
 
       main_ph.ptid = inferior_ptid; /* Save for xfer_memory.  */
       ptid = lwp_to_thread (inferior_ptid);
-      if (ptid.pid () != -1)
+      if (ptid_get_pid (ptid) != -1)
 	inferior_ptid = ptid;
 
       target_update_thread_list ();
@@ -680,43 +656,43 @@ sol_thread_new_objfile (struct objfile *objfile)
 
 /* Clean up after the inferior dies.  */
 
-void
-sol_thread_target::mourn_inferior ()
+static void
+sol_thread_mourn_inferior (struct target_ops *ops)
 {
-  target_ops *beneath = this->beneath ();
+  struct target_ops *beneath = find_target_beneath (ops);
 
   sol_thread_active = 0;
 
-  unpush_target (this);
+  unpush_target (ops);
 
-  beneath->mourn_inferior ();
+  beneath->to_mourn_inferior (beneath);
 }
 
 /* Return true if PTID is still active in the inferior.  */
 
-bool
-sol_thread_target::thread_alive (ptid_t ptid)
+static int
+sol_thread_alive (struct target_ops *ops, ptid_t ptid)
 {
-  if (ptid.tid_p ())
+  if (ptid_tid_p (ptid))
     {
       /* It's a (user-level) thread.  */
       td_err_e val;
       td_thrhandle_t th;
       int pid;
 
-      pid = ptid.tid ();
-      val = p_td_ta_map_id2thr (main_ta, pid, &th);
-      if (val != TD_OK)
-	return false;		/* Thread not found.  */
-      val = p_td_thr_validate (&th);
-      if (val != TD_OK)
-	return false;		/* Thread not valid.  */
-      return true;		/* Known thread.  */
+      pid = ptid_get_tid (ptid);
+      if ((val = p_td_ta_map_id2thr (main_ta, pid, &th)) != TD_OK)
+	return 0;		/* Thread not found.  */
+      if ((val = p_td_thr_validate (&th)) != TD_OK)
+	return 0;		/* Thread not valid.  */
+      return 1;			/* Known thread.  */
     }
   else
     {
+      struct target_ops *beneath = find_target_beneath (ops);
+
       /* It's an LPW; pass the request on to the layer below.  */
-      return beneath ()->thread_alive (ptid);
+      return beneath->to_thread_alive (beneath, ptid);
     }
 }
 
@@ -787,7 +763,7 @@ rw_common (int dowrite, const struct ps_prochandle *ph, psaddr_t addr,
 
   scoped_restore save_inferior_ptid = make_scoped_restore (&inferior_ptid);
 
-  if (inferior_ptid.tid_p () || !target_thread_alive (inferior_ptid))
+  if (ptid_tid_p (inferior_ptid) || !target_thread_alive (inferior_ptid))
     {
       /* It's either a thread or an LWP that isn't alive.  Any live
          LWP will do so use the first available.
@@ -851,7 +827,7 @@ ps_ptwrite (struct ps_prochandle *ph, psaddr_t addr,
 ps_err_e
 ps_lgetregs (struct ps_prochandle *ph, lwpid_t lwpid, prgregset_t gregset)
 {
-  ptid_t ptid = ptid_t (inferior_ptid.pid (), lwpid, 0);
+  ptid_t ptid = ptid_build (ptid_get_pid (inferior_ptid), lwpid, 0);
   struct regcache *regcache
     = get_thread_arch_regcache (ptid, target_gdbarch ());
 
@@ -867,7 +843,7 @@ ps_err_e
 ps_lsetregs (struct ps_prochandle *ph, lwpid_t lwpid,
 	     const prgregset_t gregset)
 {
-  ptid_t ptid = ptid_t (inferior_ptid.pid (), lwpid, 0);
+  ptid_t ptid = ptid_build (ptid_get_pid (inferior_ptid), lwpid, 0);
   struct regcache *regcache
     = get_thread_arch_regcache (ptid, target_gdbarch ());
 
@@ -919,7 +895,7 @@ ps_err_e
 ps_lgetfpregs (struct ps_prochandle *ph, lwpid_t lwpid,
 	       prfpregset_t *fpregset)
 {
-  ptid_t ptid = ptid_t (inferior_ptid.pid (), lwpid, 0);
+  ptid_t ptid = ptid_build (ptid_get_pid (inferior_ptid), lwpid, 0);
   struct regcache *regcache
     = get_thread_arch_regcache (ptid, target_gdbarch ());
 
@@ -935,7 +911,7 @@ ps_err_e
 ps_lsetfpregs (struct ps_prochandle *ph, lwpid_t lwpid,
 	       const prfpregset_t * fpregset)
 {
-  ptid_t ptid = ptid_t (inferior_ptid.pid (), lwpid, 0);
+  ptid_t ptid = ptid_build (ptid_get_pid (inferior_ptid), lwpid, 0);
   struct regcache *regcache
     = get_thread_arch_regcache (ptid, target_gdbarch ());
 
@@ -945,6 +921,7 @@ ps_lsetfpregs (struct ps_prochandle *ph, lwpid_t lwpid,
   return PS_OK;
 }
 
+#ifdef PR_MODEL_LP64
 /* Identify process as 32-bit or 64-bit.  At the moment we're using
    BFD to do this.  There might be a more Solaris-specific
    (e.g. procfs) method, but this ought to work.  */
@@ -961,6 +938,7 @@ ps_pdmodel (struct ps_prochandle *ph, int *data_model)
 
   return PS_OK;
 }
+#endif /* PR_MODEL_LP64 */
 
 #if (defined(__i386__) || defined(__x86_64__)) && defined (sun)
 
@@ -970,7 +948,8 @@ ps_pdmodel (struct ps_prochandle *ph, int *data_model)
    of libthread_db would fail because of ps_lgetLDT being undefined.  */
 
 ps_err_e
-ps_lgetLDT (struct ps_prochandle *ph, lwpid_t lwpid, struct ssd *pldt)	/* ARI: editCase function */
+ps_lgetLDT (struct ps_prochandle *ph, lwpid_t lwpid,
+	    struct ssd *pldt)
 {
   /* NOTE: only used on Solaris, therefore OK to refer to procfs.c.  */
   struct ssd *ret;
@@ -978,10 +957,10 @@ ps_lgetLDT (struct ps_prochandle *ph, lwpid_t lwpid, struct ssd *pldt)	/* ARI: e
   /* FIXME: can't I get the process ID from the prochandle or
      something?  */
 
-  if (inferior_ptid.pid () <= 0 || lwpid <= 0)
+  if (ptid_get_pid (inferior_ptid) <= 0 || lwpid <= 0)
     return PS_BADLID;
 
-  ret = procfs_find_LDT_entry (ptid_t (inferior_ptid.pid (),
+  ret = procfs_find_LDT_entry (ptid_build (ptid_get_pid (inferior_ptid),
 			       lwpid, 0));
   if (ret)
     {
@@ -997,29 +976,33 @@ ps_lgetLDT (struct ps_prochandle *ph, lwpid_t lwpid, struct ssd *pldt)	/* ARI: e
 
 /* Convert PTID to printable form.  */
 
-std::string
-sol_thread_target::pid_to_str (ptid_t ptid)
+static const char *
+solaris_pid_to_str (struct target_ops *ops, ptid_t ptid)
 {
-  if (ptid.tid_p ())
+  static char buf[100];
+
+  if (ptid_tid_p (ptid))
     {
       ptid_t lwp;
 
       lwp = thread_to_lwp (ptid, -2);
 
-      if (lwp.pid () == -1)
-	return string_printf ("Thread %ld (defunct)",
-			      ptid.tid ());
-      else if (lwp.pid () != -2)
-	return string_printf ("Thread %ld (LWP %ld)",
-			      ptid.tid (), lwp.lwp ());
+      if (ptid_get_pid (lwp) == -1)
+	xsnprintf (buf, sizeof (buf), "Thread %ld (defunct)",
+		   ptid_get_tid (ptid));
+      else if (ptid_get_pid (lwp) != -2)
+	xsnprintf (buf, sizeof (buf), "Thread %ld (LWP %ld)",
+		 ptid_get_tid (ptid), ptid_get_lwp (lwp));
       else
-	return string_printf ("Thread %ld        ",
-			      ptid.tid ());
+	xsnprintf (buf, sizeof (buf), "Thread %ld        ",
+		   ptid_get_tid (ptid));
     }
-  else if (ptid.lwp () != 0)
-    return string_printf ("LWP    %ld        ", ptid.lwp ());
+  else if (ptid_get_lwp (ptid) != 0)
+    xsnprintf (buf, sizeof (buf), "LWP    %ld        ", ptid_get_lwp (ptid));
   else
-    return string_printf ("process %d    ", ptid.pid ());
+    xsnprintf (buf, sizeof (buf), "process %d    ", ptid_get_pid (ptid));
+
+  return buf;
 }
 
 
@@ -1031,27 +1014,29 @@ sol_update_thread_list_callback (const td_thrhandle_t *th, void *ignored)
 {
   td_err_e retval;
   td_thrinfo_t ti;
+  ptid_t ptid;
 
   retval = p_td_thr_get_info (th, &ti);
   if (retval != TD_OK)
     return -1;
 
-  ptid_t ptid = ptid_t (inferior_ptid.pid (), 0, ti.ti_tid);
-  thread_info *thr = find_thread_ptid (ptid);
-  if (thr == NULL || thr->state == THREAD_EXITED)
+  ptid = ptid_build (ptid_get_pid (inferior_ptid), 0, ti.ti_tid);
+  if (!in_thread_list (ptid) || is_exited (ptid))
     add_thread (ptid);
 
   return 0;
 }
 
-void
-sol_thread_target::update_thread_list ()
+static void
+sol_update_thread_list (struct target_ops *ops)
 {
+  struct target_ops *beneath = find_target_beneath (ops);
+
   /* Delete dead threads.  */
   prune_threads ();
 
   /* Find any new LWP's.  */
-  beneath ()->update_thread_list ();
+  beneath->to_update_thread_list (beneath);
 
   /* Then find any new user-level threads.  */
   p_td_ta_thr_iter (main_ta, sol_update_thread_list_callback, (void *) 0,
@@ -1152,14 +1137,14 @@ thread_db_find_thread_from_tid (struct thread_info *thread, void *data)
 {
   long *tid = (long *) data;
 
-  if (thread->ptid.tid () == *tid)
+  if (ptid_get_tid (thread->ptid) == *tid)
     return 1;
 
   return 0;
 }
 
-ptid_t
-sol_thread_target::get_ada_task_ptid (long lwp, long thread)
+static ptid_t
+sol_get_ada_task_ptid (struct target_ops *self, long lwp, long thread)
 {
   struct thread_info *thread_info =
     iterate_over_threads (thread_db_find_thread_from_tid, &thread);
@@ -1168,7 +1153,7 @@ sol_thread_target::get_ada_task_ptid (long lwp, long thread)
     {
       /* The list of threads is probably not up to date.  Find any
          thread that is missing from the list, and try again.  */
-      update_thread_list ();
+      sol_update_thread_list (&current_target);
       thread_info = iterate_over_threads (thread_db_find_thread_from_tid,
                                           &thread);
     }
@@ -1178,10 +1163,33 @@ sol_thread_target::get_ada_task_ptid (long lwp, long thread)
   return (thread_info->ptid);
 }
 
+static void
+init_sol_thread_ops (void)
+{
+  sol_thread_ops.to_shortname = "solaris-threads";
+  sol_thread_ops.to_longname = "Solaris threads and pthread.";
+  sol_thread_ops.to_doc = "Solaris threads and pthread support.";
+  sol_thread_ops.to_detach = sol_thread_detach;
+  sol_thread_ops.to_resume = sol_thread_resume;
+  sol_thread_ops.to_wait = sol_thread_wait;
+  sol_thread_ops.to_fetch_registers = sol_thread_fetch_registers;
+  sol_thread_ops.to_store_registers = sol_thread_store_registers;
+  sol_thread_ops.to_xfer_partial = sol_thread_xfer_partial;
+  sol_thread_ops.to_mourn_inferior = sol_thread_mourn_inferior;
+  sol_thread_ops.to_thread_alive = sol_thread_alive;
+  sol_thread_ops.to_pid_to_str = solaris_pid_to_str;
+  sol_thread_ops.to_update_thread_list = sol_update_thread_list;
+  sol_thread_ops.to_stratum = thread_stratum;
+  sol_thread_ops.to_get_ada_task_ptid = sol_get_ada_task_ptid;
+  sol_thread_ops.to_magic = OPS_MAGIC;
+}
+
 void
 _initialize_sol_thread (void)
 {
   void *dlhandle;
+
+  init_sol_thread_ops ();
 
   dlhandle = dlopen ("libthread_db.so.1", RTLD_NOW);
   if (!dlhandle)
@@ -1215,11 +1223,13 @@ _initialize_sol_thread (void)
   resolve (td_thr_getgregs);
   resolve (td_thr_setgregs);
 
+  complete_target_initialization (&sol_thread_ops);
+
   add_cmd ("sol-threads", class_maintenance, info_solthreads,
 	   _("Show info on Solaris user threads."), &maintenanceinfolist);
 
   /* Hook into new_objfile notification.  */
-  gdb::observers::new_objfile.attach (sol_thread_new_objfile);
+  observer_attach_new_objfile (sol_thread_new_objfile);
   return;
 
  die:

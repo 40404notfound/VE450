@@ -1,6 +1,6 @@
 /* Shared general utility routines for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2019 Free Software Foundation, Inc.
+   Copyright (C) 1986-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -22,10 +22,82 @@
 #include "host-defs.h"
 #include <ctype.h>
 
+/* The xmalloc() (libiberty.h) family of memory management routines.
+
+   These are like the ISO-C malloc() family except that they implement
+   consistent semantics and guard against typical memory management
+   problems.  */
+
+/* NOTE: These are declared using PTR to ensure consistency with
+   "libiberty.h".  xfree() is GDB local.  */
+
+PTR                            /* ARI: PTR */
+xmalloc (size_t size)
+{
+  void *val;
+
+  /* See libiberty/xmalloc.c.  This function need's to match that's
+     semantics.  It never returns NULL.  */
+  if (size == 0)
+    size = 1;
+
+  val = malloc (size);         /* ARI: malloc */
+  if (val == NULL)
+    malloc_failure (size);
+
+  return val;
+}
+
+PTR                              /* ARI: PTR */
+xrealloc (PTR ptr, size_t size)          /* ARI: PTR */
+{
+  void *val;
+
+  /* See libiberty/xmalloc.c.  This function need's to match that's
+     semantics.  It never returns NULL.  */
+  if (size == 0)
+    size = 1;
+
+  if (ptr != NULL)
+    val = realloc (ptr, size);	/* ARI: realloc */
+  else
+    val = malloc (size);	        /* ARI: malloc */
+  if (val == NULL)
+    malloc_failure (size);
+
+  return val;
+}
+
+PTR                            /* ARI: PTR */           
+xcalloc (size_t number, size_t size)
+{
+  void *mem;
+
+  /* See libiberty/xmalloc.c.  This function need's to match that's
+     semantics.  It never returns NULL.  */
+  if (number == 0 || size == 0)
+    {
+      number = 1;
+      size = 1;
+    }
+
+  mem = calloc (number, size);      /* ARI: xcalloc */
+  if (mem == NULL)
+    malloc_failure (number * size);
+
+  return mem;
+}
+
 void *
 xzalloc (size_t size)
 {
   return xcalloc (1, size);
+}
+
+void
+xmalloc_failed (size_t size)
+{
+  malloc_failure (size);
 }
 
 /* Like asprintf/vasprintf but get an internal_error if the call
@@ -335,24 +407,4 @@ stringify_argv (const std::vector<char *> &args)
     }
 
   return ret;
-}
-
-/* See common/common-utils.h.  */
-
-ULONGEST
-align_up (ULONGEST v, int n)
-{
-  /* Check that N is really a power of two.  */
-  gdb_assert (n && (n & (n-1)) == 0);
-  return (v + n - 1) & -n;
-}
-
-/* See common/common-utils.h.  */
-
-ULONGEST
-align_down (ULONGEST v, int n)
-{
-  /* Check that N is really a power of two.  */
-  gdb_assert (n && (n & (n-1)) == 0);
-  return (v & -n);
 }

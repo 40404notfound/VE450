@@ -1,5 +1,5 @@
 /* Disassemble AVR instructions.
-   Copyright (C) 1999-2019 Free Software Foundation, Inc.
+   Copyright (C) 1999-2018 Free Software Foundation, Inc.
 
    Contributed by Denis Chertykov <denisc@overta.ru>
 
@@ -212,8 +212,7 @@ avr_operand (unsigned int insn, unsigned int insn2, unsigned int pc, int constra
 
     case 'n':
       sprintf (buf, "??");
-      /* xgettext:c-format */
-      opcodes_error_handler (_("internal disassembler error"));
+      fprintf (stderr, _("Internal disassembler error"));
       ok = 0;
       break;
 
@@ -266,8 +265,7 @@ avr_operand (unsigned int insn, unsigned int insn2, unsigned int pc, int constra
 
     default:
       sprintf (buf, "??");
-      /* xgettext:c-format */
-      opcodes_error_handler (_("unknown constraint `%c'"), constraint);
+      fprintf (stderr, _("unknown constraint `%c'"), constraint);
       ok = 0;
     }
 

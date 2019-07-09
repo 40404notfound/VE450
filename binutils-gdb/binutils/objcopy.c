@@ -1,5 +1,5 @@
 /* objcopy.c -- copy object file from input to output, optionally massaging it.
-   Copyright (C) 1991-2019 Free Software Foundation, Inc.
+   Copyright (C) 1991-2018 Free Software Foundation, Inc.
 
    This file is part of GNU Binutils.
 
@@ -253,14 +253,6 @@ static htab_t redefine_specific_reverse_htab = NULL;
 static struct addsym_node *add_sym_list = NULL, **add_sym_tail = &add_sym_list;
 static int add_symbols = 0;
 
-static char *strip_specific_buffer = NULL;
-static char *strip_unneeded_buffer = NULL;
-static char *keep_specific_buffer = NULL;
-static char *localize_specific_buffer = NULL;
-static char *globalize_specific_buffer = NULL;
-static char *keepglobal_specific_buffer = NULL;
-static char *weaken_specific_buffer = NULL;
-
 /* If this is TRUE, we weaken global symbols (set BSF_WEAK).  */
 static bfd_boolean weaken = FALSE;
 
@@ -357,7 +349,6 @@ enum command_line_switch
   OPTION_STRIP_UNNEEDED_SYMBOLS,
   OPTION_SUBSYSTEM,
   OPTION_UPDATE_SECTION,
-  OPTION_VERILOG_DATA_WIDTH,
   OPTION_WEAKEN,
   OPTION_WEAKEN_SYMBOLS,
   OPTION_WRITABLE_TEXT
@@ -494,7 +485,6 @@ static struct option copy_options[] =
   {"target", required_argument, 0, 'F'},
   {"update-section", required_argument, 0, OPTION_UPDATE_SECTION},
   {"verbose", no_argument, 0, 'v'},
-  {"verilog-data-width", required_argument, 0, OPTION_VERILOG_DATA_WIDTH},
   {"version", no_argument, 0, 'V'},
   {"weaken", no_argument, 0, OPTION_WEAKEN},
   {"weaken-symbol", required_argument, 0, 'W'},
@@ -520,11 +510,6 @@ extern unsigned int _bfd_srec_len;
    This variable is defined in bfd/srec.c and can be toggled
    on by the --srec-forceS3 command line switch.  */
 extern bfd_boolean _bfd_srec_forceS3;
-
-/* Width of data in bytes for verilog output.
-   This variable is declared in bfd/verilog.c and can be modified by
-   the --verilog-data-width parameter.  */
-extern unsigned int VerilogDataWidth;
 
 /* Forward declarations.  */
 static void setup_section (bfd *, asection *, void *);
@@ -660,7 +645,6 @@ copy_usage (FILE *stream, int exit_status)
      --decompress-debug-sections   Decompress DWARF debug sections using zlib\n\
      --elf-stt-common=[yes|no]     Generate ELF common symbols with STT_COMMON\n\
                                      type\n\
-     --verilog-data-width <number> Specifies data width, in bytes, for verilog output\n\
   -M  --merge-notes                Remove redundant entries in note sections\n\
       --no-merge-notes             Do not attempt to remove redundant notes (default)\n\
   -v --verbose                     List all object files modified\n\
@@ -1050,7 +1034,7 @@ add_specific_symbol_node (const void *node, htab_t htab)
 #define IS_LINE_TERMINATOR(c) ((c) == '\n' || (c) == '\r' || (c) == '\0')
 
 static void
-add_specific_symbols (const char *filename, htab_t htab, char **buffer_p)
+add_specific_symbols (const char *filename, htab_t htab)
 {
   off_t  size;
   FILE * f;
@@ -1158,10 +1142,6 @@ add_specific_symbols (const char *filename, htab_t htab, char **buffer_p)
       line = eol;
       line_count ++;
     }
-
-  /* Do not free the buffer.  Parts of it will have been referenced
-     in the calls to add_specific_symbol.  */
-  *buffer_p = buffer;
 }
 
 /* See whether a symbol should be stripped or kept
@@ -1231,13 +1211,14 @@ group_signature (asection *group)
     return NULL;
 
   ghdr = &elf_section_data (group)->this_hdr;
-  if (ghdr->sh_link == elf_onesymtab (abfd))
+  if (ghdr->sh_link < elf_numsections (abfd))
     {
       const struct elf_backend_data *bed = get_elf_backend_data (abfd);
-      Elf_Internal_Shdr *symhdr = &elf_symtab_hdr (abfd);
+      Elf_Internal_Shdr *symhdr = elf_elfsections (abfd) [ghdr->sh_link];
 
-      if (ghdr->sh_info > 0
-	  && ghdr->sh_info < symhdr->sh_size / bed->s->sizeof_sym)
+      if (symhdr->sh_type == SHT_SYMTAB
+	  && ghdr->sh_info > 0
+	  && ghdr->sh_info < (symhdr->sh_size / bed->s->sizeof_sym))
 	return isympp[ghdr->sh_info - 1];
     }
   return NULL;
@@ -1363,15 +1344,14 @@ is_strip_section (bfd *abfd ATTRIBUTE_UNUSED, asection *sec)
       const char *gname;
       asection *elt, *first;
 
-      gsym = group_signature (sec);
-      /* Strip groups without a valid signature.  */
-      if (gsym == NULL)
-	return TRUE;
-
       /* PR binutils/3181
 	 If we are going to strip the group signature symbol, then
 	 strip the group section too.  */
-      gname = gsym->name;
+      gsym = group_signature (sec);
+      if (gsym != NULL)
+	gname = gsym->name;
+      else
+	gname = sec->name;
       if ((strip_symbols == STRIP_ALL
 	   && !is_specified_symbol (gname, keep_specific_htab))
 	  || is_specified_symbol (gname, strip_specific_htab))
@@ -1837,7 +1817,6 @@ add_redefine_syms_file (const char *filename)
     fatal (_("%s:%d: premature end of file"), filename, lineno);
 
   free (buf);
-  fclose (file);
 }
 
 /* Copy unknown object file IBFD onto OBFD.
@@ -2085,7 +2064,7 @@ merge_gnu_build_notes (bfd * abfd, asection * sec, bfd_size_type size, bfd_byte 
 	     For now though, since v1 and v2 was not intended to
 	     handle gaps, we chose an artificially large end
 	     address.  */
-	  end = (bfd_vma) -1;
+	  end = (bfd_vma) 0x7ffffffffffffffUL;
 	  break;
 	  
 	case 8:
@@ -2104,7 +2083,7 @@ merge_gnu_build_notes (bfd * abfd, asection * sec, bfd_size_type size, bfd_byte 
 		 For now though, since v1 and v2 was not intended to
 		 handle gaps, we chose an artificially large end
 		 address.  */
-	      end = (bfd_vma) -1;
+	      end = (bfd_vma) 0x7ffffffffffffffUL;
 	    }
 	  break;
 
@@ -2195,7 +2174,7 @@ merge_gnu_build_notes (bfd * abfd, asection * sec, bfd_size_type size, bfd_byte 
      3. Eliminate any NT_GNU_BUILD_ATTRIBUTE_OPEN notes that have the same
         full name field as the immediately preceeding note with the same type
 	of name and whose address ranges coincide.
-	IE - if there are gaps in the coverage of the notes, then these gaps
+	IE - it there are gaps in the coverage of the notes, then these gaps
 	must be preserved.
      4. Combine the numeric value of any NT_GNU_BUILD_ATTRIBUTE_OPEN notes
         of type GNU_BUILD_ATTRIBUTE_STACK_SIZE.
@@ -2203,48 +2182,16 @@ merge_gnu_build_notes (bfd * abfd, asection * sec, bfd_size_type size, bfd_byte 
         its description field is empty then the nearest preceeding OPEN note
 	with a non-empty description field must also be preserved *OR* the
 	description field of the note must be changed to contain the starting
-	address to which it refers.
-     6. Notes with the same start and end address can be deleted.  */
+	address to which it refers.  */
   for (pnote = pnotes + 1; pnote < pnotes_end; pnote ++)
     {
       int                      note_type;
       objcopy_internal_note *  back;
       objcopy_internal_note *  prev_open_with_range = NULL;
 
-      /* Rule 6 - delete 0-range notes.  */
-      if (pnote->start == pnote->end)
-	{
-	  duplicate_found = TRUE;
-	  pnote->note.type = 0;
-	  continue;
-	}
-
       /* Rule 2 - preserve function notes.  */
       if (! is_open_note (pnote))
-	{
-	  int iter;
-
-	  /* Check to see if there is an identical previous function note.
-	     This can happen with overlays for example.  */
-	  for (iter = 0, back = pnote -1; back >= pnotes; back --)
-	    {
-	      if (back->start == pnote->start
-		  && back->end == pnote->end
-		  && back->note.namesz == pnote->note.namesz
-		  && memcmp (back->note.namedata, pnote->note.namedata, pnote->note.namesz) == 0)
-		{
- fprintf (stderr, "DUP FUNXC\n");
-		  duplicate_found = TRUE;
-		  pnote->note.type = 0;
-		  break;
-		}
-
-	      /* Don't scan too far back however.  */
-	      if (iter ++ > 16)
-		break;
-	    }
-	  continue;
-	}
+	continue;
 
       note_type = pnote->note.namedata[attribute_type_byte];
 
@@ -2876,7 +2823,6 @@ copy_object (bfd *ibfd, bfd *obfd, const bfd_arch_info_type *input_arch)
 			     pdump->filename,
 			     strerror (errno));
 		  free (contents);
-		  fclose (f);
 		  return FALSE;
 		}
 	    }
@@ -3077,32 +3023,16 @@ copy_object (bfd *ibfd, bfd *obfd, const bfd_arch_info_type *input_arch)
 	 ignore input sections which have no corresponding output
 	 section.  */
       if (strip_symbols != STRIP_ALL)
-	{
-	  bfd_set_error (bfd_error_no_error);
-	  bfd_map_over_sections (ibfd,
-				 mark_symbols_used_in_relocations,
-				 isympp);
-	  if (bfd_get_error () != bfd_error_no_error)
-	    {
-	      status = 1;
-	      return FALSE;
-	    }
-	}
-
+	bfd_map_over_sections (ibfd,
+			       mark_symbols_used_in_relocations,
+			       isympp);
       osympp = (asymbol **) xmalloc ((symcount + add_symbols + 1) * sizeof (asymbol *));
       symcount = filter_symbols (ibfd, obfd, osympp, isympp, symcount);
     }
 
   if (convert_debugging && dhandle != NULL)
     {
-      bfd_boolean res;
-
-      res = write_debugging_info (obfd, dhandle, &symcount, &osympp);
-
-      free (dhandle);
-      dhandle = NULL; /* Paranoia...  */
-
-      if (! res)
+      if (! write_debugging_info (obfd, dhandle, &symcount, &osympp))
 	{
 	  status = 1;
 	  return FALSE;
@@ -3214,7 +3144,6 @@ copy_object (bfd *ibfd, bfd *obfd, const bfd_arch_info_type *input_arch)
 						  off, now))
 		    {
 		      bfd_nonfatal_message (NULL, obfd, osections[i], NULL);
-		      free (buf);
 		      return FALSE;
 		    }
 
@@ -3223,10 +3152,6 @@ copy_object (bfd *ibfd, bfd *obfd, const bfd_arch_info_type *input_arch)
 		}
 	    }
 	}
-
-      free (buf);
-      free (gaps);
-      gaps = NULL;
     }
 
   /* Allow the BFD backend to copy any private data it understands
@@ -3284,27 +3209,6 @@ copy_archive (bfd *ibfd, bfd *obfd, const char *output_target,
   char *dir;
   const char *filename;
 
-  /* PR 24281: It is not clear what should happen when copying a thin archive.
-     One part is straight forward - if the output archive is in a different
-     directory from the input archive then any relative paths in the library
-     should be adjusted to the new location.  But if any transformation
-     options are active (eg strip, rename, add, etc) then the implication is
-     that these should be applied to the files pointed to by the archive.
-     But since objcopy is not destructive, this means that new files must be
-     created, and there is no guidance for the names of the new files.  (Plus
-     this conflicts with one of the goals of thin libraries - only taking up
-     a  minimal amount of space in the file system).
-
-     So for now we fail if an attempt is made to copy such libraries.  */
-  if (ibfd->is_thin_archive)
-    {
-      status = 1;
-      bfd_set_error (bfd_error_invalid_operation);
-      bfd_nonfatal_message (NULL, ibfd, NULL,
-			    _("sorry: copying thin archives is not currently supported"));
-      return;
-    }
-
   /* Make a temp directory to hold the contents.  */
   dir = make_tempdir (bfd_get_filename (obfd));
   if (dir == NULL)
@@ -3358,10 +3262,8 @@ copy_archive (bfd *ibfd, bfd *obfd, const char *output_target,
       /* If the file already exists, make another temp dir.  */
       if (stat (output_name, &buf) >= 0)
 	{
-	  char * tmpdir = make_tempdir (output_name);
-
-	  free (output_name);
-	  if (tmpdir == NULL)
+	  output_name = make_tempdir (output_name);
+	  if (output_name == NULL)
 	    {
 	      non_fatal (_("cannot create tempdir for archive copying (error: %s)"),
 			 strerror (errno));
@@ -3370,11 +3272,11 @@ copy_archive (bfd *ibfd, bfd *obfd, const char *output_target,
 	    }
 
 	  l = (struct name_list *) xmalloc (sizeof (struct name_list));
-	  l->name = tmpdir;
+	  l->name = output_name;
 	  l->next = list;
 	  l->obfd = NULL;
 	  list = l;
-	  output_name = concat (tmpdir, "/",
+	  output_name = concat (output_name, "/",
 				bfd_get_filename (this_element), (char *) 0);
 	}
 
@@ -3481,22 +3383,16 @@ copy_archive (bfd *ibfd, bfd *obfd, const char *output_target,
 
  cleanup_and_exit:
   /* Delete all the files that we opened.  */
-  {
-    struct name_list * next;
-
-    for (l = list; l != NULL; l = next)
-      {
-	if (l->obfd == NULL)
-	  rmdir (l->name);
-	else
-	  {
-	    bfd_close (l->obfd);
-	    unlink (l->name);
-	  }
-	next = l->next;
-	free (l);
-      }
-  }
+  for (l = list; l != NULL; l = l->next)
+    {
+      if (l->obfd == NULL)
+	rmdir (l->name);
+      else
+	{
+	  bfd_close (l->obfd);
+	  unlink (l->name);
+	}
+    }
 
   rmdir (dir);
 }
@@ -3988,22 +3884,21 @@ discard_relocations (bfd *ibfd ATTRIBUTE_UNUSED, asection *isection)
 
 /* Wrapper for dealing with --remove-section (-R) command line arguments.
    A special case is detected here, if the user asks to remove a relocation
-   section (one starting with ".rela" or ".rel") then this removal must
-   be done using a different technique in a relocatable object.  */
+   section (one starting with ".rela." or ".rel.") then this removal must
+   be done using a different technique.  */
 
 static void
 handle_remove_section_option (const char *section_pattern)
 {
-  find_section_list (section_pattern, TRUE, SECTION_CONTEXT_REMOVE);
-  if (strncmp (section_pattern, ".rel", 4) == 0)
+  if (strncmp (section_pattern, ".rela.", 6) == 0)
+    handle_remove_relocations_option (section_pattern + 5);
+  else if (strncmp (section_pattern, ".rel.", 5) == 0)
+    handle_remove_relocations_option (section_pattern + 4);
+  else
     {
-      section_pattern += 4;
-      if (*section_pattern == 'a')
-	section_pattern++;
-      if (*section_pattern)
-	handle_remove_relocations_option (section_pattern);
+      find_section_list (section_pattern, TRUE, SECTION_CONTEXT_REMOVE);
+      sections_removed = TRUE;
     }
-  sections_removed = TRUE;
 }
 
 /* Copy relocations in input section ISECTION of IBFD to an output
@@ -4347,10 +4242,13 @@ write_debugging_info (bfd *obfd, void *dhandle,
 		      long *symcountp ATTRIBUTE_UNUSED,
 		      asymbol ***symppp ATTRIBUTE_UNUSED)
 {
+  if (bfd_get_flavour (obfd) == bfd_target_ieee_flavour)
+    return write_ieee_debugging_info (obfd, dhandle);
+
   if (bfd_get_flavour (obfd) == bfd_target_coff_flavour
       || bfd_get_flavour (obfd) == bfd_target_elf_flavour)
     {
-      bfd_byte *syms, *strings = NULL;
+      bfd_byte *syms, *strings;
       bfd_size_type symsize, stringsize;
       asection *stabsec, *stabstrsec;
       flagword flags;
@@ -4372,7 +4270,6 @@ write_debugging_info (bfd *obfd, void *dhandle,
 	{
 	  bfd_nonfatal_message (NULL, obfd, NULL,
 				_("can't create debugging section"));
-	  free (strings);
 	  return FALSE;
 	}
 
@@ -4386,7 +4283,6 @@ write_debugging_info (bfd *obfd, void *dhandle,
 	{
 	  bfd_nonfatal_message (NULL, obfd, NULL,
 				_("can't set debugging section contents"));
-	  free (strings);
 	  return FALSE;
 	}
 
@@ -4418,7 +4314,8 @@ strip_main (int argc, char *argv[])
   int c;
   int i;
   char *output_file = NULL;
-  bfd_boolean merge_notes_set = FALSE;
+
+  merge_notes = TRUE;
 
   while ((c = getopt_long (argc, argv, "I:O:F:K:MN:R:o:sSpdgxXHhVvwDU",
 			   strip_options, (int *) 0)) != EOF)
@@ -4459,11 +4356,9 @@ strip_main (int argc, char *argv[])
 	  break;
 	case 'M':
 	  merge_notes = TRUE;
-	  merge_notes_set = TRUE;
 	  break;
 	case OPTION_NO_MERGE_NOTES:
 	  merge_notes = FALSE;
-	  merge_notes_set = TRUE;
 	  break;
 	case 'N':
 	  add_specific_symbol (optarg, strip_specific_htab);
@@ -4514,16 +4409,6 @@ strip_main (int argc, char *argv[])
 	  strip_usage (stderr, 1);
 	}
     }
-
-  /* If the user has not expressly chosen to merge/not-merge ELF notes
-     then enable the merging unless we are stripping debug or dwo info.  */
-  if (! merge_notes_set
-      && (strip_symbols == STRIP_UNDEF
-	  || strip_symbols == STRIP_ALL
-	  || strip_symbols == STRIP_UNNEEDED
-	  || strip_symbols == STRIP_NONDEBUG
-	  || strip_symbols == STRIP_NONDWO))
-    merge_notes = TRUE;
 
   if (formats_info)
     {
@@ -4800,8 +4685,6 @@ copy_main (int argc, char *argv[])
   bfd_boolean show_version = FALSE;
   bfd_boolean change_warn = TRUE;
   bfd_boolean formats_info = FALSE;
-  bfd_boolean use_globalize = FALSE;
-  bfd_boolean use_keep_global = FALSE;
   int c;
   struct stat statbuf;
   const bfd_arch_info_type *input_arch = NULL;
@@ -4920,12 +4803,10 @@ copy_main (int argc, char *argv[])
 	  break;
 
 	case OPTION_GLOBALIZE_SYMBOL:
-	  use_globalize = TRUE;
 	  add_specific_symbol (optarg, globalize_specific_htab);
 	  break;
 
 	case 'G':
-	  use_keep_global = TRUE;
 	  add_specific_symbol (optarg, keepglobal_specific_htab);
 	  break;
 
@@ -5322,18 +5203,15 @@ copy_main (int argc, char *argv[])
 	  break;
 
 	case OPTION_STRIP_SYMBOLS:
-	  add_specific_symbols (optarg, strip_specific_htab,
-				&strip_specific_buffer);
+	  add_specific_symbols (optarg, strip_specific_htab);
 	  break;
 
 	case OPTION_STRIP_UNNEEDED_SYMBOLS:
-	  add_specific_symbols (optarg, strip_unneeded_htab,
-				&strip_unneeded_buffer);
+	  add_specific_symbols (optarg, strip_unneeded_htab);
 	  break;
 
 	case OPTION_KEEP_SYMBOLS:
-	  add_specific_symbols (optarg, keep_specific_htab,
-				&keep_specific_buffer);
+	  add_specific_symbols (optarg, keep_specific_htab);
 	  break;
 
 	case OPTION_LOCALIZE_HIDDEN:
@@ -5341,8 +5219,7 @@ copy_main (int argc, char *argv[])
 	  break;
 
 	case OPTION_LOCALIZE_SYMBOLS:
-	  add_specific_symbols (optarg, localize_specific_htab,
-				&localize_specific_buffer);
+	  add_specific_symbols (optarg, localize_specific_htab);
 	  break;
 
 	case OPTION_LONG_SECTION_NAMES:
@@ -5357,20 +5234,15 @@ copy_main (int argc, char *argv[])
 	  break;
 
 	case OPTION_GLOBALIZE_SYMBOLS:
-	  use_globalize = TRUE;
-	  add_specific_symbols (optarg, globalize_specific_htab,
-				&globalize_specific_buffer);
+	  add_specific_symbols (optarg, globalize_specific_htab);
 	  break;
 
 	case OPTION_KEEPGLOBAL_SYMBOLS:
-	  use_keep_global = TRUE;
-	  add_specific_symbols (optarg, keepglobal_specific_htab,
-				&keepglobal_specific_buffer);
+	  add_specific_symbols (optarg, keepglobal_specific_htab);
 	  break;
 
 	case OPTION_WEAKEN_SYMBOLS:
-	  add_specific_symbols (optarg, weaken_specific_htab,
-				&weaken_specific_buffer);
+	  add_specific_symbols (optarg, weaken_specific_htab);
 	  break;
 
 	case OPTION_ALT_MACH_CODE:
@@ -5486,12 +5358,6 @@ copy_main (int argc, char *argv[])
 	  }
 	  break;
 
-	case OPTION_VERILOG_DATA_WIDTH:
-	  VerilogDataWidth = parse_vma (optarg, "--verilog-data-width");
-	  if (VerilogDataWidth < 1)
-	    fatal (_("verilog data width must be at least 1 byte"));
-	  break;
-
 	case 0:
 	  /* We've been given a long option.  */
 	  break;
@@ -5504,9 +5370,6 @@ copy_main (int argc, char *argv[])
 	  copy_usage (stderr, 1);
 	}
     }
-
-  if (use_globalize && use_keep_global)
-    fatal(_("--globalize-symbol(s) is incompatible with -G/--keep-global-symbol(s)"));
 
   if (formats_info)
     {
@@ -5666,27 +5529,6 @@ copy_main (int argc, char *argv[])
 	}
     }
 
-  if (strip_specific_buffer)
-    free (strip_specific_buffer);
-
-  if (strip_unneeded_buffer)
-    free (strip_unneeded_buffer);
-
-  if (keep_specific_buffer)
-    free (keep_specific_buffer);
-
-  if (localize_specific_buffer)
-    free (globalize_specific_buffer);
-
-  if (globalize_specific_buffer)
-    free (globalize_specific_buffer);
-
-  if (keepglobal_specific_buffer)
-    free (keepglobal_specific_buffer);
-
-  if (weaken_specific_buffer)
-    free (weaken_specific_buffer);
-
   return 0;
 }
 
@@ -5712,8 +5554,7 @@ main (int argc, char *argv[])
   strip_symbols = STRIP_UNDEF;
   discard_locals = LOCALS_UNDEF;
 
-  if (bfd_init () != BFD_INIT_MAGIC)
-    fatal (_("fatal error: libbfd ABI mismatch"));
+  bfd_init ();
   set_default_bfd_target ();
 
   if (is_strip < 0)

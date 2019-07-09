@@ -1,6 +1,6 @@
 ## Process this file with automake to generate Makefile.in
 #
-#   Copyright (C) 2012-2019 Free Software Foundation, Inc.
+#   Copyright (C) 2012-2018 Free Software Foundation, Inc.
 #
 # This file is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,7 +17,7 @@
 # <http://www.gnu.org/licenses/>.
 #
 
-AUTOMAKE_OPTIONS = foreign no-dist
+AUTOMAKE_OPTIONS = 1.11 foreign no-dist
 ACLOCAL_AMFLAGS = -I .. -I ../config -I ../bfd
 
 # Build '.' first so all generated files exist.
@@ -28,6 +28,7 @@ BFDDIR = $(srcdir)/../bfd
 
 WARN_CFLAGS = @WARN_CFLAGS@
 NO_WERROR = @NO_WERROR@
+NO_WMISSING_FIELD_INITIALIZERS = @NO_WMISSING_FIELD_INITIALIZERS@
 AM_CFLAGS = $(WARN_CFLAGS)
 
 COMPILE_FOR_BUILD = $(CC_FOR_BUILD) $(INCLUDES) $(AM_CPPFLAGS) \
@@ -59,13 +60,15 @@ BUILD_LIB_DEPS = @BUILD_LIB_DEPS@
 # Header files.
 HFILES = \
 	aarch64-asm.h aarch64-dis.h aarch64-opc.h aarch64-tbl.h \
-	bpf-desc.h bpf-opc.h \
 	epiphany-desc.h epiphany-opc.h \
 	fr30-desc.h fr30-opc.h \
 	frv-desc.h frv-opc.h \
+	h8500-opc.h \
 	i386-init.h \
 	i386-opc.h \
 	i386-tbl.h \
+	i386-desc.h \
+	i386-opc.h \
 	ia64-asmtab.h \
 	ia64-opc.h \
 	ip2k-desc.h ip2k-opc.h \
@@ -80,7 +83,9 @@ HFILES = \
 	mt-desc.h mt-opc.h \
 	score-opc.h \
 	sh-opc.h \
+	sh64-opc.h \
 	sysdep.h \
+	w65-opc.h \
 	xc16x-desc.h xc16x-opc.h \
 	xstormy16-desc.h xstormy16-opc.h \
 	z8k-opc.h \
@@ -113,17 +118,11 @@ TARGET_LIBOPCODES_CFILES = \
 	cris-opc.c \
 	crx-dis.c \
 	crx-opc.c \
-	csky-dis.c \
 	d10v-dis.c \
 	d10v-opc.c \
 	d30v-dis.c \
 	d30v-opc.c \
 	dlx-dis.c \
-	bpf-asm.c \
-	bpf-desc.c \
-	bpf-dis.c \
-	bpf-ibld.c \
-	bpf-opc.c \
 	epiphany-asm.c \
 	epiphany-desc.c \
 	epiphany-dis.c \
@@ -142,9 +141,17 @@ TARGET_LIBOPCODES_CFILES = \
 	ft32-dis.c \
 	ft32-opc.c \
 	h8300-dis.c \
+	h8500-dis.c \
 	hppa-dis.c \
+	i370-dis.c \
+	i370-opc.c \
 	i386-dis.c \
 	i386-opc.c \
+	i386-asm.c \
+	i386-desc.c \
+	i386-ibld.c \
+	i860-dis.c \
+	i960-dis.c \
 	ia64-dis.c \
 	ia64-opc.c \
 	ip2k-asm.c \
@@ -182,8 +189,7 @@ TARGET_LIBOPCODES_CFILES = \
 	m68hc11-opc.c \
 	m68k-dis.c \
 	m68k-opc.c \
-	s12z-dis.c \
-	s12z-opc.c \
+	m88k-dis.c \
 	mcore-dis.c \
 	mep-asm.c \
 	mep-desc.c \
@@ -209,7 +215,6 @@ TARGET_LIBOPCODES_CFILES = \
 	mt-opc.c \
 	nds32-asm.c \
 	nds32-dis.c \
-	nfp-dis.c \
 	nios2-dis.c \
 	nios2-opc.c \
 	ns32k-dis.c \
@@ -226,7 +231,10 @@ TARGET_LIBOPCODES_CFILES = \
 	ppc-opc.c \
 	pru-dis.c \
 	pru-opc.c \
+	riscv-asm.c \
+	riscv-desc.c \
 	riscv-dis.c \
+	riscv-ibld.c \
 	riscv-opc.c \
 	rl78-decode.c \
 	rl78-dis.c \
@@ -237,6 +245,8 @@ TARGET_LIBOPCODES_CFILES = \
 	score-dis.c \
 	score7-dis.c \
 	sh-dis.c \
+	sh64-dis.c \
+	sh64-opc.c \
 	sparc-dis.c \
 	sparc-opc.c \
 	spu-dis.c \
@@ -257,6 +267,7 @@ TARGET_LIBOPCODES_CFILES = \
 	vax-dis.c \
 	visium-dis.c \
 	visium-opc.c \
+	w65-dis.c \
 	wasm32-dis.c \
 	xc16x-asm.c \
 	xc16x-desc.c \
@@ -272,12 +283,7 @@ TARGET_LIBOPCODES_CFILES = \
 	xgate-dis.c \
 	xgate-opc.c \
 	z80-dis.c \
-	z8k-dis.c \
-	riscv-asm.c \
-	riscv-desc.c \
-	riscv-dis.c \
-	riscv-ibld.c \
-	riscv-opc.c
+	z8k-dis.c
 
 # C source files that correspond to .o's ending up in libopcodes.
 LIBOPCODES_CFILES = \
@@ -382,7 +388,6 @@ CGENDEPS = \
 CGEN_CPUS = epiphany fr30 frv ip2k iq2000 lm32 m32c m32r mep mt or1k xc16x xstormy16
 
 if CGEN_MAINT
-BPF_DEPS = stamp-bpf
 EPIPHANY_DEPS = stamp-epiphany
 FR30_DEPS = stamp-fr30
 FRV_DEPS = stamp-frv
@@ -396,9 +401,9 @@ MT_DEPS = stamp-mt
 OR1K_DEPS = stamp-or1k
 XC16X_DEPS = stamp-xc16x
 XSTORMY16_DEPS = stamp-xstormy16
-RISCV_DEPS = stamp-riscv 
+RISCV_DEPS = stamp-riscv
+I386_DEPS = stamp-i386
 else
-BPF_DEPS =
 EPIPHANY_DEPS =
 FR30_DEPS =
 FRV_DEPS =
@@ -413,6 +418,7 @@ OR1K_DEPS =
 XC16X_DEPS =
 XSTORMY16_DEPS =
 RISCV_DEPS =
+I386_DEPS =
 endif
 
 run-cgen:
@@ -431,15 +437,6 @@ run-cgen-all:
 .PHONY: run-cgen-all
 
 # For now, require developers to configure with --enable-cgen-maint.
-
-$(srcdir)/bpf-desc.h $(srcdir)/bpf-desc.c $(srcdir)/bpf-opc.h \
-		$(srcdir)/bpf-opc.c $(srcdir)/bpf-ibld.c \
-		$(srcdir)/bpf-asm.c $(srcdir)/bpf-dis.c: $(BPF_DEPS)
-	@true
-
-stamp-bpf: $(CGENDEPS) $(CPUDIR)/bpf.cpu $(CPUDIR)/bpf.opc
-	$(MAKE) run-cgen arch=bpf prefix=bpf \
-		archfile=$(CPUDIR)/bpf.cpu opcfile=$(CPUDIR)/bpf.opc
 
 $(srcdir)/epiphany-desc.h $(srcdir)/epiphany-desc.c $(srcdir)/epiphany-opc.h \
 		$(srcdir)/epiphany-opc.c $(srcdir)/epiphany-ibld.c \
@@ -487,7 +484,7 @@ stamp-lm32: $(CGENDEPS) $(CPUDIR)/lm32.cpu $(CPUDIR)/lm32.opc
 		extrafiles=opinst
 
 $(srcdir)/m32c-desc.h $(srcdir)/m32c-desc.c $(srcdir)/m32c-opc.h $(srcdir)/m32c-opc.c $(srcdir)/m32c-ibld.c $(srcdir)/m32c-asm.c $(srcdir)/m32c-dis.c: $(M32C_DEPS)
-	@true
+#	@true
 stamp-m32c: $(CGENDEPS) $(CPUDIR)/m32c.cpu $(CPUDIR)/m32c.opc
 	$(MAKE) run-cgen arch=m32c prefix=m32c options= \
 		archfile=$(CPUDIR)/m32c.cpu \
@@ -534,14 +531,20 @@ stamp-xstormy16: $(CGENDEPS) $(CPUDIR)/xstormy16.cpu $(CPUDIR)/xstormy16.opc
 		archfile=$(CPUDIR)/xstormy16.cpu opcfile=$(CPUDIR)/xstormy16.opc extrafiles=
 
 $(srcdir)/riscv-desc.h $(srcdir)/riscv-desc.c $(srcdir)/riscv-opc.h \
-    $(srcdir)/riscv-opc.c $(srcdir)/riscv-ibld.c \
-	$(srcdir)/riscv-asm.c $(srcdir)/riscv-dis.c: $(RISCV_DEPS)
-	@true
-
+		$(srcdir)/riscv-opc.c $(srcdir)/riscv-ibld.c \
+		$(srcdir)/riscv-asm.c $(srcdir)/riscv-dis.c: $(RISCV_DEPS)
+		@true
 stamp-riscv: $(CGENDEPS) $(CPUDIR)/riscv.cpu $(CPUDIR)/riscv.opc
-	$(MAKE) run-cgen arch=riscv prefix=riscv \
-		archfile=$(CPUDIR)/riscv.cpu opcfile=$(CPUDIR)/riscv.opc
+		$(MAKE) run-cgen arch=riscv prefix=riscv \
+				archfile=$(CPUDIR)/riscv.cpu opcfile=$(CPUDIR)/riscv.opc
 
+$(srcdir)/i386-desc.h $(srcdir)/i386-desc.c $(srcdir)/i386-opc.h \
+		$(srcdir)/i386-opc.c $(srcdir)/i386-ibld.c \
+		$(srcdir)/i386-asm.c $(srcdir)/i386-dis.c: $(I386_DEPS)
+		@true
+stamp-i386: $(CGENDEPS) $(CPUDIR)/i386.cpu $(CPUDIR)/i386.opc
+		$(MAKE) run-cgen arch=i386 prefix=i386 \
+				archfile=$(CPUDIR)/i386.cpu opcfile=$(CPUDIR)/i386.opc
 
 MOSTLYCLEANFILES = aarch64-gen$(EXEEXT_FOR_BUILD) i386-gen$(EXEEXT_FOR_BUILD) \
 	ia64-gen$(EXEEXT_FOR_BUILD) s390-mkopc$(EXEEXT_FOR_BUILD) s390-opc.tab \
@@ -580,10 +583,8 @@ i386-gen.o: i386-gen.c i386-opc.h $(srcdir)/../include/opcode/i386.h \
 $(srcdir)/i386-tbl.h: $(srcdir)/i386-init.h
 	@echo $@
 
-$(srcdir)/i386-init.h: @MAINT@ i386-gen$(EXEEXT_FOR_BUILD) i386-opc.tbl i386-reg.tbl i386-opc.h
-	$(CPP) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) - \
-		< $(srcdir)/i386-opc.tbl \
-		| ./i386-gen$(EXEEXT_FOR_BUILD) --srcdir $(srcdir)
+$(srcdir)/i386-init.h: @MAINT@ i386-gen$(EXEEXT_FOR_BUILD) i386-opc.tbl i386-reg.tbl
+	./i386-gen$(EXEEXT_FOR_BUILD) --srcdir $(srcdir)
 
 i386-opc.lo: $(srcdir)/i386-tbl.h
 

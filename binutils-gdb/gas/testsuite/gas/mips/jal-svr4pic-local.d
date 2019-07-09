@@ -1,7 +1,7 @@
 #objdump: -dr --prefix-addresses --show-raw-insn
 #name: MIPS JALR relocation against local symbol
 #as: -32
-#notarget: *-*-irix*
+#not-target: *-*-irix*
 
 .*: +file format .*mips.*
 

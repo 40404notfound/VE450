@@ -1,5 +1,5 @@
 /* Handle TIC6X (DSBT) shared libraries for GDB, the GNU Debugger.
-   Copyright (C) 2010-2019 Free Software Foundation, Inc.
+   Copyright (C) 2010-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -224,10 +224,10 @@ dsbt_print_loadmap (struct int_elf32_dsbt_loadmap *map)
 /* Decode int_elf32_dsbt_loadmap from BUF.  */
 
 static struct int_elf32_dsbt_loadmap *
-decode_loadmap (const gdb_byte *buf)
+decode_loadmap (gdb_byte *buf)
 {
   enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch ());
-  const struct ext_elf32_dsbt_loadmap *ext_ldmbuf;
+  struct ext_elf32_dsbt_loadmap *ext_ldmbuf;
   struct int_elf32_dsbt_loadmap *int_ldmbuf;
 
   int version, seg, nsegs;
@@ -278,6 +278,7 @@ decode_loadmap (const gdb_byte *buf)
 				    byte_order);
     }
 
+  xfree (ext_ldmbuf);
   return int_ldmbuf;
 }
 
@@ -291,26 +292,26 @@ static struct dsbt_info *get_dsbt_info (void);
 static void
 dsbt_get_initial_loadmaps (void)
 {
+  gdb_byte *buf;
   struct dsbt_info *info = get_dsbt_info ();
-  gdb::optional<gdb::byte_vector> buf
-    = target_read_alloc (current_top_target (), TARGET_OBJECT_FDPIC, "exec");
 
-  if (!buf || buf->empty ())
+  if (0 >= target_read_alloc (&current_target, TARGET_OBJECT_FDPIC,
+			      "exec", &buf))
     {
       info->exec_loadmap = NULL;
       error (_("Error reading DSBT exec loadmap"));
     }
-  info->exec_loadmap = decode_loadmap (buf->data ());
+  info->exec_loadmap = decode_loadmap (buf);
   if (solib_dsbt_debug)
     dsbt_print_loadmap (info->exec_loadmap);
 
-  buf = target_read_alloc (current_top_target (), TARGET_OBJECT_FDPIC, "exec");
-  if (!buf || buf->empty ())
+  if (0 >= target_read_alloc (&current_target, TARGET_OBJECT_FDPIC,
+			      "interp", &buf))
     {
       info->interp_loadmap = NULL;
       error (_("Error reading DSBT interp loadmap"));
     }
-  info->interp_loadmap = decode_loadmap (buf->data ());
+  info->interp_loadmap = decode_loadmap (buf);
   if (solib_dsbt_debug)
     dsbt_print_loadmap (info->interp_loadmap);
 }
@@ -650,7 +651,7 @@ dsbt_current_sos (void)
   /* Locate the address of the first link map struct.  */
   lm_addr = lm_base ();
 
-  /* We have at least one link map entry.  Fetch the lot of them,
+  /* We have at least one link map entry.  Fetch the the lot of them,
      building the solist chain.  */
   while (lm_addr)
     {
@@ -695,7 +696,7 @@ dsbt_current_sos (void)
       if (dsbt_index != 0)
 	{
 	  int errcode;
-	  gdb::unique_xmalloc_ptr<char> name_buf;
+	  char *name_buf;
 	  struct int_elf32_dsbt_loadmap *loadmap;
 	  struct so_list *sop;
 	  CORE_ADDR addr;
@@ -726,10 +727,11 @@ dsbt_current_sos (void)
 	    {
 	      if (solib_dsbt_debug)
 		fprintf_unfiltered (gdb_stdlog, "current_sos: name = %s\n",
-				    name_buf.get ());
+				    name_buf);
 
-	      strncpy (sop->so_name, name_buf.get (), SO_NAME_MAX_PATH_SIZE - 1);
+	      strncpy (sop->so_name, name_buf, SO_NAME_MAX_PATH_SIZE - 1);
 	      sop->so_name[SO_NAME_MAX_PATH_SIZE - 1] = '\0';
+	      xfree (name_buf);
 	      strcpy (sop->so_original_name, sop->so_name);
 	    }
 
@@ -830,13 +832,14 @@ enable_break (void)
 	 in the dynamic linker itself.  */
 
       gdb_bfd_ref_ptr tmp_bfd;
-      try
+      TRY
 	{
 	  tmp_bfd = solib_bfd_open (buf);
 	}
-      catch (const gdb_exception &ex)
+      CATCH (ex, RETURN_MASK_ALL)
 	{
 	}
+      END_CATCH
 
       if (tmp_bfd == NULL)
 	{
@@ -917,6 +920,8 @@ static void
 dsbt_relocate_main_executable (void)
 {
   struct int_elf32_dsbt_loadmap *ldm;
+  struct cleanup *old_chain;
+  struct section_offsets *new_offsets;
   int changed;
   struct obj_section *osect;
   struct dsbt_info *info = get_dsbt_info ();
@@ -928,8 +933,9 @@ dsbt_relocate_main_executable (void)
   info->main_executable_lm_info = new lm_info_dsbt;
   info->main_executable_lm_info->map = ldm;
 
-  gdb::unique_xmalloc_ptr<struct section_offsets> new_offsets
-    (XCNEWVEC (struct section_offsets, symfile_objfile->num_sections));
+  new_offsets = XCNEWVEC (struct section_offsets,
+			  symfile_objfile->num_sections);
+  old_chain = make_cleanup (xfree, new_offsets);
   changed = 0;
 
   ALL_OBJFILE_OSECTIONS (symfile_objfile, osect)
@@ -963,7 +969,9 @@ dsbt_relocate_main_executable (void)
     }
 
   if (changed)
-    objfile_relocate (symfile_objfile, new_offsets.get ());
+    objfile_relocate (symfile_objfile, new_offsets);
+
+  do_cleanups (old_chain);
 
   /* Now that symfile_objfile has been relocated, we can compute the
      GOT value and stash it away.  */

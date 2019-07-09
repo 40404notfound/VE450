@@ -1,5 +1,5 @@
 /* Data structures associated with tracepoints in GDB.
-   Copyright (C) 1997-2019 Free Software Foundation, Inc.
+   Copyright (C) 1997-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -21,7 +21,7 @@
 
 #include "breakpoint.h"
 #include "memrange.h"
-#include "common/gdb_vecs.h"
+#include "gdb_vecs.h"
 
 #include <vector>
 #include <string>
@@ -47,33 +47,29 @@ typedef std::unique_ptr<traceframe_info> traceframe_info_up;
    tracepoints.  */
 
 struct trace_state_variable
-{
-  trace_state_variable (std::string &&name_, int number_)
-  : name (name_), number (number_)
-  {}
+  {
+    /* The variable's name.  The user has to prefix with a dollar sign,
+       but we don't store that internally.  */
+    const char *name;
 
-  /* The variable's name.  The user has to prefix with a dollar sign,
-     but we don't store that internally.  */
-  std::string name;
+    /* An id number assigned by GDB, and transmitted to targets.  */
+    int number;
 
-  /* An id number assigned by GDB, and transmitted to targets.  */
-  int number = 0;
+    /* The initial value of a variable is a 64-bit signed integer.  */
+    LONGEST initial_value;
 
-  /* The initial value of a variable is a 64-bit signed integer.  */
-  LONGEST initial_value = 0;
+    /* 1 if the value is known, else 0.  The value is known during a
+       trace run, or in tfind mode if the variable was collected into
+       the current trace frame.  */
+    int value_known;
 
-  /* 1 if the value is known, else 0.  The value is known during a
-     trace run, or in tfind mode if the variable was collected into
-     the current trace frame.  */
-  int value_known = 0;
+    /* The value of a variable is a 64-bit signed integer.  */
+    LONGEST value;
 
-  /* The value of a variable is a 64-bit signed integer.  */
-  LONGEST value = 0;
-
-  /* This is true for variables that are predefined and built into
-     the target.  */
-  int builtin = 0;
- };
+    /* This is true for variables that are predefined and built into
+       the target.  */
+    int builtin;
+   };
 
 /* The trace status encompasses various info about the general state
    of the tracing run.  */
@@ -169,38 +165,38 @@ extern const char *stop_reason_names[];
 
 struct uploaded_tp
 {
-  int number = 0;
-  enum bptype type = bp_none;
-  ULONGEST addr = 0;
-  int enabled = 0;
-  int step = 0;
-  int pass = 0;
-  int orig_size = 0;
+  int number;
+  enum bptype type;
+  ULONGEST addr;
+  int enabled;
+  int step;
+  int pass;
+  int orig_size;
 
   /* String that is the encoded form of the tracepoint's condition.  */
-  gdb::unique_xmalloc_ptr<char[]> cond;
+  char *cond;
 
   /* Vectors of strings that are the encoded forms of a tracepoint's
      actions.  */
-  std::vector<gdb::unique_xmalloc_ptr<char[]>> actions;
-  std::vector<gdb::unique_xmalloc_ptr<char[]>> step_actions;
+  VEC(char_ptr) *actions;
+  VEC(char_ptr) *step_actions;
 
   /* The original string defining the location of the tracepoint.  */
-  gdb::unique_xmalloc_ptr<char[]> at_string;
+  char *at_string;
 
   /* The original string defining the tracepoint's condition.  */
-  gdb::unique_xmalloc_ptr<char[]> cond_string;
+  char *cond_string;
 
   /* List of original strings defining the tracepoint's actions.  */
-  std::vector<gdb::unique_xmalloc_ptr<char[]>> cmd_strings;
+  VEC(char_ptr) *cmd_strings;
 
   /* The tracepoint's current hit count.  */
-  int hit_count = 0;
+  int hit_count;
 
   /* The tracepoint's current traceframe usage.  */
-  ULONGEST traceframe_usage = 0;
+  ULONGEST traceframe_usage;
 
-  struct uploaded_tp *next = nullptr;
+  struct uploaded_tp *next;
 };
 
 /* Struct recording info about trace state variables on the target.  */
@@ -218,20 +214,14 @@ struct uploaded_tsv
 
 struct static_tracepoint_marker
 {
-  DISABLE_COPY_AND_ASSIGN (static_tracepoint_marker);
-
-  static_tracepoint_marker () = default;
-  static_tracepoint_marker (static_tracepoint_marker &&) = default;
-  static_tracepoint_marker &operator= (static_tracepoint_marker &&) = default;
-
-  struct gdbarch *gdbarch = NULL;
-  CORE_ADDR address = 0;
+  struct gdbarch *gdbarch;
+  CORE_ADDR address;
 
   /* The string ID of the marker.  */
-  std::string str_id;
+  char *str_id;
 
   /* Extra target reported info associated with the marker.  */
-  std::string extra;
+  char *extra;
 };
 
 struct memrange
@@ -262,14 +252,10 @@ public:
   /* Add AEXPR to the list, taking ownership.  */
   void add_aexpr (agent_expr_up aexpr);
 
-  void add_remote_register (unsigned int regno);
-  void add_ax_registers (struct agent_expr *aexpr);
-  void add_local_register (struct gdbarch *gdbarch,
-			   unsigned int regno,
-			   CORE_ADDR scope);
+  void add_register (unsigned int regno);
   void add_memrange (struct gdbarch *gdbarch,
 		     int type, bfd_signed_vma base,
-		     unsigned long len, CORE_ADDR scope);
+		     unsigned long len);
   void collect_symbol (struct symbol *sym,
 		       struct gdbarch *gdbarch,
 		       long frame_regno, long frame_offset,
@@ -292,9 +278,8 @@ public:
   { return m_computed; }
 
 private:
-  /* We need the allocator zero-initialize the mask, so we don't use
-     gdb::byte_vector.  */
-  std::vector<unsigned char> m_regs_mask;
+  /* room for up to 256 regs */
+  unsigned char m_regs_mask[32];
 
   std::vector<memrange> m_memranges;
 
@@ -310,9 +295,11 @@ private:
   std::vector<std::string> m_computed;
 };
 
-extern void
-  parse_static_tracepoint_marker_definition (const char *line, const char **pp,
-					     static_tracepoint_marker *marker);
+extern void parse_static_tracepoint_marker_definition
+  (const char *line, const char **pp,
+   struct static_tracepoint_marker *marker);
+extern void release_static_tracepoint_marker (struct static_tracepoint_marker *);
+extern void free_current_marker (void *arg);
 
 /* A hook used to notify the UI of tracepoint operations.  */
 
@@ -330,22 +317,7 @@ extern int get_tracepoint_number (void);
    etc.).  */
 extern void set_current_traceframe (int num);
 
-struct scoped_restore_current_traceframe
-{
-  scoped_restore_current_traceframe ();
-
-  ~scoped_restore_current_traceframe ()
-  {
-    set_current_traceframe (m_traceframe_number);
-  }
-
-  DISABLE_COPY_AND_ASSIGN (scoped_restore_current_traceframe);
-
-private:
-
-  /* The traceframe we were inspecting.  */
-  int m_traceframe_number;
-};
+struct cleanup *make_cleanup_restore_current_traceframe (void);
 
 void free_actions (struct breakpoint *);
 
@@ -435,8 +407,5 @@ extern int traceframe_available_memory (std::vector<mem_range> *result,
 extern struct traceframe_info *get_traceframe_info (void);
 
 extern struct bp_location *get_traceframe_location (int *stepping_frame_p);
-
-/* Command element for the 'while-stepping' command.  */
-extern cmd_list_element *while_stepping_cmd_element;
 
 #endif	/* TRACEPOINT_H */

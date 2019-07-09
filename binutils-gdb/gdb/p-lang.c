@@ -1,6 +1,6 @@
 /* Pascal language support routines for GDB, the GNU debugger.
 
-   Copyright (C) 2000-2019 Free Software Foundation, Inc.
+   Copyright (C) 2000-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -148,16 +148,6 @@ is_pascal_string_type (struct type *type,int *length_pos,
         };
     }
   return 0;
-}
-
-/* This is a wrapper around IS_PASCAL_STRING_TYPE that returns true if TYPE
-   is a string.  */
-
-static bool
-pascal_is_string_type_p (struct type *type)
-{
-  return is_pascal_string_type (type, nullptr, nullptr, nullptr,
-				nullptr, nullptr) > 0;
 }
 
 static void pascal_one_char (int, struct ui_file *, int *);
@@ -437,6 +427,7 @@ extern const struct language_defn pascal_language_defn =
   p_extensions,
   &exp_descriptor_standard,
   pascal_parse,
+  pascal_yyerror,
   null_post_parser,
   pascal_printchar,		/* Print a character constant */
   pascal_printstr,		/* Function to print string constant */
@@ -448,7 +439,6 @@ extern const struct language_defn pascal_language_defn =
   default_read_var_value,	/* la_read_var_value */
   NULL,				/* Language specific skip_trampoline */
   "this",		        /* name_of_this */
-  false,			/* la_store_sym_names_in_linkage_form_p */
   basic_lookup_symbol_nonlocal,	/* lookup_symbol_nonlocal */
   basic_lookup_transparent_type,/* lookup_transparent_type */
   NULL,				/* Language specific symbol demangler */
@@ -470,6 +460,5 @@ extern const struct language_defn pascal_language_defn =
   &default_varobj_ops,
   NULL,
   NULL,
-  pascal_is_string_type_p,
-  "{...}"			/* la_struct_too_deep_ellipsis */
+  LANG_MAGIC
 };

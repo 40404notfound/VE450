@@ -1,6 +1,6 @@
 /* Target-dependent definitions for AMD64.
 
-   Copyright (C) 2001-2019 Free Software Foundation, Inc.
+   Copyright (C) 2001-2018 Free Software Foundation, Inc.
    Contributed by Jiri Smid, SuSE Labs.
 
    This file is part of GDB.
@@ -106,8 +106,7 @@ extern void amd64_init_abi (struct gdbarch_info info,
 extern void amd64_x32_init_abi (struct gdbarch_info info,
 				struct gdbarch *gdbarch,
 				const target_desc *default_tdesc);
-extern const struct target_desc *amd64_target_description (uint64_t xcr0,
-							   bool segments);
+extern const struct target_desc *amd64_target_description (uint64_t xcr0);
 
 /* Fill register REGNUM in REGCACHE with the appropriate
    floating-point or SSE register value from *FXSAVE.  If REGNUM is

@@ -1,6 +1,6 @@
 /* BSD user-level threads support.
 
-   Copyright (C) 2005-2019 Free Software Foundation, Inc.
+   Copyright (C) 2005-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -22,7 +22,7 @@
 #include "gdbthread.h"
 #include "inferior.h"
 #include "objfiles.h"
-#include "observable.h"
+#include "observer.h"
 #include "regcache.h"
 #include "solib.h"
 #include "solist.h"
@@ -33,39 +33,8 @@
 
 #include "bsd-uthread.h"
 
-static const target_info bsd_uthread_target_info = {
-  "bsd-uthreads",
-  N_("BSD user-level threads"),
-  N_("BSD user-level threads")
-};
-
-struct bsd_uthread_target final : public target_ops
-{
-  const target_info &info () const override
-  { return bsd_uthread_target_info; }
-
-  strata stratum () const override { return thread_stratum; }
-
-  void close () override;
-
-  void mourn_inferior () override;
-
-  void fetch_registers (struct regcache *, int) override;
-  void store_registers (struct regcache *, int) override;
-
-  ptid_t wait (ptid_t, struct target_waitstatus *, int) override;
-  void resume (ptid_t, int, enum gdb_signal) override;
-
-  bool thread_alive (ptid_t ptid) override;
-
-  void update_thread_list () override;
-
-  const char *extra_thread_info (struct thread_info *) override;
-
-  std::string pid_to_str (ptid_t) override;
-};
-
-static bsd_uthread_target bsd_uthread_ops;
+/* HACK: Save the bsd_uthreads ops returned by bsd_uthread_target.  */
+static struct target_ops *bsd_uthread_ops_hack;
 
 
 /* Architecture-specific operations.  */
@@ -231,15 +200,15 @@ bsd_uthread_activate (struct objfile *objfile)
   bsd_uthread_thread_ctx_offset =
     bsd_uthread_lookup_offset ("_thread_ctx_offset", objfile);
 
-  push_target (&bsd_uthread_ops);
+  push_target (bsd_uthread_ops_hack);
   bsd_uthread_active = 1;
   return 1;
 }
 
 /* Cleanup due to deactivation.  */
 
-void
-bsd_uthread_target::close ()
+static void
+bsd_uthread_close (struct target_ops *self)
 {
   bsd_uthread_active = 0;
   bsd_uthread_thread_run_addr = 0;
@@ -259,7 +228,7 @@ bsd_uthread_deactivate (void)
   if (!bsd_uthread_active)
     return;
 
-  unpush_target (&bsd_uthread_ops);
+  unpush_target (bsd_uthread_ops_hack);
 }
 
 static void
@@ -306,21 +275,24 @@ bsd_uthread_solib_unloaded (struct so_list *so)
     bsd_uthread_deactivate ();
 }
 
-void
-bsd_uthread_target::mourn_inferior ()
+static void
+bsd_uthread_mourn_inferior (struct target_ops *ops)
 {
-  beneath ()->mourn_inferior ();
+  struct target_ops *beneath = find_target_beneath (ops);
+  beneath->to_mourn_inferior (beneath);
   bsd_uthread_deactivate ();
 }
 
-void
-bsd_uthread_target::fetch_registers (struct regcache *regcache, int regnum)
+static void
+bsd_uthread_fetch_registers (struct target_ops *ops,
+			     struct regcache *regcache, int regnum)
 {
   struct gdbarch *gdbarch = regcache->arch ();
   struct bsd_uthread_ops *uthread_ops
     = (struct bsd_uthread_ops *) gdbarch_data (gdbarch, bsd_uthread_data);
-  ptid_t ptid = regcache->ptid ();
-  CORE_ADDR addr = ptid.tid ();
+  ptid_t ptid = regcache_get_ptid (regcache);
+  CORE_ADDR addr = ptid_get_tid (ptid);
+  struct target_ops *beneath = find_target_beneath (ops);
   CORE_ADDR active_addr;
   scoped_restore save_inferior_ptid = make_scoped_restore (&inferior_ptid);
 
@@ -329,7 +301,7 @@ bsd_uthread_target::fetch_registers (struct regcache *regcache, int regnum)
   inferior_ptid = ptid;
 
   /* Always fetch the appropriate registers from the layer beneath.  */
-  beneath ()->fetch_registers (regcache, regnum);
+  beneath->to_fetch_registers (beneath, regcache, regnum);
 
   /* FIXME: That might have gotten us more than we asked for.  Make
      sure we overwrite all relevant registers with values from the
@@ -345,14 +317,16 @@ bsd_uthread_target::fetch_registers (struct regcache *regcache, int regnum)
     }
 }
 
-void
-bsd_uthread_target::store_registers (struct regcache *regcache, int regnum)
+static void
+bsd_uthread_store_registers (struct target_ops *ops,
+			     struct regcache *regcache, int regnum)
 {
   struct gdbarch *gdbarch = regcache->arch ();
   struct bsd_uthread_ops *uthread_ops
     = (struct bsd_uthread_ops *) gdbarch_data (gdbarch, bsd_uthread_data);
-  ptid_t ptid = regcache->ptid ();
-  CORE_ADDR addr = ptid.tid ();
+  struct target_ops *beneath = find_target_beneath (ops);
+  ptid_t ptid = regcache_get_ptid (regcache);
+  CORE_ADDR addr = ptid_get_tid (ptid);
   CORE_ADDR active_addr;
   scoped_restore save_inferior_ptid = make_scoped_restore (&inferior_ptid);
 
@@ -371,19 +345,20 @@ bsd_uthread_target::store_registers (struct regcache *regcache, int regnum)
     {
       /* Updating the thread that is currently running; pass the
          request to the layer beneath.  */
-      beneath ()->store_registers (regcache, regnum);
+      beneath->to_store_registers (beneath, regcache, regnum);
     }
 }
 
-ptid_t
-bsd_uthread_target::wait (ptid_t ptid, struct target_waitstatus *status,
-			  int options)
+static ptid_t
+bsd_uthread_wait (struct target_ops *ops,
+		  ptid_t ptid, struct target_waitstatus *status, int options)
 {
   enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch ());
   CORE_ADDR addr;
+  struct target_ops *beneath = find_target_beneath (ops);
 
   /* Pass the request to the layer beneath.  */
-  ptid = beneath ()->wait (ptid, status, options);
+  ptid = beneath->to_wait (beneath, ptid, status, options);
 
   /* If the process is no longer alive, there's no point in figuring
      out the thread ID.  It will fail anyway.  */
@@ -406,37 +381,39 @@ bsd_uthread_target::wait (ptid_t ptid, struct target_waitstatus *status,
 	{
 	  ULONGEST magic = extract_unsigned_integer (buf, 4, byte_order);
 	  if (magic == BSD_UTHREAD_PTHREAD_MAGIC)
-	    ptid = ptid_t (ptid.pid (), 0, addr);
+	    ptid = ptid_build (ptid_get_pid (ptid), 0, addr);
 	}
     }
 
   /* If INFERIOR_PTID doesn't have a tid member yet, and we now have a
      ptid with tid set, then ptid is still the initial thread of
      the process.  Notify GDB core about it.  */
-  if (inferior_ptid.tid () == 0
-      && ptid.tid () != 0 && !in_thread_list (ptid))
+  if (ptid_get_tid (inferior_ptid) == 0
+      && ptid_get_tid (ptid) != 0 && !in_thread_list (ptid))
     thread_change_ptid (inferior_ptid, ptid);
 
   /* Don't let the core see a ptid without a corresponding thread.  */
-  thread_info *thread = find_thread_ptid (ptid);
-  if (thread == NULL || thread->state == THREAD_EXITED)
+  if (!in_thread_list (ptid) || is_exited (ptid))
     add_thread (ptid);
 
   return ptid;
 }
 
-void
-bsd_uthread_target::resume (ptid_t ptid, int step, enum gdb_signal sig)
+static void
+bsd_uthread_resume (struct target_ops *ops,
+		    ptid_t ptid, int step, enum gdb_signal sig)
 {
   /* Pass the request to the layer beneath.  */
-  beneath ()->resume (ptid, step, sig);
+  struct target_ops *beneath = find_target_beneath (ops);
+  beneath->to_resume (beneath, ptid, step, sig);
 }
 
-bool
-bsd_uthread_target::thread_alive (ptid_t ptid)
+static int
+bsd_uthread_thread_alive (struct target_ops *ops, ptid_t ptid)
 {
   enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch ());
-  CORE_ADDR addr = ptid.tid ();
+  struct target_ops *beneath = find_target_beneath (ops);
+  CORE_ADDR addr = ptid_get_tid (ptid);
 
   if (addr != 0)
     {
@@ -447,16 +424,16 @@ bsd_uthread_target::thread_alive (ptid_t ptid)
 
       state = read_memory_unsigned_integer (addr + offset, 4, byte_order);
       if (state == BSD_UTHREAD_PS_DEAD)
-	return false;
+	return 0;
     }
 
-  return beneath ()->thread_alive (ptid);
+  return beneath->to_thread_alive (beneath, ptid);
 }
 
-void
-bsd_uthread_target::update_thread_list ()
+static void
+bsd_uthread_update_thread_list (struct target_ops *ops)
 {
-  pid_t pid = inferior_ptid.pid ();
+  pid_t pid = ptid_get_pid (inferior_ptid);
   int offset = bsd_uthread_thread_next_offset;
   CORE_ADDR addr;
 
@@ -465,15 +442,14 @@ bsd_uthread_target::update_thread_list ()
   addr = bsd_uthread_read_memory_address (bsd_uthread_thread_list_addr);
   while (addr != 0)
     {
-      ptid_t ptid = ptid_t (pid, 0, addr);
+      ptid_t ptid = ptid_build (pid, 0, addr);
 
-      thread_info *thread = find_thread_ptid (ptid);
-      if (thread == nullptr || thread->state == THREAD_EXITED)
+      if (!in_thread_list (ptid) || is_exited (ptid))
 	{
 	  /* If INFERIOR_PTID doesn't have a tid member yet, then ptid
 	     is still the initial thread of the process.  Notify GDB
 	     core about it.  */
-	  if (inferior_ptid.tid () == 0)
+	  if (ptid_get_tid (inferior_ptid) == 0)
 	    thread_change_ptid (inferior_ptid, ptid);
 	  else
 	    add_thread (ptid);
@@ -511,11 +487,12 @@ static const char *bsd_uthread_state[] =
 /* Return a string describing th state of the thread specified by
    INFO.  */
 
-const char *
-bsd_uthread_target::extra_thread_info (thread_info *info)
+static const char *
+bsd_uthread_extra_thread_info (struct target_ops *self,
+			       struct thread_info *info)
 {
   enum bfd_endian byte_order = gdbarch_byte_order (target_gdbarch ());
-  CORE_ADDR addr = info->ptid.tid ();
+  CORE_ADDR addr = ptid_get_tid (info->ptid);
 
   if (addr != 0)
     {
@@ -530,22 +507,54 @@ bsd_uthread_target::extra_thread_info (thread_info *info)
   return NULL;
 }
 
-std::string
-bsd_uthread_target::pid_to_str (ptid_t ptid)
+static const char *
+bsd_uthread_pid_to_str (struct target_ops *ops, ptid_t ptid)
 {
-  if (ptid.tid () != 0)
-    return string_printf ("process %d, thread 0x%lx",
-			  ptid.pid (), ptid.tid ());
+  if (ptid_get_tid (ptid) != 0)
+    {
+      static char buf[64];
+
+      xsnprintf (buf, sizeof buf, "process %d, thread 0x%lx",
+		 ptid_get_pid (ptid), ptid_get_tid (ptid));
+      return buf;
+    }
 
   return normal_pid_to_str (ptid);
+}
+
+static struct target_ops *
+bsd_uthread_target (void)
+{
+  struct target_ops *t = XCNEW (struct target_ops);
+
+  t->to_shortname = "bsd-uthreads";
+  t->to_longname = "BSD user-level threads";
+  t->to_doc = "BSD user-level threads";
+  t->to_close = bsd_uthread_close;
+  t->to_mourn_inferior = bsd_uthread_mourn_inferior;
+  t->to_fetch_registers = bsd_uthread_fetch_registers;
+  t->to_store_registers = bsd_uthread_store_registers;
+  t->to_wait = bsd_uthread_wait;
+  t->to_resume = bsd_uthread_resume;
+  t->to_thread_alive = bsd_uthread_thread_alive;
+  t->to_update_thread_list = bsd_uthread_update_thread_list;
+  t->to_extra_thread_info = bsd_uthread_extra_thread_info;
+  t->to_pid_to_str = bsd_uthread_pid_to_str;
+  t->to_stratum = thread_stratum;
+  t->to_magic = OPS_MAGIC;
+  bsd_uthread_ops_hack = t;
+
+  return t;
 }
 
 void
 _initialize_bsd_uthread (void)
 {
+  complete_target_initialization (bsd_uthread_target ());
+
   bsd_uthread_data = gdbarch_data_register_pre_init (bsd_uthread_init);
 
-  gdb::observers::inferior_created.attach (bsd_uthread_inferior_created);
-  gdb::observers::solib_loaded.attach (bsd_uthread_solib_loaded);
-  gdb::observers::solib_unloaded.attach (bsd_uthread_solib_unloaded);
+  observer_attach_inferior_created (bsd_uthread_inferior_created);
+  observer_attach_solib_loaded (bsd_uthread_solib_loaded);
+  observer_attach_solib_unloaded (bsd_uthread_solib_unloaded);
 }

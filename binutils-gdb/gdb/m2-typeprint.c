@@ -1,5 +1,5 @@
 /* Support for printing Modula 2 types for GDB, the GNU debugger.
-   Copyright (C) 1986-2019 Free Software Foundation, Inc.
+   Copyright (C) 1986-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -234,9 +234,9 @@ static void m2_array (struct type *type, struct ui_file *stream,
 	  m2_print_bounds (TYPE_INDEX_TYPE (type), stream, show, -1, 1);
 	}
       else
-	fputs_filtered (pulongest ((TYPE_LENGTH (type)
-				    / TYPE_LENGTH (TYPE_TARGET_TYPE (type)))),
-			stream);
+	fprintf_filtered (stream, "%d",
+			  (TYPE_LENGTH (type)
+			   / TYPE_LENGTH (TYPE_TARGET_TYPE (type))));
     }
   fprintf_filtered (stream, "] OF ");
   m2_print_type (TYPE_TARGET_TYPE (type), "", stream, show, level, flags);
@@ -439,13 +439,21 @@ m2_long_set (struct type *type, struct ui_file *stream, int show, int level,
 
   if (m2_is_long_set (type))
     {
-      if (TYPE_NAME (type) != NULL)
+      if (TYPE_TAG_NAME (type) != NULL)
+	{
+	  fputs_filtered (TYPE_TAG_NAME (type), stream);
+	  if (show == 0)
+	    return 1;
+	}
+      else if (TYPE_NAME (type) != NULL)
 	{
 	  fputs_filtered (TYPE_NAME (type), stream);
 	  if (show == 0)
 	    return 1;
-	  fputs_filtered (" = ", stream);
 	}
+
+      if (TYPE_TAG_NAME (type) != NULL || TYPE_NAME (type) != NULL)
+	fputs_filtered (" = ", stream);
 
       if (get_long_set_bounds (type, &low, &high))
 	{
@@ -529,11 +537,11 @@ m2_record_fields (struct type *type, struct ui_file *stream, int show,
 		  int level, const struct type_print_options *flags)
 {
   /* Print the tag if it exists.  */
-  if (TYPE_NAME (type) != NULL)
+  if (TYPE_TAG_NAME (type) != NULL)
     {
-      if (!startswith (TYPE_NAME (type), "$$"))
+      if (!startswith (TYPE_TAG_NAME (type), "$$"))
 	{
-	  fputs_filtered (TYPE_NAME (type), stream);
+	  fputs_filtered (TYPE_TAG_NAME (type), stream);
 	  if (show > 0)
 	    fprintf_filtered (stream, " = ");
 	}
@@ -593,10 +601,10 @@ m2_enum (struct type *type, struct ui_file *stream, int show, int level)
   if (show < 0)
     {
       /* If we just printed a tag name, no need to print anything else.  */
-      if (TYPE_NAME (type) == NULL)
+      if (TYPE_TAG_NAME (type) == NULL)
 	fprintf_filtered (stream, "(...)");
     }
-  else if (show > 0 || TYPE_NAME (type) == NULL)
+  else if (show > 0 || TYPE_TAG_NAME (type) == NULL)
     {
       fprintf_filtered (stream, "(");
       len = TYPE_NFIELDS (type);

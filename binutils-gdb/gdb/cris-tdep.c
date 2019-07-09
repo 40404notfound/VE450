@@ -1,6 +1,6 @@
 /* Target dependent code for CRIS, for GDB, the GNU debugger.
 
-   Copyright (C) 2001-2019 Free Software Foundation, Inc.
+   Copyright (C) 2001-2018 Free Software Foundation, Inc.
 
    Contributed by Axis Communications AB.
    Written by Hendrik Ruijter, Stefan Andersson, and Orjan Friberg.
@@ -651,6 +651,12 @@ static CORE_ADDR crisv32_scan_prologue (CORE_ADDR pc,
 					struct frame_info *this_frame,
 					struct cris_unwind_cache *info);
 
+static CORE_ADDR cris_unwind_pc (struct gdbarch *gdbarch, 
+				 struct frame_info *next_frame);
+
+static CORE_ADDR cris_unwind_sp (struct gdbarch *gdbarch, 
+				 struct frame_info *next_frame);
+
 /* When arguments must be pushed onto the stack, they go on in reverse
    order.  The below implements a FILO (stack) to do this.
    Copied from d10v-tdep.c.  */
@@ -761,6 +767,18 @@ cris_frame_prev_register (struct frame_info *this_frame,
   return trad_frame_get_prev_register (this_frame, info->saved_regs, regnum);
 }
 
+/* Assuming THIS_FRAME is a dummy, return the frame ID of that dummy
+   frame.  The frame ID's base needs to match the TOS value saved by
+   save_dummy_frame_tos(), and the PC match the dummy frame's breakpoint.  */
+
+static struct frame_id
+cris_dummy_id (struct gdbarch *gdbarch, struct frame_info *this_frame)
+{
+  CORE_ADDR sp;
+  sp = get_frame_register_unsigned (this_frame, gdbarch_sp_regnum (gdbarch));
+  return frame_id_build (sp, get_frame_pc (this_frame));
+}
+
 static CORE_ADDR
 cris_frame_align (struct gdbarch *gdbarch, CORE_ADDR sp)
 {
@@ -790,8 +808,7 @@ static CORE_ADDR
 cris_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
 		      struct regcache *regcache, CORE_ADDR bp_addr,
 		      int nargs, struct value **args, CORE_ADDR sp,
-		      function_call_return_method return_method,
-		      CORE_ADDR struct_addr)
+		      int struct_return, CORE_ADDR struct_addr)
 {
   enum bfd_endian byte_order = gdbarch_byte_order (gdbarch);
   int argreg;
@@ -805,8 +822,10 @@ cris_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
   /* Are we returning a value using a structure return or a normal value
      return?  struct_addr is the address of the reserved space for the return
      structure to be written on the stack.  */
-  if (return_method == return_method_struct)
-    regcache_cooked_write_unsigned (regcache, STR_REGNUM, struct_addr);
+  if (struct_return)
+    {
+      regcache_cooked_write_unsigned (regcache, STR_REGNUM, struct_addr);
+    }
 
   /* Now load as many as possible of the first arguments into registers,
      and push the rest onto the stack.  */
@@ -830,7 +849,7 @@ cris_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
           /* Data passed by value.  Fits in available register(s).  */
           for (i = 0; i < reg_demand; i++)
             {
-              regcache->cooked_write (argreg, val);
+              regcache_cooked_write (regcache, argreg, val);
               argreg++;
               val += 4;
             }
@@ -843,7 +862,7 @@ cris_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
             {
               if (argreg <= ARG4_REGNUM)
                 {
-        	  regcache->cooked_write (argreg, val);
+		  regcache_cooked_write (regcache, argreg, val);
                   argreg++;
                   val += 4;
                 }
@@ -1352,6 +1371,24 @@ cris_skip_prologue (struct gdbarch *gdbarch, CORE_ADDR pc)
     pc_after_prologue = cris_scan_prologue (pc, NULL, NULL);
 
   return pc_after_prologue;
+}
+
+static CORE_ADDR
+cris_unwind_pc (struct gdbarch *gdbarch, struct frame_info *next_frame)
+{
+  ULONGEST pc;
+  pc = frame_unwind_register_unsigned (next_frame,
+				       gdbarch_pc_regnum (gdbarch));
+  return pc;
+}
+
+static CORE_ADDR
+cris_unwind_sp (struct gdbarch *gdbarch, struct frame_info *next_frame)
+{
+  ULONGEST sp;
+  sp = frame_unwind_register_unsigned (next_frame,
+				       gdbarch_sp_regnum (gdbarch));
+  return sp;
 }
 
 /* Implement the breakpoint_kind_from_pc gdbarch method.  */
@@ -3772,7 +3809,7 @@ cris_supply_gregset (struct regcache *regcache, cris_elf_gregset_t *gregsetp)
      knows about the actual size of each register so that's no problem.  */
   for (i = 0; i < NUM_GENREGS + NUM_SPECREGS; i++)
     {
-      regcache->raw_supply (i, (char *)&regp[i]);
+      regcache_raw_supply (regcache, i, (char *)&regp[i]);
     }
 
   if (tdep->cris_version == 32)
@@ -3780,8 +3817,8 @@ cris_supply_gregset (struct regcache *regcache, cris_elf_gregset_t *gregsetp)
       /* Needed to set pseudo-register PC for CRISv32.  */
       /* FIXME: If ERP is in a delay slot at this point then the PC will
 	 be wrong.  Issue a warning to alert the user.  */
-      regcache->raw_supply (gdbarch_pc_regnum (gdbarch),
-			    (char *)&regp[ERP_REGNUM]);
+      regcache_raw_supply (regcache, gdbarch_pc_regnum (gdbarch),
+			   (char *)&regp[ERP_REGNUM]);
 
       if (*(char *)&regp[ERP_REGNUM] & 0x1)
 	fprintf_unfiltered (gdb_stderr, "Warning: PC in delay slot\n");
@@ -4059,6 +4096,10 @@ cris_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_breakpoint_kind_from_pc (gdbarch, cris_breakpoint_kind_from_pc);
   set_gdbarch_sw_breakpoint_from_kind (gdbarch, cris_sw_breakpoint_from_kind);
   
+  set_gdbarch_unwind_pc (gdbarch, cris_unwind_pc);
+  set_gdbarch_unwind_sp (gdbarch, cris_unwind_sp);
+  set_gdbarch_dummy_id (gdbarch, cris_dummy_id);
+
   if (tdep->cris_dwarf2_cfi == 1)
     {
       /* Hook in the Dwarf-2 frame sniffer.  */

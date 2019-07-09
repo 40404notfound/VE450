@@ -1,5 +1,5 @@
 /* Motorola MCore specific support for 32-bit ELF
-   Copyright (C) 1994-2019 Free Software Foundation, Inc.
+   Copyright (C) 1994-2018 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -97,9 +97,10 @@ mcore_elf_unsupported_reloc (bfd * abfd,
   BFD_ASSERT (reloc_entry->howto != (reloc_howto_type *)0);
 
   /* xgettext:c-format */
-  _bfd_error_handler (_("%pB: %s unsupported"),
+  _bfd_error_handler (_("%B: Relocation %s (%d) is not currently supported.\n"),
 		      abfd,
-		      reloc_entry->howto->name);
+		      reloc_entry->howto->name,
+		      reloc_entry->howto->type);
 
   return bfd_reloc_notsupported;
 }
@@ -336,8 +337,8 @@ mcore_elf_reloc_name_lookup (bfd *abfd ATTRIBUTE_UNUSED,
 
 /* Set the howto pointer for a RCE ELF reloc.  */
 
-static bfd_boolean
-mcore_elf_info_to_howto (bfd * abfd,
+static void
+mcore_elf_info_to_howto (bfd * abfd ATTRIBUTE_UNUSED,
 			 arelent * cache_ptr,
 			 Elf_Internal_Rela * dst)
 {
@@ -351,14 +352,13 @@ mcore_elf_info_to_howto (bfd * abfd,
   if (r_type >= R_MCORE_max)
     {
       /* xgettext:c-format */
-      _bfd_error_handler (_("%pB: unsupported relocation type %#x"),
+      _bfd_error_handler (_("%B: unrecognised MCore reloc number: %d"),
 			  abfd, r_type);
       bfd_set_error (bfd_error_bad_value);
-      return FALSE;
+      r_type = R_MCORE_NONE;
     }
 
   cache_ptr->howto = mcore_elf_howto_table [r_type];
-  return TRUE;
 }
 
 /* The RELOCATE_SECTION function is called by the ELF backend linker
@@ -408,7 +408,7 @@ mcore_elf_relocate_section (bfd * output_bfd,
 
 #ifdef DEBUG
   _bfd_error_handler
-    ("mcore_elf_relocate_section called for %pB section %pA, %u relocations%s",
+    ("mcore_elf_relocate_section called for %B section %A, %u relocations%s",
      input_bfd,
      input_section,
      input_section->reloc_count,
@@ -437,7 +437,7 @@ mcore_elf_relocate_section (bfd * output_bfd,
 	  || ! mcore_elf_howto_table [(int)r_type])
 	{
 	  /* xgettext:c-format */
-	  _bfd_error_handler (_("%pB: unsupported relocation type %#x"),
+	  _bfd_error_handler (_("%B: Unknown relocation type %d\n"),
 			      input_bfd, (int) r_type);
 
 	  bfd_set_error (bfd_error_bad_value);
@@ -452,9 +452,10 @@ mcore_elf_relocate_section (bfd * output_bfd,
       if (howto->special_function == mcore_elf_unsupported_reloc)
 	{
 	  /* xgettext:c-format */
-	  _bfd_error_handler (_("%pB: %s unsupported"),
+	  _bfd_error_handler (_("%B: Relocation %s (%d) is not currently supported.\n"),
 			      input_bfd,
-			      howto->name);
+			      howto->name,
+			      (int)r_type);
 
 	  bfd_set_error (bfd_error_bad_value);
 	  ret = FALSE;
@@ -628,7 +629,9 @@ mcore_elf_check_relocs (bfd * abfd,
 	/* This relocation describes which C++ vtable entries are actually
 	   used.  Record for later use during GC.  */
 	case R_MCORE_GNU_VTENTRY:
-	  if (!bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
+	  BFD_ASSERT (h != NULL);
+	  if (h != NULL
+	      && !bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
 	    return FALSE;
 	  break;
 	}

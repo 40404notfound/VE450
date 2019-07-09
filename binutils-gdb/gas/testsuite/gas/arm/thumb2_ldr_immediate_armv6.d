@@ -1,7 +1,7 @@
 # name: Ldr immediate on armv6
 # as: -march=armv6
 # objdump: -dr --prefix-addresses --show-raw-insn
-# notarget: *-*-pe *-*-wince
+# not-target: *-*-*coff *-*-pe *-*-wince *-*-*aout* *-*-netbsd *-*-riscix*
 
 .*: +file format .*arm.*
 

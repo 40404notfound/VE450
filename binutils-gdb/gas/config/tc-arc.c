@@ -1,5 +1,5 @@
 /* tc-arc.c -- Assembler for the ARC
-   Copyright (C) 1994-2019 Free Software Foundation, Inc.
+   Copyright (C) 1994-2018 Free Software Foundation, Inc.
 
    Contributor: Claudiu Zissulescu <claziss@synopsys.com>
 
@@ -22,6 +22,7 @@
 
 #include "as.h"
 #include "subsegs.h"
+#include "struc-symbol.h"
 #include "dwarf2dbg.h"
 #include "dw2gencfi.h"
 #include "safe-ctype.h"
@@ -47,6 +48,9 @@
 #define SUB_OPCODE(x)	 (((x) & 0x003F0000) >> 16)
 #define LP_INSN(x)	 ((MAJOR_OPCODE (x) == 0x4) \
 			  && (SUB_OPCODE (x) == 0x28))
+
+/* Equal to MAX_PRECISION in atof-ieee.c.  */
+#define MAX_LITTLENUMS 6
 
 #ifndef TARGET_WITH_CPU
 #define TARGET_WITH_CPU "arc700"
@@ -471,9 +475,6 @@ static const struct cpu_type
 /* Information about the cpu/variant we're assembling for.  */
 static struct cpu_type selected_cpu = { 0, 0, 0, E_ARC_OSABI_CURRENT, 0 };
 
-/* TRUE if current assembly code uses RF16 only registers.  */
-static bfd_boolean rf16_only = TRUE;
-
 /* MPY option.  */
 static unsigned mpy_option = 0;
 
@@ -795,7 +796,7 @@ md_number_to_chars_midend (char *buf, unsigned long long val, int n)
       md_number_to_chars (buf, val, n);
       break;
     case 6:
-      md_number_to_chars (buf, (val & 0xffff00000000ull) >> 32, 2);
+      md_number_to_chars (buf, (val & 0xffff00000000) >> 32, 2);
       md_number_to_chars_midend (buf + 2, (val & 0xffffffff), 4);
       break;
     case 4:
@@ -803,7 +804,7 @@ md_number_to_chars_midend (char *buf, unsigned long long val, int n)
       md_number_to_chars (buf + 2, (val & 0xffff), 2);
       break;
     case 8:
-      md_number_to_chars_midend (buf, (val & 0xffffffff00000000ull) >> 32, 4);
+      md_number_to_chars_midend (buf, (val & 0xffffffff00000000) >> 32, 4);
       md_number_to_chars_midend (buf + 4, (val & 0xffffffff), 4);
       break;
     default:
@@ -1881,20 +1882,13 @@ find_opcode_match (const struct arc_opcode_hash_entry *entry,
 		case O_symbol:
 		  {
 		    const char *p;
-		    char *tmpp, *pp;
 		    const struct arc_aux_reg *auxr;
 
 		    if (opcode->insn_class != AUXREG)
 		      goto de_fault;
 		    p = S_GET_NAME (tok[tokidx].X_add_symbol);
 
-		    /* For compatibility reasons, an aux register can
-		       be spelled with upper or lower case
-		       letters.  */
-		    tmpp = strdup (p);
-		    for (pp = tmpp; *pp; ++pp) *pp = TOLOWER (*pp);
-
-		    auxr = hash_find (arc_aux_hash, tmpp);
+		    auxr = hash_find (arc_aux_hash, p);
 		    if (auxr)
 		      {
 			/* We modify the token array here, safe in the
@@ -1905,7 +1899,6 @@ find_opcode_match (const struct arc_opcode_hash_entry *entry,
 			tok[tokidx].X_add_number = auxr->address;
 			ARC_SET_FLAG (tok[tokidx].X_add_symbol, ARC_FLAG_AUX);
 		      }
-		    free (tmpp);
 
 		    if (tok[tokidx].X_op != O_constant)
 		      goto de_fault;
@@ -2378,17 +2371,6 @@ autodetect_attributes (const struct arc_opcode *opcode,
 	case O_dtpoff9:
 	case O_dtpoff:
 	  tls_option = 1;
-	  break;
-	default:
-	  break;
-	}
-
-      switch (tok[i].X_op)
-	{
-	case O_register:
-	  if ((tok[i].X_add_number >= 4 && tok[i].X_add_number <= 9)
-	      || (tok[i].X_add_number >= 16 && tok[i].X_add_number <= 25))
-	    rf16_only = FALSE;
 	  break;
 	default:
 	  break;
@@ -3268,7 +3250,7 @@ md_convert_frag (bfd *abfd ATTRIBUTE_UNUSED,
   int size, fix;
   struct arc_relax_type *relax_arg = &fragP->tc_frag_data;
 
-  fix = fragP->fr_fix;
+  fix = (fragP->fr_fix < 0 ? 0 : fragP->fr_fix);
   dest = fragP->fr_literal + fix;
   table_entry = TC_GENERIC_RELAX_TABLE + fragP->fr_subtype;
 
@@ -4207,7 +4189,7 @@ arc_check_reloc (expressionS *exp,
   if (*r_type_p == BFD_RELOC_32
       && exp->X_op == O_subtract
       && exp->X_op_symbol != NULL
-      && S_GET_SEGMENT (exp->X_op_symbol) == now_seg)
+      && exp->X_op_symbol->bsym->section == now_seg)
     *r_type_p = BFD_RELOC_ARC_32_PCREL;
 }
 
@@ -4386,10 +4368,6 @@ tokenize_extinsn (extInstruction_t *einsn)
 
   insn_name = xstrdup (p);
   restore_line_pointer (c);
-
-  /* Convert to lower case.  */
-  for (p = insn_name; *p; ++p)
-    *p = TOLOWER (*p);
 
   /* 2nd: get major opcode.  */
   if (*input_line_pointer != ',')
@@ -5024,20 +5002,6 @@ arc_set_public_attributes (void)
 
   /* Tag_ARC_ABI_tls.  */
   arc_set_attribute_int (Tag_ARC_ABI_tls, tls_option);
-
-  /* Tag_ARC_ATR_version.  */
-  arc_set_attribute_int (Tag_ARC_ATR_version, 1);
-
-  /* Tag_ARC_ABI_rf16.  */
-  if (attributes_set_explicitly[Tag_ARC_ABI_rf16]
-      && bfd_elf_get_obj_attr_int (stdoutput, OBJ_ATTR_PROC,
-				   Tag_ARC_ABI_rf16)
-      && !rf16_only)
-    {
-      as_warn (_("Overwrite explicitly set Tag_ARC_ABI_rf16 to full "
-		 "register file"));
-      bfd_elf_add_proc_attr_int (stdoutput, Tag_ARC_ABI_rf16, 0);
-    }
 }
 
 /* Add the default contents for the .ARC.attributes section.  */
@@ -5082,8 +5046,7 @@ int arc_convert_symbolic_attribute (const char *name)
   T (Tag_ARC_ABI_double_size),
   T (Tag_ARC_ISA_config),
   T (Tag_ARC_ISA_apex),
-  T (Tag_ARC_ISA_mpy_option),
-  T (Tag_ARC_ATR_version)
+  T (Tag_ARC_ISA_mpy_option)
 #undef T
     };
   unsigned int i;

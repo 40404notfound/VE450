@@ -1,14 +1,14 @@
 /* THIS FILE IS GENERATED.  -*- buffer-read-only: t -*- vi:set ro:
   Original: aarch64-core.xml */
 
-#include "common/tdesc.h"
+#include "arch/tdesc.h"
 
 static int
 create_feature_aarch64_core (struct target_desc *result, long regnum)
 {
   struct tdesc_feature *feature;
 
-  feature = tdesc_create_feature (result, "org.gnu.gdb.aarch64.core");
+  feature = tdesc_create_feature (result, "org.gnu.gdb.aarch64.core", "aarch64-core.xml");
   tdesc_type_with_fields *type_with_fields;
   type_with_fields = tdesc_create_flags (feature, "cpsr_flags", 4);
   tdesc_add_flag (type_with_fields, 0, "SP");

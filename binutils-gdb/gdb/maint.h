@@ -1,5 +1,5 @@
 /* Support for GDB maintenance commands.
-   Copyright (C) 2013-2019 Free Software Foundation, Inc.
+   Copyright (C) 2013-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -19,7 +19,7 @@
 #ifndef MAINT_H
 #define MAINT_H
 
-#include "common/run-time-clock.h"
+#include "run-time-clock.h"
 #include <chrono>
 
 extern void set_per_command_time (int);
@@ -38,10 +38,9 @@ class scoped_command_stats
 
  private:
 
-  DISABLE_COPY_AND_ASSIGN (scoped_command_stats);
-
-  /* Print the time, along with a string.  */
-  void print_time (const char *msg);
+  // No need for these.  They are intentionally not defined anywhere.
+  scoped_command_stats &operator= (const scoped_command_stats &);
+  scoped_command_stats (const scoped_command_stats &);
 
   /* Zero if the saved time is from the beginning of GDB execution.
      One if from the beginning of an individual command execution.  */

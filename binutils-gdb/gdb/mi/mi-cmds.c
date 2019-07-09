@@ -1,5 +1,5 @@
 /* MI Command Set for GDB, the GNU debugger.
-   Copyright (C) 2000-2019 Free Software Foundation, Inc.
+   Copyright (C) 2000-2018 Free Software Foundation, Inc.
 
    Contributed by Cygnus Solutions (a Red Hat company).
 
@@ -69,13 +69,10 @@ static struct mi_cmd mi_cmds[] =
                    &mi_suppress_notification.breakpoint),
   DEF_MI_CMD_MI_1 ("catch-exception", mi_cmd_catch_exception,
                    &mi_suppress_notification.breakpoint),
-  DEF_MI_CMD_MI_1 ("catch-handlers", mi_cmd_catch_handlers,
-                   &mi_suppress_notification.breakpoint),
   DEF_MI_CMD_MI_1 ("catch-load", mi_cmd_catch_load,
                    &mi_suppress_notification.breakpoint),
   DEF_MI_CMD_MI_1 ("catch-unload", mi_cmd_catch_unload,
                    &mi_suppress_notification.breakpoint),
-  DEF_MI_CMD_MI ("complete", mi_cmd_complete),
   DEF_MI_CMD_MI ("data-disassemble", mi_cmd_disassemble),
   DEF_MI_CMD_MI ("data-evaluate-expression", mi_cmd_data_evaluate_expression),
   DEF_MI_CMD_MI ("data-list-changed-registers",
@@ -119,8 +116,6 @@ static struct mi_cmd mi_cmds[] =
   DEF_MI_CMD_MI ("file-list-shared-libraries",
 		 mi_cmd_file_list_shared_libraries),
   DEF_MI_CMD_CLI ("file-symbol-file", "symbol-file", 1),
-  DEF_MI_CMD_MI ("fix-multi-location-breakpoint-output",
-		 mi_cmd_fix_multi_location_breakpoint_output),
   DEF_MI_CMD_MI ("gdb-exit", mi_cmd_gdb_exit),
   DEF_MI_CMD_CLI_1 ("gdb-set", "set", 1,
 		    &mi_suppress_notification.cmd_param_changed),

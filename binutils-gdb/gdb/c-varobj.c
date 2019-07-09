@@ -1,6 +1,6 @@
 /* varobj support for C and C++.
 
-   Copyright (C) 1999-2019 Free Software Foundation, Inc.
+   Copyright (C) 1999-2018 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -92,15 +92,16 @@ adjust_value_for_child_access (struct value **value,
 	  if (value && *value)
 	    {
 
-	      try
+	      TRY
 		{
 		  *value = value_ind (*value);
 		}
 
-	      catch (const gdb_exception_error &except)
+	      CATCH (except, RETURN_MASK_ERROR)
 		{
 		  *value = NULL;
 		}
+	      END_CATCH
 	    }
 	  *type = target_type;
 	  if (was_ptr)
@@ -144,7 +145,8 @@ c_is_path_expr_parent (const struct varobj *var)
   /* Anonymous unions and structs are also not path_expr parents.  */
   if ((TYPE_CODE (type) == TYPE_CODE_STRUCT
        || TYPE_CODE (type) == TYPE_CODE_UNION)
-      && TYPE_NAME (type) == NULL)
+      && TYPE_NAME (type) == NULL
+      && TYPE_TAG_NAME (type) == NULL)
     {
       const struct varobj *parent = var->parent;
 
@@ -252,17 +254,18 @@ value_struct_element_index (struct value *value, int type_index)
   gdb_assert (TYPE_CODE (type) == TYPE_CODE_STRUCT
 	      || TYPE_CODE (type) == TYPE_CODE_UNION);
 
-  try
+  TRY
     {
       if (field_is_static (&TYPE_FIELD (type, type_index)))
 	result = value_static_field (type, type_index);
       else
 	result = value_primitive_field (value, 0, type_index, type);
     }
-  catch (const gdb_exception_error &e)
+  CATCH (e, RETURN_MASK_ERROR)
     {
       return NULL;
     }
+  END_CATCH
 
   return result;
 }
@@ -283,7 +286,7 @@ c_describe_child (const struct varobj *parent, int index,
 		  std::string *cname, struct value **cvalue,
 		  struct type **ctype, std::string *cfull_expression)
 {
-  struct value *value = parent->value.get ();
+  struct value *value = parent->value;
   struct type *type = varobj_get_value_type (parent);
   std::string parent_expression;
   int was_ptr;
@@ -314,13 +317,14 @@ c_describe_child (const struct varobj *parent, int index,
 	{
 	  int real_index = index + TYPE_LOW_BOUND (TYPE_INDEX_TYPE (type));
 
-	  try
+	  TRY
 	    {
 	      *cvalue = value_subscript (value, real_index);
 	    }
-	  catch (const gdb_exception_error &except)
+	  CATCH (except, RETURN_MASK_ERROR)
 	    {
 	    }
+	  END_CATCH
 	}
 
       if (ctype)
@@ -390,15 +394,16 @@ c_describe_child (const struct varobj *parent, int index,
 
       if (cvalue && value)
 	{
-	  try
+	  TRY
 	    {
 	      *cvalue = value_ind (value);
 	    }
 
-	  catch (const gdb_exception_error &except)
+	  CATCH (except, RETURN_MASK_ERROR)
 	    {
 	      *cvalue = NULL;
 	    }
+	  END_CATCH
 	}
 
       /* Don't use get_target_type because it calls
@@ -508,22 +513,21 @@ c_value_of_variable (const struct varobj *var,
 	  }
 	else
 	  {
-	    if (var->not_fetched && value_lazy (var->value.get ()))
+	    if (var->not_fetched && value_lazy (var->value))
 	      /* Frozen variable and no value yet.  We don't
 		 implicitly fetch the value.  MI response will
 		 use empty string for the value, which is OK.  */
 	      return std::string ();
 
 	    gdb_assert (varobj_value_is_changeable_p (var));
-	    gdb_assert (!value_lazy (var->value.get ()));
+	    gdb_assert (!value_lazy (var->value));
 	    
 	    /* If the specified format is the current one,
 	       we can reuse print_value.  */
 	    if (format == var->format)
 	      return var->print_value;
 	    else
-	      return varobj_value_get_print_value (var->value.get (), format,
-						   var);
+	      return varobj_value_get_print_value (var->value, format, var);
 	  }
       }
     }
@@ -575,7 +579,7 @@ cplus_number_of_children (const struct varobj *var)
       /* It is necessary to access a real type (via RTTI).  */
       if (opts.objectprint)
         {
-          value = var->value.get ();
+          value = var->value;
           lookup_actual_type = (TYPE_IS_REFERENCE (var->type)
 				|| TYPE_CODE (var->type) == TYPE_CODE_PTR);
         }
@@ -612,7 +616,7 @@ cplus_number_of_children (const struct varobj *var)
         {
 	  const struct varobj *parent = var->parent;
 
-	  value = parent->value.get ();
+	  value = parent->value;
 	  lookup_actual_type = (TYPE_IS_REFERENCE (parent->type)
 				|| TYPE_CODE (parent->type) == TYPE_CODE_PTR);
         }
@@ -720,7 +724,7 @@ cplus_describe_child (const struct varobj *parent, int index,
   if (opts.objectprint)
     lookup_actual_type = (TYPE_IS_REFERENCE (var->type)
 			  || TYPE_CODE (var->type) == TYPE_CODE_PTR);
-  value = var->value.get ();
+  value = var->value;
   type = varobj_get_value_type (var);
   if (cfull_expression)
     parent_expression

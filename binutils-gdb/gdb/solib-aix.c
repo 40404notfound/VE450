@@ -1,4 +1,4 @@
-/* Copyright (C) 2013-2019 Free Software Foundation, Inc.
+/* Copyright (C) 2013-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -24,9 +24,8 @@
 #include "objfiles.h"
 #include "symtab.h"
 #include "xcoffread.h"
-#include "observable.h"
+#include "observer.h"
 #include "gdbcmd.h"
-#include "common/scope-exit.h"
 
 /* Variable controlling the output of the debugging traces for
    this module.  */
@@ -243,19 +242,18 @@ static VEC (lm_info_aix_p) *
 solib_aix_parse_libraries (const char *library)
 {
   VEC (lm_info_aix_p) *result = NULL;
-  auto cleanup = make_scope_exit ([&] ()
-    {
-      solib_aix_free_library_list (&result);
-    });
+  struct cleanup *back_to = make_cleanup (solib_aix_free_library_list,
+                                          &result);
 
   if (gdb_xml_parse_quick (_("aix library list"), "library-list-aix.dtd",
                            library_list_elements, library, &result) == 0)
     {
       /* Parsed successfully, keep the result.  */
-      cleanup.release ();
+      discard_cleanups (back_to);
       return result;
     }
 
+  do_cleanups (back_to);
   return NULL;
 }
 
@@ -281,10 +279,10 @@ solib_aix_get_library_list (struct inferior *inf, const char *warning_msg)
   if (data->library_list != NULL)
     return data->library_list;
 
-  gdb::optional<gdb::char_vector> library_document
-    = target_read_stralloc (current_top_target (), TARGET_OBJECT_LIBRARIES_AIX,
+  gdb::unique_xmalloc_ptr<char> library_document
+    = target_read_stralloc (&current_target, TARGET_OBJECT_LIBRARIES_AIX,
 			    NULL);
-  if (!library_document && warning_msg != NULL)
+  if (library_document == NULL && warning_msg != NULL)
     {
       warning (_("%s (failed to read TARGET_OBJECT_LIBRARIES_AIX)"),
 	       warning_msg);
@@ -294,9 +292,9 @@ solib_aix_get_library_list (struct inferior *inf, const char *warning_msg)
   if (solib_aix_debug)
     fprintf_unfiltered (gdb_stdlog,
 			"DEBUG: TARGET_OBJECT_LIBRARIES_AIX = \n%s\n",
-			library_document->data ());
+			library_document.get ());
 
-  data->library_list = solib_aix_parse_libraries (library_document->data ());
+  data->library_list = solib_aix_parse_libraries (library_document.get ());
   if (data->library_list == NULL && warning_msg != NULL)
     {
       warning (_("%s (missing XML support?)"), warning_msg);
@@ -441,14 +439,14 @@ solib_aix_clear_solib (void)
    The resulting array is computed on the heap and must be
    deallocated after use.  */
 
-static gdb::unique_xmalloc_ptr<struct section_offsets>
+static struct section_offsets *
 solib_aix_get_section_offsets (struct objfile *objfile,
 			       lm_info_aix *info)
 {
+  struct section_offsets *offsets;
   bfd *abfd = objfile->obfd;
 
-  gdb::unique_xmalloc_ptr<struct section_offsets> offsets
-    (XCNEWVEC (struct section_offsets, objfile->num_sections));
+  offsets = XCNEWVEC (struct section_offsets, objfile->num_sections);
 
   /* .text */
 
@@ -517,10 +515,12 @@ solib_aix_solib_create_inferior_hook (int from_tty)
 
   if (symfile_objfile != NULL)
     {
-      gdb::unique_xmalloc_ptr<struct section_offsets> offsets
+      struct section_offsets *offsets
 	= solib_aix_get_section_offsets (symfile_objfile, exec_info);
+      struct cleanup *cleanup = make_cleanup (xfree, offsets);
 
-      objfile_relocate (symfile_objfile, offsets.get ());
+      objfile_relocate (symfile_objfile, offsets);
+      do_cleanups (cleanup);
     }
 }
 
@@ -602,7 +602,7 @@ solib_aix_in_dynsym_resolve_code (CORE_ADDR pc)
 /* Implement the "bfd_open" target_so_ops method.  */
 
 static gdb_bfd_ref_ptr
-solib_aix_bfd_open (const char *pathname)
+solib_aix_bfd_open (char *pathname)
 {
   /* The pathname is actually a synthetic filename with the following
      form: "/path/to/sharedlib(member.o)" (double-quotes excluded).
@@ -611,9 +611,10 @@ solib_aix_bfd_open (const char *pathname)
      FIXME: This is a little hacky.  Perhaps we should provide access
      to the solib's lm_info here?  */
   const int path_len = strlen (pathname);
-  const char *sep;
+  char *sep;
   int filename_len;
   int found_file;
+  char *found_pathname;
 
   if (pathname[path_len - 1] != ')')
     return solib_bfd_open (pathname);
@@ -637,12 +638,10 @@ solib_aix_bfd_open (const char *pathname)
   /* Calling solib_find makes certain that sysroot path is set properly
      if program has a dependency on .a archive and sysroot is set via
      set sysroot command.  */
-  gdb::unique_xmalloc_ptr<char> found_pathname
-    = solib_find (filename.c_str (), &found_file);
+  found_pathname = solib_find (filename.c_str (), &found_file);
   if (found_pathname == NULL)
       perror_with_name (pathname);
-  gdb_bfd_ref_ptr archive_bfd (solib_bfd_fopen (found_pathname.get (),
-						found_file));
+  gdb_bfd_ref_ptr archive_bfd (solib_bfd_fopen (found_pathname, found_file));
   if (archive_bfd == NULL)
     {
       warning (_("Could not open `%s' as an executable file: %s"),
@@ -791,7 +790,7 @@ _initialize_solib_aix (void)
 
   solib_aix_inferior_data_handle = register_inferior_data ();
 
-  gdb::observers::normal_stop.attach (solib_aix_normal_stop_observer);
+  observer_attach_normal_stop (solib_aix_normal_stop_observer);
 
   /* Debug this file's internals.  */
   add_setshow_boolean_cmd ("aix-solib", class_maintenance,

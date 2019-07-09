@@ -1,6 +1,6 @@
 #ld: -r -E
 #readelf: -s --wide
-#target: *-*-linux* *-*-gnu* *-*-solaris* arm*-*-uclinuxfdpiceabi
+#target: *-*-linux* *-*-gnu* *-*-solaris*
 
 Symbol table '\.symtab' contains [0-9]+ entries:
 #...

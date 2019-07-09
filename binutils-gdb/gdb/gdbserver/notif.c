@@ -1,5 +1,5 @@
 /* Notification to GDB.
-   Copyright (C) 1989-2019 Free Software Foundation, Inc.
+   Copyright (C) 1989-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -61,9 +61,10 @@ static struct notif_server *notifs[] =
 void
 notif_write_event (struct notif_server *notif, char *own_buf)
 {
-  if (!notif->queue.empty ())
+  if (!QUEUE_is_empty (notif_event_p, notif->queue))
     {
-      struct notif_event *event = notif->queue.front ();
+      struct notif_event *event
+	= QUEUE_peek (notif_event_p, notif->queue);
 
       notif->write (event, own_buf);
     }
@@ -97,16 +98,16 @@ handle_notif_ack (char *own_buf, int packet_len)
 
   /* If we're waiting for GDB to acknowledge a pending event,
      consider that done.  */
-  if (!np->queue.empty ())
+  if (!QUEUE_is_empty (notif_event_p, np->queue))
     {
-      struct notif_event *head = np->queue.front ();
-      np->queue.pop_front ();
+      struct notif_event *head
+	= QUEUE_deque (notif_event_p, np->queue);
 
       if (remote_debug)
 	debug_printf ("%s: acking %d\n", np->ack_name,
-		      (int) np->queue.size ());
+		      QUEUE_length (notif_event_p, np->queue));
 
-      delete head;
+      xfree (head);
     }
 
   notif_write_event (np, own_buf);
@@ -120,11 +121,11 @@ void
 notif_event_enque (struct notif_server *notif,
 		   struct notif_event *event)
 {
-  notif->queue.push_back (event);
+  QUEUE_enque (notif_event_p, notif->queue, event);
 
   if (remote_debug)
     debug_printf ("pending events: %s %d\n", notif->notif_name,
-		  (int) notif->queue.size ());
+		  QUEUE_length (notif_event_p, notif->queue));
 
 }
 
@@ -133,7 +134,7 @@ notif_event_enque (struct notif_server *notif,
 void
 notif_push (struct notif_server *np, struct notif_event *new_event)
 {
-  bool is_first_event = np->queue.empty ();
+  int is_first_event = QUEUE_is_empty (notif_event_p, np->queue);
 
   /* Something interesting.  Tell GDB about it.  */
   notif_event_enque (np, new_event);
@@ -151,4 +152,20 @@ notif_push (struct notif_server *np, struct notif_event *new_event)
       np->write (new_event, p);
       putpkt_notif (buf);
     }
+}
+
+static void
+notif_event_xfree (struct notif_event *event)
+{
+  xfree (event);
+}
+
+void
+initialize_notif (void)
+{
+  int i = 0;
+
+  for (i = 0; i < ARRAY_SIZE (notifs); i++)
+    notifs[i]->queue
+      = QUEUE_alloc (notif_event_p, notif_event_xfree);
 }

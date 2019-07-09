@@ -1,6 +1,6 @@
 /* Some commonly-used VEC types.
 
-   Copyright (C) 2012-2019 Free Software Foundation, Inc.
+   Copyright (C) 2012-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -21,13 +21,30 @@
 #include "gdb_vecs.h"
 #include "host-defs.h"
 
+/* Call xfree for each element of CHAR_PTR_VEC and final VEC_free for
+   CHAR_PTR_VEC itself.
+
+   You must not modify CHAR_PTR_VEC after it got registered with this function
+   by make_cleanup as the CHAR_PTR_VEC base address may change on its updates.
+   Contrary to VEC_free this function does not (cannot) clear the pointer.  */
+
+void
+free_char_ptr_vec (VEC (char_ptr) *char_ptr_vec)
+{
+  int ix;
+  char *name;
+
+  for (ix = 0; VEC_iterate (char_ptr, char_ptr_vec, ix, name); ++ix)
+    xfree (name);
+  VEC_free (char_ptr, char_ptr_vec);
+}
+
 /* Worker function to split character delimiter separated string of fields
-   STR into a char pointer vector.  */
+   STR into a CHAR_PTR_VEC.  */
 
 static void
-delim_string_to_char_ptr_vec_append
-  (std::vector<gdb::unique_xmalloc_ptr<char>> *vecp, const char *str,
-   char delimiter)
+delim_string_to_char_ptr_vec_append (VEC (char_ptr) **vecp,
+				     const char *str, char delimiter)
 {
   do
     {
@@ -47,40 +64,49 @@ delim_string_to_char_ptr_vec_append
       this_field = (char *) xmalloc (this_len + 1);
       memcpy (this_field, str, this_len);
       this_field[this_len] = '\0';
-      vecp->emplace_back (this_field);
+      VEC_safe_push (char_ptr, *vecp, this_field);
 
       str = next_field;
     }
   while (str != NULL);
 }
 
-/* See gdb_vecs.h.  */
+/* Split STR, a list of DELIMITER-separated fields, into a CHAR_PTR_VEC.
 
-std::vector<gdb::unique_xmalloc_ptr<char>>
+   You may modify the returned strings.
+   Read free_char_ptr_vec for its cleanup.  */
+
+VEC (char_ptr) *
 delim_string_to_char_ptr_vec (const char *str, char delimiter)
 {
-  std::vector<gdb::unique_xmalloc_ptr<char>> retval;
+  VEC (char_ptr) *retval = NULL;
   
   delim_string_to_char_ptr_vec_append (&retval, str, delimiter);
 
   return retval;
 }
 
-/* See gdb_vecs.h.  */
+/* Extended version of dirnames_to_char_ptr_vec - additionally if *VECP is
+   non-NULL the new list elements from DIRNAMES are appended to the existing
+   *VECP list of entries.  *VECP address will be updated by this call.  */
 
 void
-dirnames_to_char_ptr_vec_append
-  (std::vector<gdb::unique_xmalloc_ptr<char>> *vecp, const char *dirnames)
+dirnames_to_char_ptr_vec_append (VEC (char_ptr) **vecp, const char *dirnames)
 {
   delim_string_to_char_ptr_vec_append (vecp, dirnames, DIRNAME_SEPARATOR);
 }
 
-/* See gdb_vecs.h.  */
+/* Split DIRNAMES by DIRNAME_SEPARATOR delimiter and return a list of all the
+   elements in their original order.  For empty string ("") DIRNAMES return
+   list of one empty string ("") element.
+   
+   You may modify the returned strings.
+   Read free_char_ptr_vec for its cleanup.  */
 
-std::vector<gdb::unique_xmalloc_ptr<char>>
+VEC (char_ptr) *
 dirnames_to_char_ptr_vec (const char *dirnames)
 {
-  std::vector<gdb::unique_xmalloc_ptr<char>> retval;
+  VEC (char_ptr) *retval = NULL;
   
   dirnames_to_char_ptr_vec_append (&retval, dirnames);
 

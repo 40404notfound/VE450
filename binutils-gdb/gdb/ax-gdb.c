@@ -1,6 +1,6 @@
 /* GDB-specific functions for operating on agent expressions.
 
-   Copyright (C) 1998-2019 Free Software Foundation, Inc.
+   Copyright (C) 1998-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -46,7 +46,7 @@
 #include "valprint.h"
 #include "c-lang.h"
 
-#include "common/format.h"
+#include "format.h"
 
 /* To make sense of this file, you should read doc/agentexpr.texi.
    Then look at the types and enums in ax-gdb.h.  For the code itself,
@@ -679,7 +679,7 @@ gen_var_ref (struct agent_expr *ax, struct axs_value *value, struct symbol *var)
       break;
 
     case LOC_BLOCK:
-      ax_const_l (ax, BLOCK_ENTRY_PC (SYMBOL_BLOCK_VALUE (var)));
+      ax_const_l (ax, BLOCK_START (SYMBOL_BLOCK_VALUE (var)));
       value->kind = axs_rvalue;
       break;
 
@@ -1533,7 +1533,7 @@ gen_struct_ref (struct agent_expr *ax, struct axs_value *value,
   
   if (!found)
     error (_("Couldn't find member named `%s' in struct/union/class `%s'"),
-	   field, TYPE_NAME (type));
+	   field, TYPE_TAG_NAME (type));
 }
 
 static int
@@ -1629,7 +1629,7 @@ gen_namespace_elt (struct agent_expr *ax, struct axs_value *value,
 
   if (!found)
     error (_("No symbol \"%s\" in namespace \"%s\"."), 
-	   name, TYPE_NAME (curtype));
+	   name, TYPE_TAG_NAME (curtype));
 
   return found;
 }
@@ -1644,7 +1644,7 @@ static int
 gen_maybe_namespace_elt (struct agent_expr *ax, struct axs_value *value,
 			 const struct type *curtype, char *name)
 {
-  const char *namespace_name = TYPE_NAME (curtype);
+  const char *namespace_name = TYPE_TAG_NAME (curtype);
   struct block_symbol sym;
 
   sym = cp_lookup_symbol_namespace (namespace_name, name,
@@ -2036,7 +2036,8 @@ gen_expr (struct expression *exp, union exp_element **pc,
 	  internal_error (__FILE__, __LINE__,
 			  _("Register $%s not available"), name);
 	/* No support for tracing user registers yet.  */
-	if (reg >= gdbarch_num_cooked_regs (ax->gdbarch))
+	if (reg >= gdbarch_num_regs (ax->gdbarch)
+	    + gdbarch_num_pseudo_regs (ax->gdbarch))
 	  error (_("'%s' is a user-register; "
 		   "GDB cannot yet trace user-register contents."),
 		 name);
@@ -2634,6 +2635,8 @@ agent_command_1 (const char *exp, int eval)
     {
       struct linespec_result canonical;
 
+      exp = skip_spaces (exp);
+
       event_location_up location
 	= new_linespec_location (&exp, symbol_name_match_type::WILD);
       decode_line_full (location.get (), DECODE_LINE_FUNFIRSTLINE, NULL,
@@ -2749,7 +2752,7 @@ _initialize_ax_gdb (void)
   add_cmd ("agent", class_maintenance, agent_command,
 	   _("\
 Translate an expression into remote agent bytecode for tracing.\n\
-Usage: maint agent [-at LOCATION,] EXPRESSION\n\
+Usage: maint agent [-at location,] EXPRESSION\n\
 If -at is given, generate remote agent bytecode for this location.\n\
 If not, generate remote agent bytecode for current frame pc address."),
 	   &maintenancelist);
@@ -2757,7 +2760,7 @@ If not, generate remote agent bytecode for current frame pc address."),
   add_cmd ("agent-eval", class_maintenance, agent_eval_command,
 	   _("\
 Translate an expression into remote agent bytecode for evaluation.\n\
-Usage: maint agent-eval [-at LOCATION,] EXPRESSION\n\
+Usage: maint agent-eval [-at location,] EXPRESSION\n\
 If -at is given, generate remote agent bytecode for this location.\n\
 If not, generate remote agent bytecode for current frame pc address."),
 	   &maintenancelist);

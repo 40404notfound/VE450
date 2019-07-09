@@ -1,5 +1,5 @@
 /* PowerPC-specific support for 32-bit ELF
-   Copyright (C) 1994-2019 Free Software Foundation, Inc.
+   Copyright (C) 1994-2018 Free Software Foundation, Inc.
    Written by Ian Lance Taylor, Cygnus Support.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -186,384 +186,1199 @@ static const bfd_vma ppc_elf_vxworks_pic_plt0_entry
    + (SYM)->root.u.def.section->output_offset		\
    + (SYM)->root.u.def.value)
 
-/* Relocation HOWTO's.  */
-/* Like other ELF RELA targets that don't apply multiple
-   field-altering relocations to the same localation, src_mask is
-   always zero and pcrel_offset is the same as pc_relative.
-   PowerPC can always use a zero bitpos, even when the field is not at
-   the LSB.  For example, a REL24 could use rightshift=2, bisize=24
-   and bitpos=2 which matches the ABI description, or as we do here,
-   rightshift=0, bitsize=26 and bitpos=0.  */
-#define HOW(type, size, bitsize, mask, rightshift, pc_relative, \
-	    complain, special_func)				\
-  HOWTO (type, rightshift, size, bitsize, pc_relative, 0,	\
-	 complain_overflow_ ## complain, special_func,		\
-	 #type, FALSE, 0, mask, pc_relative)
-
 static reloc_howto_type *ppc_elf_howto_table[R_PPC_max];
 
 static reloc_howto_type ppc_elf_howto_raw[] = {
   /* This reloc does nothing.  */
-  HOW (R_PPC_NONE, 3, 0, 0, 0, FALSE, dont,
-       bfd_elf_generic_reloc),
+  HOWTO (R_PPC_NONE,		/* type */
+	 0,			/* rightshift */
+	 3,			/* size (0 = byte, 1 = short, 2 = long) */
+	 0,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 bfd_elf_generic_reloc,	/* special_function */
+	 "R_PPC_NONE",		/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0,			/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* A standard 32 bit relocation.  */
-  HOW (R_PPC_ADDR32, 2, 32, 0xffffffff, 0, FALSE, dont,
-       bfd_elf_generic_reloc),
+  HOWTO (R_PPC_ADDR32,		/* type */
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 32,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 bfd_elf_generic_reloc,	/* special_function */
+	 "R_PPC_ADDR32",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffffffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* An absolute 26 bit branch; the lower two bits must be zero.
      FIXME: we don't check that, we just clear them.  */
-  HOW (R_PPC_ADDR24, 2, 26, 0x3fffffc, 0, FALSE, signed,
-       bfd_elf_generic_reloc),
+  HOWTO (R_PPC_ADDR24,		/* type */
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 26,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 bfd_elf_generic_reloc,	/* special_function */
+	 "R_PPC_ADDR24",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0x3fffffc,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* A standard 16 bit relocation.  */
-  HOW (R_PPC_ADDR16, 1, 16, 0xffff, 0, FALSE, bitfield,
-       bfd_elf_generic_reloc),
+  HOWTO (R_PPC_ADDR16,		/* type */
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_bitfield, /* complain_on_overflow */
+	 bfd_elf_generic_reloc,	/* special_function */
+	 "R_PPC_ADDR16",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* A 16 bit relocation without overflow.  */
-  HOW (R_PPC_ADDR16_LO, 1, 16, 0xffff, 0, FALSE, dont,
-       bfd_elf_generic_reloc),
+  HOWTO (R_PPC_ADDR16_LO,	/* type */
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont,/* complain_on_overflow */
+	 bfd_elf_generic_reloc,	/* special_function */
+	 "R_PPC_ADDR16_LO",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* The high order 16 bits of an address.  */
-  HOW (R_PPC_ADDR16_HI, 1, 16, 0xffff, 16, FALSE, dont,
-       bfd_elf_generic_reloc),
+  HOWTO (R_PPC_ADDR16_HI,	/* type */
+	 16,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 bfd_elf_generic_reloc,	/* special_function */
+	 "R_PPC_ADDR16_HI",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* The high order 16 bits of an address, plus 1 if the contents of
      the low 16 bits, treated as a signed number, is negative.  */
-  HOW (R_PPC_ADDR16_HA, 1, 16, 0xffff, 16, FALSE, dont,
-       ppc_elf_addr16_ha_reloc),
+  HOWTO (R_PPC_ADDR16_HA,	/* type */
+	 16,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_addr16_ha_reloc, /* special_function */
+	 "R_PPC_ADDR16_HA",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* An absolute 16 bit branch; the lower two bits must be zero.
      FIXME: we don't check that, we just clear them.  */
-  HOW (R_PPC_ADDR14, 2, 16, 0xfffc, 0, FALSE, signed,
-       bfd_elf_generic_reloc),
+  HOWTO (R_PPC_ADDR14,		/* type */
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 bfd_elf_generic_reloc,	/* special_function */
+	 "R_PPC_ADDR14",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xfffc,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* An absolute 16 bit branch, for which bit 10 should be set to
      indicate that the branch is expected to be taken.	The lower two
      bits must be zero.  */
-  HOW (R_PPC_ADDR14_BRTAKEN, 2, 16, 0xfffc, 0, FALSE, signed,
-       bfd_elf_generic_reloc),
+  HOWTO (R_PPC_ADDR14_BRTAKEN,	/* type */
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 bfd_elf_generic_reloc,	/* special_function */
+	 "R_PPC_ADDR14_BRTAKEN",/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xfffc,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* An absolute 16 bit branch, for which bit 10 should be set to
      indicate that the branch is not expected to be taken.  The lower
      two bits must be zero.  */
-  HOW (R_PPC_ADDR14_BRNTAKEN, 2, 16, 0xfffc, 0, FALSE, signed,
-       bfd_elf_generic_reloc),
+  HOWTO (R_PPC_ADDR14_BRNTAKEN, /* type */
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 bfd_elf_generic_reloc,	/* special_function */
+	 "R_PPC_ADDR14_BRNTAKEN",/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xfffc,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* A relative 26 bit branch; the lower two bits must be zero.  */
-  HOW (R_PPC_REL24, 2, 26, 0x3fffffc, 0, TRUE, signed,
-       bfd_elf_generic_reloc),
+  HOWTO (R_PPC_REL24,		/* type */
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 26,			/* bitsize */
+	 TRUE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 bfd_elf_generic_reloc,	/* special_function */
+	 "R_PPC_REL24",		/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0x3fffffc,		/* dst_mask */
+	 TRUE),			/* pcrel_offset */
 
   /* A relative 16 bit branch; the lower two bits must be zero.  */
-  HOW (R_PPC_REL14, 2, 16, 0xfffc, 0, TRUE, signed,
-       bfd_elf_generic_reloc),
+  HOWTO (R_PPC_REL14,		/* type */
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 TRUE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 bfd_elf_generic_reloc,	/* special_function */
+	 "R_PPC_REL14",		/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xfffc,		/* dst_mask */
+	 TRUE),			/* pcrel_offset */
 
   /* A relative 16 bit branch.  Bit 10 should be set to indicate that
      the branch is expected to be taken.  The lower two bits must be
      zero.  */
-  HOW (R_PPC_REL14_BRTAKEN, 2, 16, 0xfffc, 0, TRUE, signed,
-       bfd_elf_generic_reloc),
+  HOWTO (R_PPC_REL14_BRTAKEN,	/* type */
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 TRUE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 bfd_elf_generic_reloc,	/* special_function */
+	 "R_PPC_REL14_BRTAKEN",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xfffc,		/* dst_mask */
+	 TRUE),			/* pcrel_offset */
 
   /* A relative 16 bit branch.  Bit 10 should be set to indicate that
      the branch is not expected to be taken.  The lower two bits must
      be zero.  */
-  HOW (R_PPC_REL14_BRNTAKEN, 2, 16, 0xfffc, 0, TRUE, signed,
-       bfd_elf_generic_reloc),
+  HOWTO (R_PPC_REL14_BRNTAKEN,	/* type */
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 TRUE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 bfd_elf_generic_reloc,	/* special_function */
+	 "R_PPC_REL14_BRNTAKEN",/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xfffc,		/* dst_mask */
+	 TRUE),			/* pcrel_offset */
 
   /* Like R_PPC_ADDR16, but referring to the GOT table entry for the
      symbol.  */
-  HOW (R_PPC_GOT16, 1, 16, 0xffff, 0, FALSE, signed,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_GOT16,		/* type */
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_GOT16",		/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Like R_PPC_ADDR16_LO, but referring to the GOT table entry for
      the symbol.  */
-  HOW (R_PPC_GOT16_LO, 1, 16, 0xffff, 0, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_GOT16_LO,	/* type */
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_GOT16_LO",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Like R_PPC_ADDR16_HI, but referring to the GOT table entry for
      the symbol.  */
-  HOW (R_PPC_GOT16_HI, 1, 16, 0xffff, 16, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_GOT16_HI,	/* type */
+	 16,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_GOT16_HI",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		 /* pcrel_offset */
 
   /* Like R_PPC_ADDR16_HA, but referring to the GOT table entry for
      the symbol.  */
-  HOW (R_PPC_GOT16_HA, 1, 16, 0xffff, 16, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_GOT16_HA,	/* type */
+	 16,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_GOT16_HA",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Like R_PPC_REL24, but referring to the procedure linkage table
      entry for the symbol.  */
-  HOW (R_PPC_PLTREL24, 2, 26, 0x3fffffc, 0, TRUE, signed,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_PLTREL24,	/* type */
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 26,			/* bitsize */
+	 TRUE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_PLTREL24",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0x3fffffc,		/* dst_mask */
+	 TRUE),			/* pcrel_offset */
 
   /* This is used only by the dynamic linker.  The symbol should exist
      both in the object being run and in some shared library.  The
      dynamic linker copies the data addressed by the symbol from the
      shared library into the object, because the object being
      run has to have the data at some particular address.  */
-  HOW (R_PPC_COPY, 2, 32, 0, 0, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_COPY,		/* type */
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 32,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_COPY",		/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0,			/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Like R_PPC_ADDR32, but used when setting global offset table
      entries.  */
-  HOW (R_PPC_GLOB_DAT, 2, 32, 0xffffffff, 0, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_GLOB_DAT,	/* type */
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 32,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_GLOB_DAT",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffffffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Marks a procedure linkage table entry for a symbol.  */
-  HOW (R_PPC_JMP_SLOT, 2, 32, 0, 0, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_JMP_SLOT,	/* type */
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 32,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_JMP_SLOT",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0,			/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Used only by the dynamic linker.  When the object is run, this
      longword is set to the load address of the object, plus the
      addend.  */
-  HOW (R_PPC_RELATIVE, 2, 32, 0xffffffff, 0, FALSE, dont,
-       bfd_elf_generic_reloc),
+  HOWTO (R_PPC_RELATIVE,	/* type */
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 32,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 bfd_elf_generic_reloc,	 /* special_function */
+	 "R_PPC_RELATIVE",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffffffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Like R_PPC_REL24, but uses the value of the symbol within the
      object rather than the final value.  Normally used for
      _GLOBAL_OFFSET_TABLE_.  */
-  HOW (R_PPC_LOCAL24PC, 2, 26, 0x3fffffc, 0, TRUE, signed,
-       bfd_elf_generic_reloc),
+  HOWTO (R_PPC_LOCAL24PC,	/* type */
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 26,			/* bitsize */
+	 TRUE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 bfd_elf_generic_reloc,	/* special_function */
+	 "R_PPC_LOCAL24PC",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0x3fffffc,		/* dst_mask */
+	 TRUE),			/* pcrel_offset */
 
   /* Like R_PPC_ADDR32, but may be unaligned.  */
-  HOW (R_PPC_UADDR32, 2, 32, 0xffffffff, 0, FALSE, dont,
-       bfd_elf_generic_reloc),
+  HOWTO (R_PPC_UADDR32,		/* type */
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 32,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 bfd_elf_generic_reloc,	/* special_function */
+	 "R_PPC_UADDR32",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffffffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Like R_PPC_ADDR16, but may be unaligned.  */
-  HOW (R_PPC_UADDR16, 1, 16, 0xffff, 0, FALSE, bitfield,
-       bfd_elf_generic_reloc),
+  HOWTO (R_PPC_UADDR16,		/* type */
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_bitfield, /* complain_on_overflow */
+	 bfd_elf_generic_reloc,	/* special_function */
+	 "R_PPC_UADDR16",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* 32-bit PC relative */
-  HOW (R_PPC_REL32, 2, 32, 0xffffffff, 0, TRUE, dont,
-       bfd_elf_generic_reloc),
+  HOWTO (R_PPC_REL32,		/* type */
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 32,			/* bitsize */
+	 TRUE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 bfd_elf_generic_reloc,	/* special_function */
+	 "R_PPC_REL32",		/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffffffff,		/* dst_mask */
+	 TRUE),			/* pcrel_offset */
 
   /* 32-bit relocation to the symbol's procedure linkage table.
      FIXME: not supported.  */
-  HOW (R_PPC_PLT32, 2, 32, 0, 0, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_PLT32,		/* type */
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 32,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_PLT32",		/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0,			/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* 32-bit PC relative relocation to the symbol's procedure linkage table.
      FIXME: not supported.  */
-  HOW (R_PPC_PLTREL32, 2, 32, 0, 0, TRUE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_PLTREL32,	/* type */
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 32,			/* bitsize */
+	 TRUE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_PLTREL32",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0,			/* dst_mask */
+	 TRUE),			/* pcrel_offset */
 
   /* Like R_PPC_ADDR16_LO, but referring to the PLT table entry for
      the symbol.  */
-  HOW (R_PPC_PLT16_LO, 1, 16, 0xffff, 0, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_PLT16_LO,	/* type */
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_PLT16_LO",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Like R_PPC_ADDR16_HI, but referring to the PLT table entry for
      the symbol.  */
-  HOW (R_PPC_PLT16_HI, 1, 16, 0xffff, 16, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_PLT16_HI,	/* type */
+	 16,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_PLT16_HI",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		 /* pcrel_offset */
 
   /* Like R_PPC_ADDR16_HA, but referring to the PLT table entry for
      the symbol.  */
-  HOW (R_PPC_PLT16_HA, 1, 16, 0xffff, 16, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_PLT16_HA,	/* type */
+	 16,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_PLT16_HA",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* A sign-extended 16 bit value relative to _SDA_BASE_, for use with
      small data items.  */
-  HOW (R_PPC_SDAREL16, 1, 16, 0xffff, 0, FALSE, signed,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_SDAREL16,	/* type */
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_SDAREL16",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* 16-bit section relative relocation.  */
-  HOW (R_PPC_SECTOFF, 1, 16, 0xffff, 0, FALSE, signed,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_SECTOFF,		/* type */
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_SECTOFF",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* 16-bit lower half section relative relocation.  */
-  HOW (R_PPC_SECTOFF_LO, 1, 16, 0xffff, 0, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_SECTOFF_LO,	  /* type */
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_SECTOFF_LO",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* 16-bit upper half section relative relocation.  */
-  HOW (R_PPC_SECTOFF_HI, 1, 16, 0xffff, 16, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_SECTOFF_HI,	/* type */
+	 16,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_SECTOFF_HI",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		 /* pcrel_offset */
 
   /* 16-bit upper half adjusted section relative relocation.  */
-  HOW (R_PPC_SECTOFF_HA, 1, 16, 0xffff, 16, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_SECTOFF_HA,	/* type */
+	 16,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_SECTOFF_HA",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Marker relocs for TLS.  */
-  HOW (R_PPC_TLS, 2, 32, 0, 0, FALSE, dont,
-       bfd_elf_generic_reloc),
+  HOWTO (R_PPC_TLS,
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 32,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 bfd_elf_generic_reloc,	/* special_function */
+	 "R_PPC_TLS",		/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0,			/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
-  HOW (R_PPC_TLSGD, 2, 32, 0, 0, FALSE, dont,
-       bfd_elf_generic_reloc),
+  HOWTO (R_PPC_TLSGD,
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 32,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 bfd_elf_generic_reloc, /* special_function */
+	 "R_PPC_TLSGD",		/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0,			/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
-  HOW (R_PPC_TLSLD, 2, 32, 0, 0, FALSE, dont,
-       bfd_elf_generic_reloc),
-
-  /* Marker relocs on inline plt call instructions.  */
-  HOW (R_PPC_PLTSEQ, 2, 32, 0, 0, FALSE, dont,
-       bfd_elf_generic_reloc),
-
-  HOW (R_PPC_PLTCALL, 2, 32, 0, 0, FALSE, dont,
-       bfd_elf_generic_reloc),
+  HOWTO (R_PPC_TLSLD,
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 32,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 bfd_elf_generic_reloc, /* special_function */
+	 "R_PPC_TLSLD",		/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0,			/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Computes the load module index of the load module that contains the
      definition of its TLS sym.  */
-  HOW (R_PPC_DTPMOD32, 2, 32, 0xffffffff, 0, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_DTPMOD32,
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 32,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_DTPMOD32",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffffffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Computes a dtv-relative displacement, the difference between the value
      of sym+add and the base address of the thread-local storage block that
      contains the definition of sym, minus 0x8000.  */
-  HOW (R_PPC_DTPREL32, 2, 32, 0xffffffff, 0, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_DTPREL32,
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 32,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_DTPREL32",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffffffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* A 16 bit dtprel reloc.  */
-  HOW (R_PPC_DTPREL16, 1, 16, 0xffff, 0, FALSE, signed,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_DTPREL16,
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_DTPREL16",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Like DTPREL16, but no overflow.  */
-  HOW (R_PPC_DTPREL16_LO, 1, 16, 0xffff, 0, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_DTPREL16_LO,
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_DTPREL16_LO",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Like DTPREL16_LO, but next higher group of 16 bits.  */
-  HOW (R_PPC_DTPREL16_HI, 1, 16, 0xffff, 16, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_DTPREL16_HI,
+	 16,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_DTPREL16_HI",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Like DTPREL16_HI, but adjust for low 16 bits.  */
-  HOW (R_PPC_DTPREL16_HA, 1, 16, 0xffff, 16, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_DTPREL16_HA,
+	 16,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_DTPREL16_HA",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Computes a tp-relative displacement, the difference between the value of
      sym+add and the value of the thread pointer (r13).  */
-  HOW (R_PPC_TPREL32, 2, 32, 0xffffffff, 0, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_TPREL32,
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 32,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_TPREL32",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffffffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* A 16 bit tprel reloc.  */
-  HOW (R_PPC_TPREL16, 1, 16, 0xffff, 0, FALSE, signed,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_TPREL16,
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_TPREL16",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Like TPREL16, but no overflow.  */
-  HOW (R_PPC_TPREL16_LO, 1, 16, 0xffff, 0, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_TPREL16_LO,
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_TPREL16_LO",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Like TPREL16_LO, but next higher group of 16 bits.  */
-  HOW (R_PPC_TPREL16_HI, 1, 16, 0xffff, 16, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_TPREL16_HI,
+	 16,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_TPREL16_HI",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Like TPREL16_HI, but adjust for low 16 bits.  */
-  HOW (R_PPC_TPREL16_HA, 1, 16, 0xffff, 16, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_TPREL16_HA,
+	 16,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_TPREL16_HA",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Allocates two contiguous entries in the GOT to hold a tls_index structure,
      with values (sym+add)@dtpmod and (sym+add)@dtprel, and computes the offset
      to the first entry.  */
-  HOW (R_PPC_GOT_TLSGD16, 1, 16, 0xffff, 0, FALSE, signed,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_GOT_TLSGD16,
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_GOT_TLSGD16",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Like GOT_TLSGD16, but no overflow.  */
-  HOW (R_PPC_GOT_TLSGD16_LO, 1, 16, 0xffff, 0, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_GOT_TLSGD16_LO,
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_GOT_TLSGD16_LO", /* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Like GOT_TLSGD16_LO, but next higher group of 16 bits.  */
-  HOW (R_PPC_GOT_TLSGD16_HI, 1, 16, 0xffff, 16, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_GOT_TLSGD16_HI,
+	 16,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_GOT_TLSGD16_HI", /* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Like GOT_TLSGD16_HI, but adjust for low 16 bits.  */
-  HOW (R_PPC_GOT_TLSGD16_HA, 1, 16, 0xffff, 16, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_GOT_TLSGD16_HA,
+	 16,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_GOT_TLSGD16_HA", /* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Allocates two contiguous entries in the GOT to hold a tls_index structure,
      with values (sym+add)@dtpmod and zero, and computes the offset to the
      first entry.  */
-  HOW (R_PPC_GOT_TLSLD16, 1, 16, 0xffff, 0, FALSE, signed,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_GOT_TLSLD16,
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_GOT_TLSLD16",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Like GOT_TLSLD16, but no overflow.  */
-  HOW (R_PPC_GOT_TLSLD16_LO, 1, 16, 0xffff, 0, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_GOT_TLSLD16_LO,
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_GOT_TLSLD16_LO", /* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Like GOT_TLSLD16_LO, but next higher group of 16 bits.  */
-  HOW (R_PPC_GOT_TLSLD16_HI, 1, 16, 0xffff, 16, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_GOT_TLSLD16_HI,
+	 16,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_GOT_TLSLD16_HI", /* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Like GOT_TLSLD16_HI, but adjust for low 16 bits.  */
-  HOW (R_PPC_GOT_TLSLD16_HA, 1, 16, 0xffff, 16, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_GOT_TLSLD16_HA,
+	 16,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_GOT_TLSLD16_HA", /* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Allocates an entry in the GOT with value (sym+add)@dtprel, and computes
      the offset to the entry.  */
-  HOW (R_PPC_GOT_DTPREL16, 1, 16, 0xffff, 0, FALSE, signed,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_GOT_DTPREL16,
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_GOT_DTPREL16",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Like GOT_DTPREL16, but no overflow.  */
-  HOW (R_PPC_GOT_DTPREL16_LO, 1, 16, 0xffff, 0, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_GOT_DTPREL16_LO,
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_GOT_DTPREL16_LO", /* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Like GOT_DTPREL16_LO, but next higher group of 16 bits.  */
-  HOW (R_PPC_GOT_DTPREL16_HI, 1, 16, 0xffff, 16, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_GOT_DTPREL16_HI,
+	 16,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_GOT_DTPREL16_HI", /* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Like GOT_DTPREL16_HI, but adjust for low 16 bits.  */
-  HOW (R_PPC_GOT_DTPREL16_HA, 1, 16, 0xffff, 16, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_GOT_DTPREL16_HA,
+	 16,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_GOT_DTPREL16_HA", /* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Allocates an entry in the GOT with value (sym+add)@tprel, and computes the
      offset to the entry.  */
-  HOW (R_PPC_GOT_TPREL16, 1, 16, 0xffff, 0, FALSE, signed,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_GOT_TPREL16,
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_GOT_TPREL16",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Like GOT_TPREL16, but no overflow.  */
-  HOW (R_PPC_GOT_TPREL16_LO, 1, 16, 0xffff, 0, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_GOT_TPREL16_LO,
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_GOT_TPREL16_LO", /* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Like GOT_TPREL16_LO, but next higher group of 16 bits.  */
-  HOW (R_PPC_GOT_TPREL16_HI, 1, 16, 0xffff, 16, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_GOT_TPREL16_HI,
+	 16,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_GOT_TPREL16_HI", /* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Like GOT_TPREL16_HI, but adjust for low 16 bits.  */
-  HOW (R_PPC_GOT_TPREL16_HA, 1, 16, 0xffff, 16, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_GOT_TPREL16_HA,
+	 16,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_GOT_TPREL16_HA", /* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* The remaining relocs are from the Embedded ELF ABI, and are not
      in the SVR4 ELF ABI.  */
 
   /* 32 bit value resulting from the addend minus the symbol.  */
-  HOW (R_PPC_EMB_NADDR32, 2, 32, 0xffffffff, 0, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_EMB_NADDR32,	/* type */
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 32,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_EMB_NADDR32",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffffffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* 16 bit value resulting from the addend minus the symbol.  */
-  HOW (R_PPC_EMB_NADDR16, 1, 16, 0xffff, 0, FALSE, signed,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_EMB_NADDR16,	/* type */
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_EMB_NADDR16",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* 16 bit value resulting from the addend minus the symbol.  */
-  HOW (R_PPC_EMB_NADDR16_LO, 1, 16, 0xffff, 0, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_EMB_NADDR16_LO,	/* type */
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont,/* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_EMB_ADDR16_LO",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* The high order 16 bits of the addend minus the symbol.  */
-  HOW (R_PPC_EMB_NADDR16_HI, 1, 16, 0xffff, 16, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_EMB_NADDR16_HI,	/* type */
+	 16,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_EMB_NADDR16_HI", /* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* The high order 16 bits of the result of the addend minus the address,
      plus 1 if the contents of the low 16 bits, treated as a signed number,
      is negative.  */
-  HOW (R_PPC_EMB_NADDR16_HA, 1, 16, 0xffff, 16, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_EMB_NADDR16_HA,	/* type */
+	 16,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_EMB_NADDR16_HA", /* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* 16 bit value resulting from allocating a 4 byte word to hold an
      address in the .sdata section, and returning the offset from
      _SDA_BASE_ for that relocation.  */
-  HOW (R_PPC_EMB_SDAI16, 1, 16, 0xffff, 0, FALSE, signed,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_EMB_SDAI16,	/* type */
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_EMB_SDAI16",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* 16 bit value resulting from allocating a 4 byte word to hold an
      address in the .sdata2 section, and returning the offset from
      _SDA2_BASE_ for that relocation.  */
-  HOW (R_PPC_EMB_SDA2I16, 1, 16, 0xffff, 0, FALSE, signed,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_EMB_SDA2I16,	/* type */
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_EMB_SDA2I16",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* A sign-extended 16 bit value relative to _SDA2_BASE_, for use with
      small data items.	 */
-  HOW (R_PPC_EMB_SDA2REL, 1, 16, 0xffff, 0, FALSE, signed,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_EMB_SDA2REL,	/* type */
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_EMB_SDA2REL",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Relocate against either _SDA_BASE_ or _SDA2_BASE_, filling in the 16 bit
      signed offset from the appropriate base, and filling in the register
      field with the appropriate register (0, 2, or 13).  */
-  HOW (R_PPC_EMB_SDA21, 2, 16, 0xffff, 0, FALSE, signed,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_EMB_SDA21,	/* type */
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_EMB_SDA21",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Relocation not handled: R_PPC_EMB_MRKREF */
   /* Relocation not handled: R_PPC_EMB_RELSEC16 */
@@ -575,122 +1390,441 @@ static reloc_howto_type ppc_elf_howto_raw[] = {
   /* PC relative relocation against either _SDA_BASE_ or _SDA2_BASE_, filling
      in the 16 bit signed offset from the appropriate base, and filling in the
      register field with the appropriate register (0, 2, or 13).  */
-  HOW (R_PPC_EMB_RELSDA, 1, 16, 0xffff, 0, FALSE, signed,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_EMB_RELSDA,	/* type */
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_EMB_RELSDA",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* A relative 8 bit branch.  */
-  HOW (R_PPC_VLE_REL8, 1, 8, 0xff, 1, TRUE, signed,
-       bfd_elf_generic_reloc),
+  HOWTO (R_PPC_VLE_REL8,	/* type */
+	 1,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 8,			/* bitsize */
+	 TRUE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 bfd_elf_generic_reloc,	/* special_function */
+	 "R_PPC_VLE_REL8",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xff,			/* dst_mask */
+	 TRUE),			/* pcrel_offset */
 
   /* A relative 15 bit branch.  */
-  HOW (R_PPC_VLE_REL15, 2, 16, 0xfffe, 0, TRUE, signed,
-       bfd_elf_generic_reloc),
+  HOWTO (R_PPC_VLE_REL15,	/* type */
+	 1,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 15,			/* bitsize */
+	 TRUE,			/* pc_relative */
+	 1,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 bfd_elf_generic_reloc,	/* special_function */
+	 "R_PPC_VLE_REL15",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xfffe,		/* dst_mask */
+	 TRUE),			/* pcrel_offset */
 
   /* A relative 24 bit branch.  */
-  HOW (R_PPC_VLE_REL24, 2, 25, 0x1fffffe, 0, TRUE, signed,
-       bfd_elf_generic_reloc),
+  HOWTO (R_PPC_VLE_REL24,	/* type */
+	 1,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 24,			/* bitsize */
+	 TRUE,			/* pc_relative */
+	 1,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 bfd_elf_generic_reloc,	/* special_function */
+	 "R_PPC_VLE_REL24",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0x1fffffe,		/* dst_mask */
+	 TRUE),			/* pcrel_offset */
 
   /* The 16 LSBS in split16a format.  */
-  HOW (R_PPC_VLE_LO16A, 2, 16, 0x1f07ff, 0, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_VLE_LO16A,	/* type */
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_VLE_LO16A",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0x1f07ff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* The 16 LSBS in split16d format.  */
-  HOW (R_PPC_VLE_LO16D, 2, 16, 0x3e007ff, 0, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_VLE_LO16D,	/* type */
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_VLE_LO16D",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0x3e007ff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Bits 16-31 split16a format.  */
-  HOW (R_PPC_VLE_HI16A, 2, 16, 0x1f07ff, 16, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_VLE_HI16A,	/* type */
+	 16,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_VLE_HI16A",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0x1f07ff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Bits 16-31 split16d format.  */
-  HOW (R_PPC_VLE_HI16D, 2, 16, 0x3e007ff, 16, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_VLE_HI16D,	/* type */
+	 16,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_VLE_HI16D",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0x3e007ff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Bits 16-31 (High Adjusted) in split16a format.  */
-  HOW (R_PPC_VLE_HA16A, 2, 16, 0x1f07ff, 16, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_VLE_HA16A,	/* type */
+	 16,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_VLE_HA16A",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0x1f07ff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Bits 16-31 (High Adjusted) in split16d format.  */
-  HOW (R_PPC_VLE_HA16D, 2, 16, 0x3e007ff, 16, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_VLE_HA16D,	/* type */
+	 16,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_VLE_HA16D",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0x3e007ff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* This reloc is like R_PPC_EMB_SDA21 but only applies to e_add16i
      instructions.  If the register base is 0 then the linker changes
      the e_add16i to an e_li instruction.  */
-  HOW (R_PPC_VLE_SDA21, 2, 16, 0xffff, 0, FALSE, signed,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_VLE_SDA21,	/* type */
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_VLE_SDA21",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Like R_PPC_VLE_SDA21 but ignore overflow.  */
-  HOW (R_PPC_VLE_SDA21_LO, 2, 16, 0xffff, 0, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_VLE_SDA21_LO,	/* type */
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_VLE_SDA21_LO",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* The 16 LSBS relative to _SDA_BASE_ in split16a format.  */
-  HOW (R_PPC_VLE_SDAREL_LO16A, 2, 16, 0x1f07ff, 0, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_VLE_SDAREL_LO16A,/* type */
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_VLE_SDAREL_LO16A", /* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0x1f07ff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* The 16 LSBS relative to _SDA_BASE_ in split16d format.  */
-  HOW (R_PPC_VLE_SDAREL_LO16D, 2, 16, 0x3e007ff, 0, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_VLE_SDAREL_LO16D, /* type */
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_VLE_SDAREL_LO16D", /* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0x3e007ff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Bits 16-31 relative to _SDA_BASE_ in split16a format.  */
-  HOW (R_PPC_VLE_SDAREL_HI16A, 2, 16, 0x1f07ff, 16, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_VLE_SDAREL_HI16A, /* type */
+	 16,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_VLE_SDAREL_HI16A", /* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0x1f07ff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Bits 16-31 relative to _SDA_BASE_ in split16d format.  */
-  HOW (R_PPC_VLE_SDAREL_HI16D, 2, 16, 0x3e007ff, 16, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_VLE_SDAREL_HI16D, /* type */
+	 16,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_VLE_SDAREL_HI16D", /* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0x3e007ff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Bits 16-31 (HA) relative to _SDA_BASE split16a format.  */
-  HOW (R_PPC_VLE_SDAREL_HA16A, 2, 16, 0x1f07ff, 16, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_VLE_SDAREL_HA16A, /* type */
+	 16,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_VLE_SDAREL_HA16A", /* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0x1f07ff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Bits 16-31 (HA) relative to _SDA_BASE split16d format.  */
-  HOW (R_PPC_VLE_SDAREL_HA16D, 2, 16, 0x3e007ff, 16, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_VLE_SDAREL_HA16D, /* type */
+	 16,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_VLE_SDAREL_HA16D", /* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0x3e007ff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* e_li split20 format.  */
-  HOW (R_PPC_VLE_ADDR20, 2, 20, 0x1f7fff, 0, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_VLE_ADDR20,	/* type */
+	 16,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 20,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 bfd_elf_generic_reloc,	/* special_function */
+	 "R_PPC_VLE_ADDR20",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0x1f07ff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
-  HOW (R_PPC_IRELATIVE, 2, 32, 0xffffffff, 0, FALSE, dont,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_IRELATIVE,	/* type */
+	 0,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 32,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_IRELATIVE",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffffffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* A 16 bit relative relocation.  */
-  HOW (R_PPC_REL16, 1, 16, 0xffff, 0, TRUE, signed,
-       bfd_elf_generic_reloc),
+  HOWTO (R_PPC_REL16,		/* type */
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 TRUE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 bfd_elf_generic_reloc,	/* special_function */
+	 "R_PPC_REL16",		/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 TRUE),			/* pcrel_offset */
 
   /* A 16 bit relative relocation without overflow.  */
-  HOW (R_PPC_REL16_LO, 1, 16, 0xffff, 0, TRUE, dont,
-       bfd_elf_generic_reloc),
+  HOWTO (R_PPC_REL16_LO,	/* type */
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 TRUE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont,/* complain_on_overflow */
+	 bfd_elf_generic_reloc,	/* special_function */
+	 "R_PPC_REL16_LO",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 TRUE),			/* pcrel_offset */
 
   /* The high order 16 bits of a relative address.  */
-  HOW (R_PPC_REL16_HI, 1, 16, 0xffff, 16, TRUE, dont,
-       bfd_elf_generic_reloc),
+  HOWTO (R_PPC_REL16_HI,	/* type */
+	 16,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 TRUE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 bfd_elf_generic_reloc,	/* special_function */
+	 "R_PPC_REL16_HI",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 TRUE),			/* pcrel_offset */
 
   /* The high order 16 bits of a relative address, plus 1 if the contents of
      the low 16 bits, treated as a signed number, is negative.  */
-  HOW (R_PPC_REL16_HA, 1, 16, 0xffff, 16, TRUE, dont,
-       ppc_elf_addr16_ha_reloc),
+  HOWTO (R_PPC_REL16_HA,	/* type */
+	 16,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 TRUE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 ppc_elf_addr16_ha_reloc, /* special_function */
+	 "R_PPC_REL16_HA",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 TRUE),			/* pcrel_offset */
 
   /* Like R_PPC_REL16_HA but for split field in addpcis.  */
-  HOW (R_PPC_REL16DX_HA, 2, 16, 0x1fffc1, 16, TRUE, signed,
-       ppc_elf_addr16_ha_reloc),
+  HOWTO (R_PPC_REL16DX_HA,	/* type */
+	 16,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 TRUE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 ppc_elf_addr16_ha_reloc, /* special_function */
+	 "R_PPC_REL16DX_HA",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0x1fffc1,		/* dst_mask */
+	 TRUE),			/* pcrel_offset */
 
   /* A split-field reloc for addpcis, non-relative (gas internal use only).  */
-  HOW (R_PPC_16DX_HA, 2, 16, 0x1fffc1, 16, FALSE, signed,
-       ppc_elf_addr16_ha_reloc),
+  HOWTO (R_PPC_16DX_HA,		/* type */
+	 16,			/* rightshift */
+	 2,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 ppc_elf_addr16_ha_reloc, /* special_function */
+	 "R_PPC_16DX_HA",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0x1fffc1,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* GNU extension to record C++ vtable hierarchy.  */
-  HOW (R_PPC_GNU_VTINHERIT, 0, 0, 0, 0, FALSE, dont,
-       NULL),
+  HOWTO (R_PPC_GNU_VTINHERIT,	/* type */
+	 0,			/* rightshift */
+	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 0,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 NULL,			/* special_function */
+	 "R_PPC_GNU_VTINHERIT",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0,			/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* GNU extension to record C++ vtable member usage.  */
-  HOW (R_PPC_GNU_VTENTRY, 0, 0, 0, 0, FALSE, dont,
-       NULL),
+  HOWTO (R_PPC_GNU_VTENTRY,	/* type */
+	 0,			/* rightshift */
+	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 0,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_dont, /* complain_on_overflow */
+	 NULL,			/* special_function */
+	 "R_PPC_GNU_VTENTRY",	/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0,			/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 
   /* Phony reloc to handle AIX style TOC entries.  */
-  HOW (R_PPC_TOC16, 1, 16, 0xffff, 0, FALSE, signed,
-       ppc_elf_unhandled_reloc),
+  HOWTO (R_PPC_TOC16,		/* type */
+	 0,			/* rightshift */
+	 1,			/* size (0 = byte, 1 = short, 2 = long) */
+	 16,			/* bitsize */
+	 FALSE,			/* pc_relative */
+	 0,			/* bitpos */
+	 complain_overflow_signed, /* complain_on_overflow */
+	 ppc_elf_unhandled_reloc, /* special_function */
+	 "R_PPC_TOC16",		/* name */
+	 FALSE,			/* partial_inplace */
+	 0,			/* src_mask */
+	 0xffff,		/* dst_mask */
+	 FALSE),		/* pcrel_offset */
 };
 
 /* Initialize the ppc_elf_howto_table, so that linear accesses can be done.  */
@@ -880,7 +2014,7 @@ ppc_elf_reloc_name_lookup (bfd *abfd ATTRIBUTE_UNUSED,
 
 /* Set the howto pointer for a PowerPC ELF reloc.  */
 
-static bfd_boolean
+static void
 ppc_elf_info_to_howto (bfd *abfd,
 		       arelent *cache_ptr,
 		       Elf_Internal_Rela *dst)
@@ -895,27 +2029,24 @@ ppc_elf_info_to_howto (bfd *abfd,
   if (r_type >= R_PPC_max)
     {
       /* xgettext:c-format */
-      _bfd_error_handler (_("%pB: unsupported relocation type %#x"),
+      _bfd_error_handler (_("%B: unrecognised PPC reloc number: %d"),
 			  abfd, r_type);
       bfd_set_error (bfd_error_bad_value);
-      return FALSE;
+      r_type = R_PPC_NONE;
     }
-
   cache_ptr->howto = ppc_elf_howto_table[r_type];
 
   /* Just because the above assert didn't trigger doesn't mean that
      ELF32_R_TYPE (dst->r_info) is necessarily a valid relocation.  */
-  if (cache_ptr->howto == NULL)
+  if (!cache_ptr->howto)
     {
       /* xgettext:c-format */
-      _bfd_error_handler (_("%pB: unsupported relocation type %#x"),
+      _bfd_error_handler (_("%B: invalid relocation type %d"),
 			  abfd, r_type);
       bfd_set_error (bfd_error_bad_value);
 
-      return FALSE;
+      cache_ptr->howto = ppc_elf_howto_table[R_PPC_NONE];
     }
-
-  return TRUE;
 }
 
 /* Handle the R_PPC_ADDR16_HA and R_PPC_REL16_HA relocs.  */
@@ -1242,24 +2373,13 @@ ppc_elf_write_core_note (bfd *abfd, char *buf, int *bufsiz, int note_type, ...)
 
     case NT_PRPSINFO:
       {
-	char data[128] ATTRIBUTE_NONSTRING;
+	char data[128];
 	va_list ap;
 
 	va_start (ap, note_type);
 	memset (data, 0, sizeof (data));
 	strncpy (data + 32, va_arg (ap, const char *), 16);
-#if GCC_VERSION == 8000 || GCC_VERSION == 8001
-	DIAGNOSTIC_PUSH;
-	/* GCC 8.0 and 8.1 warn about 80 equals destination size with
-	   -Wstringop-truncation:
-	   https://gcc.gnu.org/bugzilla/show_bug.cgi?id=85643
-	 */
-	DIAGNOSTIC_IGNORE_STRINGOP_TRUNCATION;
-#endif
 	strncpy (data + 48, va_arg (ap, const char *), 80);
-#if GCC_VERSION == 8000 || GCC_VERSION == 8001
-	DIAGNOSTIC_POP;
-#endif
 	va_end (ap);
 	return elfcore_write_note (abfd, buf, bufsiz,
 				   "CORE", note_type, data, sizeof (data));
@@ -1614,7 +2734,7 @@ ppc_elf_begin_write_processing (bfd *abfd, struct bfd_link_info *link_info)
 	continue;
 
       /* xgettext:c-format */
-      error_message = _("corrupt %s section in %pB");
+      error_message = _("corrupt %s section in %B");
       length = asec->size;
       if (length < 20)
 	goto fail;
@@ -1634,7 +2754,7 @@ ppc_elf_begin_write_processing (bfd *abfd, struct bfd_link_info *link_info)
 	  || (bfd_bread (buffer, length, ibfd) != length))
 	{
 	  /* xgettext:c-format */
-	  error_message = _("unable to read in %s section from %pB");
+	  error_message = _("unable to read in %s section from %B");
 	  goto fail;
 	}
 
@@ -1676,7 +2796,7 @@ ppc_elf_begin_write_processing (bfd *abfd, struct bfd_link_info *link_info)
 	{
 	  ibfd = abfd;
 	  /* xgettext:c-format */
-	  error_message = _("warning: unable to set size of %s section in %pB");
+	  error_message = _("warning: unable to set size of %s section in %B");
 	}
     }
 
@@ -1726,7 +2846,7 @@ ppc_elf_final_write_processing (bfd *abfd, bfd_boolean linker ATTRIBUTE_UNUSED)
   if (buffer == NULL)
     {
       _bfd_error_handler
-	(_("failed to allocate space for new APUinfo section"));
+	(_("failed to allocate space for new APUinfo section."));
       return;
     }
 
@@ -1745,10 +2865,10 @@ ppc_elf_final_write_processing (bfd *abfd, bfd_boolean linker ATTRIBUTE_UNUSED)
     }
 
   if (length != asec->size)
-    _bfd_error_handler (_("failed to compute new APUinfo section"));
+    _bfd_error_handler (_("failed to compute new APUinfo section."));
 
   if (! bfd_set_section_contents (abfd, asec, buffer, (file_ptr) 0, length))
-    _bfd_error_handler (_("failed to install new APUinfo section"));
+    _bfd_error_handler (_("failed to install new APUinfo section."));
 
   free (buffer);
 
@@ -2103,30 +3223,19 @@ struct ppc_elf_link_hash_entry
   /* Track dynamic relocs copied for this symbol.  */
   struct elf_dyn_relocs *dyn_relocs;
 
-  /* Contexts in which symbol is used in the GOT.
-     Bits are or'd into the mask as the corresponding relocs are
-     encountered during check_relocs, with TLS_TLS being set when any
-     of the other TLS bits are set.  tls_optimize clears bits when
-     optimizing to indicate the corresponding GOT entry type is not
-     needed.  If set, TLS_TLS is never cleared.  tls_optimize may also
-     set TLS_TPRELGD when a GD reloc turns into a TPREL one.  We use a
-     separate flag rather than setting TPREL just for convenience in
-     distinguishing the two cases.
-     These flags are also kept for local symbols.  */
-#define TLS_TLS		 1	/* Any TLS reloc.  */
-#define TLS_GD		 2	/* GD reloc. */
-#define TLS_LD		 4	/* LD reloc. */
-#define TLS_TPREL	 8	/* TPREL reloc, => IE. */
-#define TLS_DTPREL	16	/* DTPREL reloc, => LD. */
-#define TLS_MARK	32	/* __tls_get_addr call marked. */
-#define TLS_TPRELGD	64	/* TPREL reloc resulting from GD->IE. */
-  unsigned char tls_mask;
-
-  /* The above field is also used to mark function symbols.  In which
-     case TLS_TLS will be 0.  */
-#define PLT_IFUNC	 2	/* STT_GNU_IFUNC.  */
-#define PLT_KEEP	 4	/* inline plt call requires plt entry.  */
-#define NON_GOT        256	/* local symbol plt, not stored.  */
+  /* Contexts in which symbol is used in the GOT (or TOC).
+     TLS_GD .. TLS_TLS bits are or'd into the mask as the
+     corresponding relocs are encountered during check_relocs.
+     tls_optimize clears TLS_GD .. TLS_TPREL when optimizing to
+     indicate the corresponding GOT entry type is not needed.  */
+#define TLS_GD		 1	/* GD reloc. */
+#define TLS_LD		 2	/* LD reloc. */
+#define TLS_TPREL	 4	/* TPREL reloc, => IE. */
+#define TLS_DTPREL	 8	/* DTPREL reloc, => LD. */
+#define TLS_TLS		16	/* Any TLS reloc.  */
+#define TLS_TPRELGD	32	/* TPREL reloc resulting from GD->IE. */
+#define PLT_IFUNC	64	/* STT_GNU_IFUNC.  */
+  char tls_mask;
 
   /* Nonzero if we have seen a small data relocation referring to this
      symbol.  */
@@ -2155,8 +3264,6 @@ struct ppc_elf_link_hash_table
   elf_linker_section_t sdata[2];
   asection *sbss;
   asection *glink_eh_frame;
-  asection *pltlocal;
-  asection *relpltlocal;
 
   /* The (unloaded but important) .rela.plt.unloaded on VxWorks.  */
   asection *srelplt2;
@@ -2195,9 +3302,6 @@ struct ppc_elf_link_hash_table
   /* Set if tls optimization is enabled.  */
   unsigned int do_tls_opt:1;
 
-  /* Set if inline plt calls should be converted to direct calls.  */
-  unsigned int can_convert_all_inline_plt:1;
-
   /* The size of PLT entries.  */
   int plt_entry_size;
   /* The distance between adjacent PLT slots.  */
@@ -2217,9 +3321,6 @@ struct ppc_elf_link_hash_table
 
 /* Nonzero if this section has a call to __tls_get_addr.  */
 #define has_tls_get_addr_call sec_flg1
-
-  /* Flag set when PLTCALL relocs are detected.  */
-#define has_pltcall sec_flg2
 
 /* Get the PPC ELF linker hash table from a link_info structure.  */
 
@@ -2411,26 +3512,6 @@ ppc_elf_create_glink (bfd *abfd, struct bfd_link_info *info)
   if (s == NULL
       || ! bfd_set_section_alignment (abfd, s, 2))
     return FALSE;
-
-  /* Local plt entries.  */
-  flags = (SEC_ALLOC | SEC_LOAD
-	   | SEC_HAS_CONTENTS | SEC_IN_MEMORY | SEC_LINKER_CREATED);
-  htab->pltlocal = bfd_make_section_anyway_with_flags (abfd, ".branch_lt",
-						       flags);
-  if (htab->pltlocal == NULL
-      || ! bfd_set_section_alignment (abfd, htab->pltlocal, 2))
-    return FALSE;
-
-  if (bfd_link_pic (info))
-    {
-      flags = (SEC_ALLOC | SEC_LOAD | SEC_READONLY
-	       | SEC_HAS_CONTENTS | SEC_IN_MEMORY | SEC_LINKER_CREATED);
-      htab->relpltlocal
-	= bfd_make_section_anyway_with_flags (abfd, ".rela.branch_lt", flags);
-      if (htab->relpltlocal == NULL
-	  || ! bfd_set_section_alignment (abfd, htab->relpltlocal, 2))
-	return FALSE;
-    }
 
   if (!ppc_elf_create_linker_section (abfd, info, 0,
 				      &htab->sdata[0]))
@@ -2640,6 +3721,11 @@ ppc_elf_add_symbol_hook (bfd *abfd,
       *valp = sym->st_size;
     }
 
+  if (ELF_ST_TYPE (sym->st_info) == STT_GNU_IFUNC
+      && (abfd->flags & DYNAMIC) == 0
+      && bfd_get_flavour (info->output_bfd) == bfd_target_elf_flavour)
+    elf_tdata (info->output_bfd)->has_gnu_symbols |= elf_gnu_symbol_ifunc;
+
   return TRUE;
 }
 
@@ -2755,7 +3841,7 @@ update_local_sym_info (bfd *abfd,
 {
   bfd_signed_vma *local_got_refcounts = elf_local_got_refcounts (abfd);
   struct plt_entry **local_plt;
-  unsigned char *local_got_tls_masks;
+  char *local_got_tls_masks;
 
   if (local_got_refcounts == NULL)
     {
@@ -2771,9 +3857,9 @@ update_local_sym_info (bfd *abfd,
     }
 
   local_plt = (struct plt_entry **) (local_got_refcounts + symtab_hdr->sh_info);
-  local_got_tls_masks = (unsigned char *) (local_plt + symtab_hdr->sh_info);
-  local_got_tls_masks[r_symndx] |= tls_type & 0xff;
-  if ((tls_type & NON_GOT) == 0)
+  local_got_tls_masks = (char *) (local_plt + symtab_hdr->sh_info);
+  local_got_tls_masks[r_symndx] |= tls_type;
+  if (tls_type != PLT_IFUNC)
     local_got_refcounts[r_symndx] += 1;
   return local_plt + r_symndx;
 }
@@ -2834,23 +3920,12 @@ is_branch_reloc (enum elf_ppc_reloc_type r_type)
 	  || r_type == R_PPC_VLE_REL24);
 }
 
-/* Relocs on inline plt call sequence insns prior to the call.  */
-
-static bfd_boolean
-is_plt_seq_reloc (enum elf_ppc_reloc_type r_type)
-{
-  return (r_type == R_PPC_PLT16_HA
-	  || r_type == R_PPC_PLT16_HI
-	  || r_type == R_PPC_PLT16_LO
-	  || r_type == R_PPC_PLTSEQ);
-}
-
 static void
 bad_shared_reloc (bfd *abfd, enum elf_ppc_reloc_type r_type)
 {
   _bfd_error_handler
     /* xgettext:c-format */
-    (_("%pB: relocation %s cannot be used when making a shared object"),
+    (_("%B: relocation %s cannot be used when making a shared object"),
      abfd,
      ppc_elf_howto_table[r_type]->name);
   bfd_set_error (bfd_error_bad_value);
@@ -2887,7 +3962,7 @@ ppc_elf_check_relocs (bfd *abfd,
     return TRUE;
 
 #ifdef DEBUG
-  _bfd_error_handler ("ppc_elf_check_relocs called for section %pA in %pB",
+  _bfd_error_handler ("ppc_elf_check_relocs called for section %A in %B",
 		      sec, abfd);
 #endif
 
@@ -2920,8 +3995,6 @@ ppc_elf_check_relocs (bfd *abfd,
       struct elf_link_hash_entry *h;
       int tls_type;
       struct plt_entry **ifunc;
-      struct plt_entry **pltent;
-      bfd_vma addend;
 
       r_symndx = ELF32_R_SYM (rel->r_info);
       if (r_symndx < symtab_hdr->sh_info)
@@ -2962,7 +4035,7 @@ ppc_elf_check_relocs (bfd *abfd,
 	    {
 	      /* Set PLT_IFUNC flag for this sym, no GOT entry yet.  */
 	      ifunc = update_local_sym_info (abfd, symtab_hdr, r_symndx,
-					     NON_GOT | PLT_IFUNC);
+					     PLT_IFUNC);
 	      if (ifunc == NULL)
 		return FALSE;
 
@@ -2970,20 +4043,15 @@ ppc_elf_check_relocs (bfd *abfd,
 		 In a non-pie executable even when there are
 		 no plt calls.  */
 	      if (!bfd_link_pic (info)
-		  || is_branch_reloc (r_type)
-		  || r_type == R_PPC_PLT16_LO
-		  || r_type == R_PPC_PLT16_HI
-		  || r_type == R_PPC_PLT16_HA)
+		  || is_branch_reloc (r_type))
 		{
-		  addend = 0;
+		  bfd_vma addend = 0;
 		  if (r_type == R_PPC_PLTREL24)
-		    ppc_elf_tdata (abfd)->makes_plt_call = 1;
-		  if (bfd_link_pic (info)
-		      && (r_type == R_PPC_PLTREL24
-			  || r_type == R_PPC_PLT16_LO
-			  || r_type == R_PPC_PLT16_HI
-			  || r_type == R_PPC_PLT16_HA))
-		    addend = rel->r_addend;
+		    {
+		      ppc_elf_tdata (abfd)->makes_plt_call = 1;
+		      if (bfd_link_pic (info))
+			addend = rel->r_addend;
+		    }
 		  if (!update_plt_info (abfd, ifunc, got2, addend))
 		    return FALSE;
 		}
@@ -3012,15 +4080,6 @@ ppc_elf_check_relocs (bfd *abfd,
 	case R_PPC_TLSLD:
 	  /* These special tls relocs tie a call to __tls_get_addr with
 	     its parameter symbol.  */
-	  if (h != NULL)
-	    ppc_elf_hash_entry (h)->tls_mask |= TLS_TLS | TLS_MARK;
-	  else
-	    if (!update_local_sym_info (abfd, symtab_hdr, r_symndx,
-					NON_GOT | TLS_TLS | TLS_MARK))
-	      return FALSE;
-	  break;
-
-	case R_PPC_PLTSEQ:
 	  break;
 
 	case R_PPC_GOT_TLSLD16:
@@ -3199,46 +4258,45 @@ ppc_elf_check_relocs (bfd *abfd,
 	case R_PPC_PLTREL24:
 	  if (h == NULL)
 	    break;
-	  ppc_elf_tdata (abfd)->makes_plt_call = 1;
-	  goto pltentry;
-
-	case R_PPC_PLTCALL:
-	  sec->has_pltcall = 1;
-	  /* Fall through.  */
-
+	  /* Fall through */
 	case R_PPC_PLT32:
 	case R_PPC_PLTREL32:
 	case R_PPC_PLT16_LO:
 	case R_PPC_PLT16_HI:
 	case R_PPC_PLT16_HA:
-	pltentry:
 #ifdef DEBUG
 	  fprintf (stderr, "Reloc requires a PLT entry\n");
 #endif
 	  /* This symbol requires a procedure linkage table entry.  */
 	  if (h == NULL)
 	    {
-	      pltent = update_local_sym_info (abfd, symtab_hdr, r_symndx,
-					      NON_GOT | PLT_KEEP);
-	      if (pltent == NULL)
-		return FALSE;
+	      if (ifunc == NULL)
+		{
+		  /* It does not make sense to have a procedure linkage
+		     table entry for a non-ifunc local symbol.  */
+		  info->callbacks->einfo
+		    /* xgettext:c-format */
+		    (_("%H: %s reloc against local symbol\n"),
+		     abfd, sec, rel->r_offset,
+		     ppc_elf_howto_table[r_type]->name);
+		  bfd_set_error (bfd_error_bad_value);
+		  return FALSE;
+		}
 	    }
 	  else
 	    {
-	      if (r_type != R_PPC_PLTREL24)
-		ppc_elf_hash_entry (h)->tls_mask |= PLT_KEEP;
+	      bfd_vma addend = 0;
+
+	      if (r_type == R_PPC_PLTREL24)
+		{
+		  ppc_elf_tdata (abfd)->makes_plt_call = 1;
+		  if (bfd_link_pic (info))
+		    addend = rel->r_addend;
+		}
 	      h->needs_plt = 1;
-	      pltent = &h->plt.plist;
+	      if (!update_plt_info (abfd, &h->plt.plist, got2, addend))
+		return FALSE;
 	    }
-	  addend = 0;
-	  if (bfd_link_pic (info)
-	      && (r_type == R_PPC_PLTREL24
-		  || r_type == R_PPC_PLT16_LO
-		  || r_type == R_PPC_PLT16_HI
-		  || r_type == R_PPC_PLT16_HA))
-	    addend = rel->r_addend;
-	  if (!update_plt_info (abfd, pltent, got2, addend))
-	    return FALSE;
 	  break;
 
 	  /* The following relocations don't need to propagate the
@@ -3316,7 +4374,9 @@ ppc_elf_check_relocs (bfd *abfd,
 	  /* This relocation describes which C++ vtable entries are actually
 	     used.  Record for later use during GC.  */
 	case R_PPC_GNU_VTENTRY:
-	  if (!bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
+	  BFD_ASSERT (h != NULL);
+	  if (h != NULL
+	      && !bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
 	    return FALSE;
 	  break;
 
@@ -3550,13 +4610,12 @@ ppc_elf_check_relocs (bfd *abfd,
 
 /* Warn for conflicting Tag_GNU_Power_ABI_FP attributes between IBFD
    and OBFD, and merge non-conflicting ones.  */
-bfd_boolean
+void
 _bfd_elf_ppc_merge_fp_attributes (bfd *ibfd, struct bfd_link_info *info)
 {
   bfd *obfd = info->output_bfd;
   obj_attribute *in_attr, *in_attrs;
   obj_attribute *out_attr, *out_attrs;
-  bfd_boolean ret = TRUE;
 
   in_attrs = elf_known_obj_attributes (ibfd)[OBJ_ATTR_GNU];
   out_attrs = elf_known_obj_attributes (obfd)[OBJ_ATTR_GNU];
@@ -3568,48 +4627,32 @@ _bfd_elf_ppc_merge_fp_attributes (bfd *ibfd, struct bfd_link_info *info)
     {
       int in_fp = in_attr->i & 3;
       int out_fp = out_attr->i & 3;
-      static bfd *last_fp, *last_ld;
 
       if (in_fp == 0)
 	;
       else if (out_fp == 0)
 	{
-	  out_attr->type = ATTR_TYPE_FLAG_INT_VAL;
+	  out_attr->type = 1;
 	  out_attr->i ^= in_fp;
-	  last_fp = ibfd;
 	}
       else if (out_fp != 2 && in_fp == 2)
-	{
-	  _bfd_error_handler
-	    /* xgettext:c-format */
-	    (_("%pB uses hard float, %pB uses soft float"),
-	     last_fp, ibfd);
-	  ret = FALSE;
-	}
+	_bfd_error_handler
+	  /* xgettext:c-format */
+	  (_("Warning: %B uses hard float, %B uses soft float"), obfd, ibfd);
       else if (out_fp == 2 && in_fp != 2)
-	{
-	  _bfd_error_handler
-	    /* xgettext:c-format */
-	    (_("%pB uses hard float, %pB uses soft float"),
-	     ibfd, last_fp);
-	  ret = FALSE;
-	}
+	_bfd_error_handler
+	  /* xgettext:c-format */
+	  (_("Warning: %B uses hard float, %B uses soft float"), ibfd, obfd);
       else if (out_fp == 1 && in_fp == 3)
-	{
-	  _bfd_error_handler
-	    /* xgettext:c-format */
-	    (_("%pB uses double-precision hard float, "
-	       "%pB uses single-precision hard float"), last_fp, ibfd);
-	  ret = FALSE;
-	}
+	_bfd_error_handler
+	  /* xgettext:c-format */
+	  (_("Warning: %B uses double-precision hard float, "
+	     "%B uses single-precision hard float"), obfd, ibfd);
       else if (out_fp == 3 && in_fp == 1)
-	{
-	  _bfd_error_handler
-	    /* xgettext:c-format */
-	    (_("%pB uses double-precision hard float, "
-	       "%pB uses single-precision hard float"), ibfd, last_fp);
-	  ret = FALSE;
-	}
+	_bfd_error_handler
+	  /* xgettext:c-format */
+	  (_("Warning: %B uses double-precision hard float, "
+	     "%B uses single-precision hard float"), ibfd, obfd);
 
       in_fp = in_attr->i & 0xc;
       out_fp = out_attr->i & 0xc;
@@ -3617,50 +4660,30 @@ _bfd_elf_ppc_merge_fp_attributes (bfd *ibfd, struct bfd_link_info *info)
 	;
       else if (out_fp == 0)
 	{
-	  out_attr->type = ATTR_TYPE_FLAG_INT_VAL;
+	  out_attr->type = 1;
 	  out_attr->i ^= in_fp;
-	  last_ld = ibfd;
 	}
       else if (out_fp != 2 * 4 && in_fp == 2 * 4)
-	{
-	  _bfd_error_handler
-	    /* xgettext:c-format */
-	    (_("%pB uses 64-bit long double, "
-	       "%pB uses 128-bit long double"), ibfd, last_ld);
-	  ret = FALSE;
-	}
+	_bfd_error_handler
+	  /* xgettext:c-format */
+	  (_("Warning: %B uses 64-bit long double, "
+	     "%B uses 128-bit long double"), ibfd, obfd);
       else if (in_fp != 2 * 4 && out_fp == 2 * 4)
-	{
-	  _bfd_error_handler
-	    /* xgettext:c-format */
-	    (_("%pB uses 64-bit long double, "
-	       "%pB uses 128-bit long double"), last_ld, ibfd);
-	  ret = FALSE;
-	}
+	_bfd_error_handler
+	  /* xgettext:c-format */
+	  (_("Warning: %B uses 64-bit long double, "
+	     "%B uses 128-bit long double"), obfd, ibfd);
       else if (out_fp == 1 * 4 && in_fp == 3 * 4)
-	{
-	  _bfd_error_handler
-	    /* xgettext:c-format */
-	    (_("%pB uses IBM long double, "
-	       "%pB uses IEEE long double"), last_ld, ibfd);
-	  ret = FALSE;
-	}
+	_bfd_error_handler
+	  /* xgettext:c-format */
+	  (_("Warning: %B uses IBM long double, "
+	     "%B uses IEEE long double"), ibfd, obfd);
       else if (out_fp == 3 * 4 && in_fp == 1 * 4)
-	{
-	  _bfd_error_handler
-	    /* xgettext:c-format */
-	    (_("%pB uses IBM long double, "
-	       "%pB uses IEEE long double"), ibfd, last_ld);
-	  ret = FALSE;
-	}
+	_bfd_error_handler
+	  /* xgettext:c-format */
+	  (_("Warning: %B uses IBM long double, "
+	     "%B uses IEEE long double"), obfd, ibfd);
     }
-
-  if (!ret)
-    {
-      out_attr->type = ATTR_TYPE_FLAG_INT_VAL | ATTR_TYPE_FLAG_ERROR;
-      bfd_set_error (bfd_error_bad_value);
-    }
-  return ret;
 }
 
 /* Merge object attributes from IBFD into OBFD.  Warn if
@@ -3671,10 +4694,8 @@ ppc_elf_merge_obj_attributes (bfd *ibfd, struct bfd_link_info *info)
   bfd *obfd;
   obj_attribute *in_attr, *in_attrs;
   obj_attribute *out_attr, *out_attrs;
-  bfd_boolean ret;
 
-  if (!_bfd_elf_ppc_merge_fp_attributes (ibfd, info))
-    return FALSE;
+  _bfd_elf_ppc_merge_fp_attributes (ibfd, info);
 
   obfd = info->output_bfd;
   in_attrs = elf_known_obj_attributes (ibfd)[OBJ_ATTR_GNU];
@@ -3684,20 +4705,17 @@ ppc_elf_merge_obj_attributes (bfd *ibfd, struct bfd_link_info *info)
      merge non-conflicting ones.  */
   in_attr = &in_attrs[Tag_GNU_Power_ABI_Vector];
   out_attr = &out_attrs[Tag_GNU_Power_ABI_Vector];
-  ret = TRUE;
   if (in_attr->i != out_attr->i)
     {
       int in_vec = in_attr->i & 3;
       int out_vec = out_attr->i & 3;
-      static bfd *last_vec;
 
       if (in_vec == 0)
 	;
       else if (out_vec == 0)
 	{
-	  out_attr->type = ATTR_TYPE_FLAG_INT_VAL;
+	  out_attr->type = 1;
 	  out_attr->i = in_vec;
-	  last_vec = ibfd;
 	}
       /* For now, allow generic to transition to AltiVec or SPE
 	 without a warning.  If GCC marked files with their stack
@@ -3708,28 +4726,19 @@ ppc_elf_merge_obj_attributes (bfd *ibfd, struct bfd_link_info *info)
 	;
       else if (out_vec == 1)
 	{
-	  out_attr->type = ATTR_TYPE_FLAG_INT_VAL;
+	  out_attr->type = 1;
 	  out_attr->i = in_vec;
-	  last_vec = ibfd;
 	}
       else if (out_vec < in_vec)
-	{
-	  _bfd_error_handler
-	    /* xgettext:c-format */
-	    (_("%pB uses AltiVec vector ABI, %pB uses SPE vector ABI"),
-	     last_vec, ibfd);
-	  out_attr->type = ATTR_TYPE_FLAG_INT_VAL | ATTR_TYPE_FLAG_ERROR;
-	  ret = FALSE;
-	}
+	_bfd_error_handler
+	  /* xgettext:c-format */
+	  (_("Warning: %B uses AltiVec vector ABI, %B uses SPE vector ABI"),
+	   obfd, ibfd);
       else if (out_vec > in_vec)
-	{
-	  _bfd_error_handler
-	    /* xgettext:c-format */
-	    (_("%pB uses AltiVec vector ABI, %pB uses SPE vector ABI"),
-	     ibfd, last_vec);
-	  out_attr->type = ATTR_TYPE_FLAG_INT_VAL | ATTR_TYPE_FLAG_ERROR;
-	  ret = FALSE;
-	}
+	_bfd_error_handler
+	  /* xgettext:c-format */
+	  (_("Warning: %B uses AltiVec vector ABI, %B uses SPE vector ABI"),
+	   ibfd, obfd);
     }
 
   /* Check for conflicting Tag_GNU_Power_ABI_Struct_Return attributes
@@ -3740,43 +4749,30 @@ ppc_elf_merge_obj_attributes (bfd *ibfd, struct bfd_link_info *info)
     {
       int in_struct = in_attr->i & 3;
       int out_struct = out_attr->i & 3;
-      static bfd *last_struct;
 
       if (in_struct == 0 || in_struct == 3)
        ;
       else if (out_struct == 0)
 	{
-	  out_attr->type = ATTR_TYPE_FLAG_INT_VAL;
+	  out_attr->type = 1;
 	  out_attr->i = in_struct;
-	  last_struct = ibfd;
 	}
       else if (out_struct < in_struct)
-	{
-	  _bfd_error_handler
-	    /* xgettext:c-format */
-	    (_("%pB uses r3/r4 for small structure returns, "
-	       "%pB uses memory"), last_struct, ibfd);
-	  out_attr->type = ATTR_TYPE_FLAG_INT_VAL | ATTR_TYPE_FLAG_ERROR;
-	  ret = FALSE;
-	}
+	_bfd_error_handler
+	  /* xgettext:c-format */
+	  (_("Warning: %B uses r3/r4 for small structure returns, "
+	     "%B uses memory"), obfd, ibfd);
       else if (out_struct > in_struct)
-	{
-	  _bfd_error_handler
-	    /* xgettext:c-format */
-	    (_("%pB uses r3/r4 for small structure returns, "
-	       "%pB uses memory"), ibfd, last_struct);
-	  out_attr->type = ATTR_TYPE_FLAG_INT_VAL | ATTR_TYPE_FLAG_ERROR;
-	  ret = FALSE;
-	}
-    }
-  if (!ret)
-    {
-      bfd_set_error (bfd_error_bad_value);
-      return FALSE;
+	_bfd_error_handler
+	  /* xgettext:c-format */
+	  (_("Warning: %B uses r3/r4 for small structure returns, "
+	     "%B uses memory"), ibfd, obfd);
     }
 
   /* Merge Tag_compatibility attributes and any common GNU ones.  */
-  return _bfd_elf_merge_object_attributes (ibfd, info);
+  _bfd_elf_merge_object_attributes (ibfd, info);
+
+  return TRUE;
 }
 
 /* Merge backend specific data from an object file to the output
@@ -3824,7 +4820,7 @@ ppc_elf_merge_private_bfd_data (bfd *ibfd, struct bfd_link_info *info)
 	{
 	  error = TRUE;
 	  _bfd_error_handler
-	    (_("%pB: compiled with -mrelocatable and linked with "
+	    (_("%B: compiled with -mrelocatable and linked with "
 	       "modules compiled normally"), ibfd);
 	}
       else if ((new_flags & (EF_PPC_RELOCATABLE | EF_PPC_RELOCATABLE_LIB)) == 0
@@ -3832,7 +4828,7 @@ ppc_elf_merge_private_bfd_data (bfd *ibfd, struct bfd_link_info *info)
 	{
 	  error = TRUE;
 	  _bfd_error_handler
-	    (_("%pB: compiled normally and linked with "
+	    (_("%B: compiled normally and linked with "
 	       "modules compiled with -mrelocatable"), ibfd);
 	}
 
@@ -3860,7 +4856,7 @@ ppc_elf_merge_private_bfd_data (bfd *ibfd, struct bfd_link_info *info)
 	  error = TRUE;
 	  _bfd_error_handler
 	    /* xgettext:c-format */
-	    (_("%pB: uses different e_flags (%#x) fields "
+	    (_("%B: uses different e_flags (%#x) fields "
 	       "than previous modules (%#x)"),
 	     ibfd, new_flags, old_flags);
 	}
@@ -3884,10 +4880,10 @@ ppc_elf_vle_split16 (bfd *input_bfd,
 		     split16_format_type split16_format,
 		     bfd_boolean fixup)
 {
-  unsigned int insn, opcode;
+  unsigned int insn, opcode, top5;
 
   insn = bfd_get_32 (input_bfd, loc);
-  opcode = insn & E_OPCODE_MASK;
+  opcode = insn & 0xfc00f800;
   if (opcode == E_OR2I_INSN
       || opcode == E_AND2I_DOT_INSN
       || opcode == E_OR2IS_INSN
@@ -3901,7 +4897,7 @@ ppc_elf_vle_split16 (bfd *input_bfd,
 	  else
 	    _bfd_error_handler
 	      /* xgettext:c-format */
-	      (_("%pB(%pA+0x%lx): expected 16A style relocation on 0x%08x insn"),
+	      (_("%B(%A+0x%lx): expected 16A style relocation on 0x%08x insn"),
 	       input_bfd, input_section, offset, opcode);
 	}
     }
@@ -3920,26 +4916,14 @@ ppc_elf_vle_split16 (bfd *input_bfd,
 	  else
 	    _bfd_error_handler
 	      /* xgettext:c-format */
-	      (_("%pB(%pA+0x%lx): expected 16D style relocation on 0x%08x insn"),
+	      (_("%B(%A+0x%lx): expected 16D style relocation on 0x%08x insn"),
 	       input_bfd, input_section, offset, opcode);
 	}
     }
-  if (split16_format == split16a_type)
-    {
-      insn &= ~((0xf800 << 5) | 0x7ff);
-      insn |= (value & 0xf800) << 5;
-      if ((insn & E_LI_MASK) == E_LI_INSN)
-	{
-	  /* Hack for e_li.  Extend sign.  */
-	  insn &= ~(0xf0000 >> 5);
-	  insn |= (-(value & 0x8000) & 0xf0000) >> 5;
-	}
-    }
-  else
-    {
-      insn &= ~((0xf800 << 10) | 0x7ff);
-      insn |= (value & 0xf800) << 10;
-    }
+  top5 = value & 0xf800;
+  top5 = top5 << (split16_format == split16a_type ? 5 : 10);
+  insn &= (split16_format == split16a_type ? ~0x1f07ff : ~0x3e007ff);
+  insn |= top5;
   insn |= value & 0x7ff;
   bfd_put_32 (input_bfd, insn, loc);
 }
@@ -4023,9 +5007,10 @@ ppc_elf_select_plt_layout (bfd *output_bfd ATTRIBUTE_UNUSED,
   if (htab->plt_type == PLT_OLD && htab->params->plt_style == PLT_NEW)
     {
       if (htab->old_bfd != NULL)
-	_bfd_error_handler (_("bss-plt forced due to %pB"), htab->old_bfd);
+	info->callbacks->einfo (_("%P: bss-plt forced due to %B\n"),
+				htab->old_bfd);
       else
-	_bfd_error_handler (_("bss-plt forced by profiling"));
+	info->callbacks->einfo (_("%P: bss-plt forced by profiling\n"));
     }
 
   BFD_ASSERT (htab->plt_type != PLT_VXWORKS);
@@ -4075,229 +5060,7 @@ ppc_elf_gc_mark_hook (asection *sec,
 
   return _bfd_elf_gc_mark_hook (sec, info, rel, h, sym);
 }
-
-static bfd_boolean
-get_sym_h (struct elf_link_hash_entry **hp,
-	   Elf_Internal_Sym **symp,
-	   asection **symsecp,
-	   unsigned char **tls_maskp,
-	   Elf_Internal_Sym **locsymsp,
-	   unsigned long r_symndx,
-	   bfd *ibfd)
-{
-  Elf_Internal_Shdr *symtab_hdr = &elf_symtab_hdr (ibfd);
-
-  if (r_symndx >= symtab_hdr->sh_info)
-    {
-      struct elf_link_hash_entry **sym_hashes = elf_sym_hashes (ibfd);
-      struct elf_link_hash_entry *h;
-
-      h = sym_hashes[r_symndx - symtab_hdr->sh_info];
-      while (h->root.type == bfd_link_hash_indirect
-	     || h->root.type == bfd_link_hash_warning)
-	h = (struct elf_link_hash_entry *) h->root.u.i.link;
-
-      if (hp != NULL)
-	*hp = h;
-
-      if (symp != NULL)
-	*symp = NULL;
-
-      if (symsecp != NULL)
-	{
-	  asection *symsec = NULL;
-	  if (h->root.type == bfd_link_hash_defined
-	      || h->root.type == bfd_link_hash_defweak)
-	    symsec = h->root.u.def.section;
-	  *symsecp = symsec;
-	}
-
-      if (tls_maskp != NULL)
-	*tls_maskp = &ppc_elf_hash_entry (h)->tls_mask;
-    }
-  else
-    {
-      Elf_Internal_Sym *sym;
-      Elf_Internal_Sym *locsyms = *locsymsp;
-
-      if (locsyms == NULL)
-	{
-	  locsyms = (Elf_Internal_Sym *) symtab_hdr->contents;
-	  if (locsyms == NULL)
-	    locsyms = bfd_elf_get_elf_syms (ibfd, symtab_hdr,
-					    symtab_hdr->sh_info,
-					    0, NULL, NULL, NULL);
-	  if (locsyms == NULL)
-	    return FALSE;
-	  *locsymsp = locsyms;
-	}
-      sym = locsyms + r_symndx;
-
-      if (hp != NULL)
-	*hp = NULL;
-
-      if (symp != NULL)
-	*symp = sym;
-
-      if (symsecp != NULL)
-	*symsecp = bfd_section_from_elf_index (ibfd, sym->st_shndx);
-
-      if (tls_maskp != NULL)
-	{
-	  bfd_signed_vma *local_got;
-	  unsigned char *tls_mask;
-
-	  tls_mask = NULL;
-	  local_got = elf_local_got_refcounts (ibfd);
-	  if (local_got != NULL)
-	    {
-	      struct plt_entry **local_plt = (struct plt_entry **)
-		(local_got + symtab_hdr->sh_info);
-	      unsigned char *lgot_masks = (unsigned char *)
-		(local_plt + symtab_hdr->sh_info);
-	      tls_mask = &lgot_masks[r_symndx];
-	    }
-	  *tls_maskp = tls_mask;
-	}
-    }
-  return TRUE;
-}
 
-/* Analyze inline PLT call relocations to see whether calls to locally
-   defined functions can be converted to direct calls.  */
-
-bfd_boolean
-ppc_elf_inline_plt (struct bfd_link_info *info)
-{
-  struct ppc_elf_link_hash_table *htab;
-  bfd *ibfd;
-  asection *sec;
-  bfd_vma low_vma, high_vma, limit;
-
-  htab = ppc_elf_hash_table (info);
-  if (htab == NULL)
-    return FALSE;
-
-  /* A bl insn can reach -0x2000000 to 0x1fffffc.  The limit is
-     reduced somewhat to cater for possible stubs that might be added
-     between the call and its destination.  */
-  limit = 0x1e00000;
-  low_vma = -1;
-  high_vma = 0;
-  for (sec = info->output_bfd->sections; sec != NULL; sec = sec->next)
-    if ((sec->flags & (SEC_ALLOC | SEC_CODE)) == (SEC_ALLOC | SEC_CODE))
-      {
-	if (low_vma > sec->vma)
-	  low_vma = sec->vma;
-	if (high_vma < sec->vma + sec->size)
-	  high_vma = sec->vma + sec->size;
-      }
-
-  /* If a "bl" can reach anywhere in local code sections, then we can
-     convert all inline PLT sequences to direct calls when the symbol
-     is local.  */
-  if (high_vma - low_vma < limit)
-    {
-      htab->can_convert_all_inline_plt = 1;
-      return TRUE;
-    }
-
-  /* Otherwise, go looking through relocs for cases where a direct
-     call won't reach.  Mark the symbol on any such reloc to disable
-     the optimization and keep the PLT entry as it seems likely that
-     this will be better than creating trampolines.  Note that this
-     will disable the optimization for all inline PLT calls to a
-     particular symbol, not just those that won't reach.  The
-     difficulty in doing a more precise optimization is that the
-     linker needs to make a decision depending on whether a
-     particular R_PPC_PLTCALL insn can be turned into a direct
-     call, for each of the R_PPC_PLTSEQ and R_PPC_PLT16* insns in
-     the sequence, and there is nothing that ties those relocs
-     together except their symbol.  */
-
-  for (ibfd = info->input_bfds; ibfd != NULL; ibfd = ibfd->link.next)
-    {
-      Elf_Internal_Shdr *symtab_hdr;
-      Elf_Internal_Sym *local_syms;
-
-      if (!is_ppc_elf (ibfd))
-	continue;
-
-      local_syms = NULL;
-      symtab_hdr = &elf_symtab_hdr (ibfd);
-
-      for (sec = ibfd->sections; sec != NULL; sec = sec->next)
-	if (sec->has_pltcall
-	    && !bfd_is_abs_section (sec->output_section))
-	  {
-	    Elf_Internal_Rela *relstart, *rel, *relend;
-
-	    /* Read the relocations.  */
-	    relstart = _bfd_elf_link_read_relocs (ibfd, sec, NULL, NULL,
-						  info->keep_memory);
-	    if (relstart == NULL)
-	      return FALSE;
-
-	    relend = relstart + sec->reloc_count;
-	    for (rel = relstart; rel < relend; )
-	      {
-		enum elf_ppc_reloc_type r_type;
-		unsigned long r_symndx;
-		asection *sym_sec;
-		struct elf_link_hash_entry *h;
-		Elf_Internal_Sym *sym;
-		unsigned char *tls_maskp;
-
-		r_type = ELF32_R_TYPE (rel->r_info);
-		if (r_type != R_PPC_PLTCALL)
-		  continue;
-
-		r_symndx = ELF32_R_SYM (rel->r_info);
-		if (!get_sym_h (&h, &sym, &sym_sec, &tls_maskp, &local_syms,
-				r_symndx, ibfd))
-		  {
-		    if (elf_section_data (sec)->relocs != relstart)
-		      free (relstart);
-		    if (local_syms != NULL
-			&& symtab_hdr->contents != (unsigned char *) local_syms)
-		      free (local_syms);
-		    return FALSE;
-		  }
-
-		if (sym_sec != NULL && sym_sec->output_section != NULL)
-		  {
-		    bfd_vma from, to;
-		    if (h != NULL)
-		      to = h->root.u.def.value;
-		    else
-		      to = sym->st_value;
-		    to += (rel->r_addend
-			   + sym_sec->output_offset
-			   + sym_sec->output_section->vma);
-		    from = (rel->r_offset
-			    + sec->output_offset
-			    + sec->output_section->vma);
-		    if (to - from + limit < 2 * limit)
-		      *tls_maskp &= ~PLT_KEEP;
-		  }
-	      }
-	    if (elf_section_data (sec)->relocs != relstart)
-	      free (relstart);
-	  }
-
-      if (local_syms != NULL
-	  && symtab_hdr->contents != (unsigned char *) local_syms)
-	{
-	  if (!info->keep_memory)
-	    free (local_syms);
-	  else
-	    symtab_hdr->contents = (unsigned char *) local_syms;
-	}
-    }
-
-  return TRUE;
-}
-
 /* Set plt output section type, htab->tls_get_addr, and call the
    generic ELF tls_setup function.  */
 
@@ -4425,6 +5188,7 @@ ppc_elf_tls_optimize (bfd *obfd ATTRIBUTE_UNUSED,
   for (pass = 0; pass < 2; ++pass)
     for (ibfd = info->input_bfds; ibfd != NULL; ibfd = ibfd->link.next)
       {
+	Elf_Internal_Sym *locsyms = NULL;
 	Elf_Internal_Shdr *symtab_hdr = &elf_symtab_hdr (ibfd);
 	asection *got2 = bfd_get_section_by_name (ibfd, ".got2");
 
@@ -4446,8 +5210,8 @@ ppc_elf_tls_optimize (bfd *obfd ATTRIBUTE_UNUSED,
 		  enum elf_ppc_reloc_type r_type;
 		  unsigned long r_symndx;
 		  struct elf_link_hash_entry *h = NULL;
-		  unsigned char *tls_mask;
-		  unsigned char tls_set, tls_clear;
+		  char *tls_mask;
+		  char tls_set, tls_clear;
 		  bfd_boolean is_local;
 		  bfd_signed_vma *got_count;
 
@@ -4543,40 +5307,6 @@ ppc_elf_tls_optimize (bfd *obfd ATTRIBUTE_UNUSED,
 
 		    case R_PPC_TLSGD:
 		    case R_PPC_TLSLD:
-		      if (rel + 1 < relend
-			  && is_plt_seq_reloc (ELF32_R_TYPE (rel[1].r_info)))
-			{
-			  if (pass != 0
-			      && ELF32_R_TYPE (rel[1].r_info) != R_PPC_PLTSEQ)
-			    {
-			      r_type = ELF32_R_TYPE (rel[1].r_info);
-			      r_symndx = ELF32_R_SYM (rel[1].r_info);
-			      if (r_symndx >= symtab_hdr->sh_info)
-				{
-				  struct elf_link_hash_entry **sym_hashes;
-
-				  sym_hashes = elf_sym_hashes (ibfd);
-				  h = sym_hashes[r_symndx - symtab_hdr->sh_info];
-				  while (h->root.type == bfd_link_hash_indirect
-					 || h->root.type == bfd_link_hash_warning)
-				    h = (struct elf_link_hash_entry *) h->root.u.i.link;
-				  if (h != NULL)
-				    {
-				      struct plt_entry *ent = NULL;
-				      bfd_vma addend = 0;
-
-				      if (bfd_link_pic (info))
-					addend = rel->r_addend;
-				      ent = find_plt_ent (&h->plt.plist,
-							  got2, addend);
-				      if (ent != NULL
-					  && ent->plt.refcount > 0)
-					ent->plt.refcount -= 1;
-				    }
-				}
-			    }
-			  continue;
-			}
 		      expecting_tls_get_addr = 2;
 		      tls_set = 0;
 		      tls_clear = 0;
@@ -4589,7 +5319,8 @@ ppc_elf_tls_optimize (bfd *obfd ATTRIBUTE_UNUSED,
 		  if (pass == 0)
 		    {
 		      if (!expecting_tls_get_addr
-			  || !sec->has_tls_get_addr_call)
+			  || (expecting_tls_get_addr == 1
+			      && !sec->has_tls_get_addr_call))
 			continue;
 
 		      if (rel + 1 < relend
@@ -4609,6 +5340,23 @@ ppc_elf_tls_optimize (bfd *obfd ATTRIBUTE_UNUSED,
 		      return TRUE;
 		    }
 
+		  if (expecting_tls_get_addr)
+		    {
+		      struct plt_entry *ent;
+		      bfd_vma addend = 0;
+
+		      if (bfd_link_pic (info)
+			  && ELF32_R_TYPE (rel[1].r_info) == R_PPC_PLTREL24)
+			addend = rel[1].r_addend;
+		      ent = find_plt_ent (&htab->tls_get_addr->plt.plist,
+					  got2, addend);
+		      if (ent != NULL && ent->plt.refcount > 0)
+			ent->plt.refcount -= 1;
+
+		      if (expecting_tls_get_addr == 2)
+			continue;
+		    }
+
 		  if (h != NULL)
 		    {
 		      tls_mask = &ppc_elf_hash_entry (h)->tls_mask;
@@ -4618,48 +5366,30 @@ ppc_elf_tls_optimize (bfd *obfd ATTRIBUTE_UNUSED,
 		    {
 		      bfd_signed_vma *lgot_refs;
 		      struct plt_entry **local_plt;
-		      unsigned char *lgot_masks;
+		      char *lgot_masks;
 
+		      if (locsyms == NULL)
+			{
+			  locsyms = (Elf_Internal_Sym *) symtab_hdr->contents;
+			  if (locsyms == NULL)
+			    locsyms = bfd_elf_get_elf_syms (ibfd, symtab_hdr,
+							    symtab_hdr->sh_info,
+							    0, NULL, NULL, NULL);
+			  if (locsyms == NULL)
+			    {
+			      if (elf_section_data (sec)->relocs != relstart)
+				free (relstart);
+			      return FALSE;
+			    }
+			}
 		      lgot_refs = elf_local_got_refcounts (ibfd);
 		      if (lgot_refs == NULL)
 			abort ();
 		      local_plt = (struct plt_entry **)
 			(lgot_refs + symtab_hdr->sh_info);
-		      lgot_masks = (unsigned char *)
-			(local_plt + symtab_hdr->sh_info);
+		      lgot_masks = (char *) (local_plt + symtab_hdr->sh_info);
 		      tls_mask = &lgot_masks[r_symndx];
 		      got_count = &lgot_refs[r_symndx];
-		    }
-
-		  /* If we don't have old-style __tls_get_addr calls
-		     without TLSGD/TLSLD marker relocs, and we haven't
-		     found a new-style __tls_get_addr call with a
-		     marker for this symbol, then we either have a
-		     broken object file or an -mlongcall style
-		     indirect call to __tls_get_addr without a marker.
-		     Disable optimization in this case.  */
-		  if ((tls_clear & (TLS_GD | TLS_LD)) != 0
-		      && !sec->has_tls_get_addr_call
-		      && ((*tls_mask & (TLS_TLS | TLS_MARK))
-			  != (TLS_TLS | TLS_MARK)))
-		    continue;
-
-		  if (expecting_tls_get_addr)
-		    {
-		      struct plt_entry *ent;
-		      bfd_vma addend = 0;
-
-		      if (bfd_link_pic (info)
-			  && (ELF32_R_TYPE (rel[1].r_info) == R_PPC_PLTREL24
-			      || ELF32_R_TYPE (rel[1].r_info) == R_PPC_PLTCALL))
-			addend = rel[1].r_addend;
-		      ent = find_plt_ent (&htab->tls_get_addr->plt.plist,
-					  got2, addend);
-		      if (ent != NULL && ent->plt.refcount > 0)
-			ent->plt.refcount -= 1;
-
-		      if (expecting_tls_get_addr == 2)
-			continue;
 		    }
 
 		  if (tls_set == 0)
@@ -4676,6 +5406,15 @@ ppc_elf_tls_optimize (bfd *obfd ATTRIBUTE_UNUSED,
 	      if (elf_section_data (sec)->relocs != relstart)
 		free (relstart);
 	    }
+
+	if (locsyms != NULL
+	    && (symtab_hdr->contents != (unsigned char *) locsyms))
+	  {
+	    if (!info->keep_memory)
+	      free (locsyms);
+	    else
+	      symtab_hdr->contents = (unsigned char *) locsyms;
+	  }
       }
   htab->do_tls_opt = 1;
   return TRUE;
@@ -4776,11 +5515,7 @@ ppc_elf_adjust_dynamic_symbol (struct bfd_link_info *info,
 	if (ent->plt.refcount > 0)
 	  break;
       if (ent == NULL
-	  || (h->type != STT_GNU_IFUNC
-	      && local
-	      && (htab->can_convert_all_inline_plt
-		  || (ppc_elf_hash_entry (h)->tls_mask
-		      & (TLS_TLS | PLT_KEEP)) != PLT_KEEP)))
+	  || (h->type != STT_GNU_IFUNC && local))
 	{
 	  /* A PLT entry is not required/allowed when:
 
@@ -5069,8 +5804,7 @@ got_relocs_needed (int tls_mask, unsigned int need, bfd_boolean known)
      the DTPREL reloc on the second word of a GD entry under the same
      condition as that for IE, but ld.so needs to differentiate
      LD and GD entries.  */
-  if (known && (tls_mask & TLS_TLS) != 0
-      && (tls_mask & (TLS_TPREL | TLS_TPRELGD)) != 0)
+  if ((tls_mask & (TLS_TPREL | TLS_TPRELGD)) != 0 && known)
     need -= 4;
   return need * sizeof (Elf32_External_Rela) / 4;
 }
@@ -5125,7 +5859,7 @@ allocate_dynrelocs (struct elf_link_hash_entry *h, void *inf)
 	return FALSE;
 
       need = 0;
-      if ((eh->tls_mask & (TLS_TLS | TLS_LD)) == (TLS_TLS | TLS_LD))
+      if ((eh->tls_mask & TLS_LD) != 0)
 	{
 	  if (!eh->elf.def_dynamic)
 	    /* We'll just use htab->tlsld_got.offset.  This should
@@ -5153,8 +5887,7 @@ allocate_dynrelocs (struct elf_link_hash_entry *h, void *inf)
 								     &eh->elf));
 
 	      need = got_relocs_needed (eh->tls_mask, need, tprel_known);
-	      if ((eh->tls_mask & (TLS_TLS | TLS_LD)) == (TLS_TLS | TLS_LD)
-		  && eh->elf.def_dynamic)
+	      if ((eh->tls_mask & TLS_LD) != 0 && eh->elf.def_dynamic)
 		need -= sizeof (Elf32_External_Rela);
 	      rsec = htab->elf.srelgot;
 	      if (eh->elf.type == STT_GNU_IFUNC)
@@ -5266,26 +5999,13 @@ allocate_dynrelocs (struct elf_link_hash_entry *h, void *inf)
       sreloc->size += p->count * sizeof (Elf32_External_Rela);
     }
 
-  /* Handle PLT relocs.  Done last, after dynindx has settled.
-     We might need a PLT entry when the symbol
-     a) is dynamic, or
-     b) is an ifunc, or
-     c) has plt16 relocs and has been processed by adjust_dynamic_symbol, or
-     d) has plt16 relocs and we are linking statically.  */
+  /* Handle PLT relocs.  Done last, after dynindx has settled.  */
   dyn = htab->elf.dynamic_sections_created && h->dynindx != -1;
-  if (dyn
-      || h->type == STT_GNU_IFUNC
-      || (h->needs_plt && h->dynamic_adjusted)
-      || (h->needs_plt
-	  && h->def_regular
-	  && !htab->elf.dynamic_sections_created
-	  && !htab->can_convert_all_inline_plt
-	  && (ppc_elf_hash_entry (h)->tls_mask
-	      & (TLS_TLS | PLT_KEEP)) == PLT_KEEP))
+  if (dyn || h->type == STT_GNU_IFUNC)
     {
       struct plt_entry *ent;
       bfd_boolean doneone = FALSE;
-      bfd_vma plt_offset = 0, glink_offset = (bfd_vma) -1;
+      bfd_vma plt_offset = 0, glink_offset = 0;
 
       for (ent = h->plt.plist; ent != NULL; ent = ent->next)
 	if (ent->plt.refcount > 0)
@@ -5293,12 +6013,7 @@ allocate_dynrelocs (struct elf_link_hash_entry *h, void *inf)
 	    asection *s = htab->elf.splt;
 
 	    if (!dyn)
-	      {
-		if (h->type == STT_GNU_IFUNC)
-		  s = htab->elf.iplt;
-		else
-		  s = htab->pltlocal;
-	      }
+	      s = htab->elf.iplt;
 
 	    if (htab->plt_type == PLT_NEW || !dyn)
 	      {
@@ -5309,30 +6024,25 @@ allocate_dynrelocs (struct elf_link_hash_entry *h, void *inf)
 		  }
 		ent->plt.offset = plt_offset;
 
-		if (s == htab->pltlocal)
-		  ent->glink_offset = glink_offset;
-		else
+		s = htab->glink;
+		if (!doneone || bfd_link_pic (info))
 		  {
-		    s = htab->glink;
-		    if (!doneone || bfd_link_pic (info))
-		      {
-			glink_offset = s->size;
-			s->size += GLINK_ENTRY_SIZE (htab, h);
-		      }
-		    if (!doneone
-			&& !bfd_link_pic (info)
-			&& h->def_dynamic
-			&& !h->def_regular)
-		      {
-			h->root.u.def.section = s;
-			h->root.u.def.value = glink_offset;
-		      }
-		    ent->glink_offset = glink_offset;
-
-		    if (htab->params->emit_stub_syms
-			&& !add_stub_sym (ent, h, info))
-		      return FALSE;
+		    glink_offset = s->size;
+		    s->size += GLINK_ENTRY_SIZE (htab, h);
 		  }
+		if (!doneone
+		    && !bfd_link_pic (info)
+		    && h->def_dynamic
+		    && !h->def_regular)
+		  {
+		    h->root.u.def.section = s;
+		    h->root.u.def.value = glink_offset;
+		  }
+		ent->glink_offset = glink_offset;
+
+		if (htab->params->emit_stub_syms
+		    && !add_stub_sym (ent, h, info))
+		  return FALSE;
 	      }
 	    else
 	      {
@@ -5385,18 +6095,7 @@ allocate_dynrelocs (struct elf_link_hash_entry *h, void *inf)
 	    if (!doneone)
 	      {
 		if (!dyn)
-		  {
-		    if (h->type == STT_GNU_IFUNC)
-		      {
-			s = htab->elf.irelplt;
-			s->size += sizeof (Elf32_External_Rela);
-		      }
-		    else if (bfd_link_pic (info))
-		      {
-			s = htab->relpltlocal;
-			s->size += sizeof (Elf32_External_Rela);
-		      }
-		  }
+		  htab->elf.irelplt->size += sizeof (Elf32_External_Rela);
 		else
 		  {
 		    htab->elf.srelplt->size += sizeof (Elf32_External_Rela);
@@ -5464,7 +6163,7 @@ maybe_set_textrel (struct elf_link_hash_entry *h, void *info_p)
 
       info->flags |= DF_TEXTREL;
       info->callbacks->minfo
-	(_("%pB: dynamic relocation against `%pT' in read-only section `%pA'\n"),
+	(_("%B: dynamic relocation against `%T' in read-only section `%A'\n"),
 	 sec->owner, h->root.root.string, sec);
 
       /* Not an error, just cut short the traversal.  */
@@ -5572,7 +6271,7 @@ ppc_elf_size_dynamic_sections (bfd *output_bfd,
 		      == (SEC_READONLY | SEC_ALLOC))
 		    {
 		      info->flags |= DF_TEXTREL;
-		      info->callbacks->minfo (_("%pB: dynamic relocation in read-only section `%pA'\n"),
+		      info->callbacks->minfo (_("%B: dynamic relocation in read-only section `%A'\n"),
 					      p->sec->owner, p->sec);
 		    }
 		}
@@ -5594,7 +6293,7 @@ ppc_elf_size_dynamic_sections (bfd *output_bfd,
 	if (*local_got > 0)
 	  {
 	    unsigned int need;
-	    if ((*lgot_masks & (TLS_TLS | TLS_LD)) == (TLS_TLS | TLS_LD))
+	    if ((*lgot_masks & TLS_LD) != 0)
 	      htab->tlsld_got.refcount += 1;
 	    need = got_entries_needed (*lgot_masks);
 	    if (need == 0)
@@ -5609,7 +6308,7 @@ ppc_elf_size_dynamic_sections (bfd *output_bfd,
 
 		    need = got_relocs_needed (*lgot_masks, need, tprel_known);
 		    srel = htab->elf.srelgot;
-		    if ((*lgot_masks & (TLS_TLS | PLT_IFUNC)) == PLT_IFUNC)
+		    if ((*lgot_masks & PLT_IFUNC) != 0)
 		      srel = htab->elf.irelplt;
 		    srel->size += need;
 		  }
@@ -5622,26 +6321,16 @@ ppc_elf_size_dynamic_sections (bfd *output_bfd,
 	continue;
 
       /* Allocate space for calls to local STT_GNU_IFUNC syms in .iplt.  */
-      lgot_masks = (char *) end_local_plt;
-      for (; local_plt < end_local_plt; ++local_plt, ++lgot_masks)
+      for (; local_plt < end_local_plt; ++local_plt)
 	{
 	  struct plt_entry *ent;
 	  bfd_boolean doneone = FALSE;
-	  bfd_vma plt_offset = 0, glink_offset = (bfd_vma) -1;
+	  bfd_vma plt_offset = 0, glink_offset = 0;
 
 	  for (ent = *local_plt; ent != NULL; ent = ent->next)
 	    if (ent->plt.refcount > 0)
 	      {
-		if ((*lgot_masks & (TLS_TLS | PLT_IFUNC)) == PLT_IFUNC)
-		  s = htab->elf.iplt;
-		else if (htab->can_convert_all_inline_plt
-			 || (*lgot_masks & (TLS_TLS | PLT_KEEP)) != PLT_KEEP)
-		  {
-		    ent->plt.offset = (bfd_vma) -1;
-		    continue;
-		  }
-		else
-		  s = htab->pltlocal;
+		s = htab->elf.iplt;
 
 		if (!doneone)
 		  {
@@ -5650,9 +6339,9 @@ ppc_elf_size_dynamic_sections (bfd *output_bfd,
 		  }
 		ent->plt.offset = plt_offset;
 
-		if (s != htab->pltlocal && (!doneone || bfd_link_pic (info)))
+		s = htab->glink;
+		if (!doneone || bfd_link_pic (info))
 		  {
-		    s = htab->glink;
 		    glink_offset = s->size;
 		    s->size += GLINK_ENTRY_SIZE (htab, NULL);
 		  }
@@ -5660,16 +6349,7 @@ ppc_elf_size_dynamic_sections (bfd *output_bfd,
 
 		if (!doneone)
 		  {
-		    if ((*lgot_masks & (TLS_TLS | PLT_IFUNC)) == PLT_IFUNC)
-		      {
-			s = htab->elf.irelplt;
-			s->size += sizeof (Elf32_External_Rela);
-		      }
-		    else if (bfd_link_pic (info))
-		      {
-			s = htab->relpltlocal;
-			s->size += sizeof (Elf32_External_Rela);
-		      }
+		    htab->elf.irelplt->size += sizeof (Elf32_External_Rela);
 		    doneone = TRUE;
 		  }
 	      }
@@ -5815,7 +6495,6 @@ ppc_elf_size_dynamic_sections (bfd *output_bfd,
 	     comment below.  */
 	}
       else if (s == htab->elf.iplt
-	       || s == htab->pltlocal
 	       || s == htab->glink
 	       || s == htab->glink_eh_frame
 	       || s == htab->elf.sgotplt
@@ -6196,7 +6875,6 @@ ppc_elf_relax_section (bfd *abfd,
 	  bfd_byte *hit_addr;
 	  unsigned long t0;
 	  struct elf_link_hash_entry *h;
-	  Elf_Internal_Sym *isym;
 	  struct plt_entry **plist;
 	  unsigned char sym_type;
 
@@ -6205,7 +6883,6 @@ ppc_elf_relax_section (bfd *abfd,
 	    case R_PPC_REL24:
 	    case R_PPC_LOCAL24PC:
 	    case R_PPC_PLTREL24:
-	    case R_PPC_PLTCALL:
 	      max_branch_offset = 1 << 25;
 	      break;
 
@@ -6225,32 +6902,57 @@ ppc_elf_relax_section (bfd *abfd,
 	    }
 
 	  /* Get the value of the symbol referred to by the reloc.  */
-	  if (!get_sym_h (&h, &isym, &tsec, NULL, &isymbuf,
-			  ELF32_R_SYM (irel->r_info), abfd))
-	    goto error_return;
-
-	  if (isym != NULL)
+	  h = NULL;
+	  if (ELF32_R_SYM (irel->r_info) < symtab_hdr->sh_info)
 	    {
-	      if (tsec != NULL)
-		;
+	      /* A local symbol.  */
+	      Elf_Internal_Sym *isym;
+
+	      /* Read this BFD's local symbols.  */
+	      if (isymbuf == NULL)
+		{
+		  isymbuf = (Elf_Internal_Sym *) symtab_hdr->contents;
+		  if (isymbuf == NULL)
+		    isymbuf = bfd_elf_get_elf_syms (abfd, symtab_hdr,
+						    symtab_hdr->sh_info, 0,
+						    NULL, NULL, NULL);
+		  if (isymbuf == 0)
+		    goto error_return;
+		}
+	      isym = isymbuf + ELF32_R_SYM (irel->r_info);
+	      if (isym->st_shndx == SHN_UNDEF)
+		tsec = bfd_und_section_ptr;
 	      else if (isym->st_shndx == SHN_ABS)
 		tsec = bfd_abs_section_ptr;
+	      else if (isym->st_shndx == SHN_COMMON)
+		tsec = bfd_com_section_ptr;
 	      else
-		continue;
+		tsec = bfd_section_from_elf_index (abfd, isym->st_shndx);
 
 	      toff = isym->st_value;
 	      sym_type = ELF_ST_TYPE (isym->st_info);
 	    }
 	  else
 	    {
-	      if (tsec != NULL)
-		toff = h->root.u.def.value;
+	      /* Global symbol handling.  */
+	      unsigned long indx;
+
+	      indx = ELF32_R_SYM (irel->r_info) - symtab_hdr->sh_info;
+	      h = elf_sym_hashes (abfd)[indx];
+
+	      while (h->root.type == bfd_link_hash_indirect
+		     || h->root.type == bfd_link_hash_warning)
+		h = (struct elf_link_hash_entry *) h->root.u.i.link;
+
+	      if (h->root.type == bfd_link_hash_defined
+		  || h->root.type == bfd_link_hash_defweak)
+		{
+		  tsec = h->root.u.def.section;
+		  toff = h->root.u.def.value;
+		}
 	      else if (h->root.type == bfd_link_hash_undefined
 		       || h->root.type == bfd_link_hash_undefweak)
 		{
-		  unsigned long indx;
-
-		  indx = ELF32_R_SYM (irel->r_info) - symtab_hdr->sh_info;
 		  tsec = bfd_und_section_ptr;
 		  toff = bfd_link_relocatable (link_info) ? indx : 0;
 		}
@@ -6378,17 +7080,6 @@ ppc_elf_relax_section (bfd *abfd,
 	  if (tsec == isec)
 	    continue;
 
-	  /* toff is used for the symbol index when the symbol is
-	     undefined and we're doing a relocatable link, so we can't
-	     support addends.  It would be possible to do so by
-	     putting the addend in one_branch_fixup but addends on
-	     branches are rare so it hardly seems worth supporting.  */
-	  if (bfd_link_relocatable (link_info)
-	      && tsec == bfd_und_section_ptr
-	      && r_type != R_PPC_PLTREL24
-	      && irel->r_addend != 0)
-	    continue;
-
 	  /* There probably isn't any reason to handle symbols in
 	     SEC_MERGE sections;  SEC_MERGE doesn't seem a likely
 	     attribute for a code section, and we are only looking at
@@ -6412,8 +7103,7 @@ ppc_elf_relax_section (bfd *abfd,
 		 a section symbol should not include the addend;  Such an
 		 access is presumed to be an offset from "sym";  The
 		 location of interest is just "sym".  */
-	      if (sym_type == STT_SECTION
-		  && r_type != R_PPC_PLTREL24)
+	      if (sym_type == STT_SECTION)
 		toff += irel->r_addend;
 
 	      toff
@@ -6421,8 +7111,7 @@ ppc_elf_relax_section (bfd *abfd,
 					      elf_section_data (tsec)->sec_info,
 					      toff);
 
-	      if (sym_type != STT_SECTION
-		  && r_type != R_PPC_PLTREL24)
+	      if (sym_type != STT_SECTION)
 		toff += irel->r_addend;
 	    }
 	  /* PLTREL24 addends are special.  */
@@ -6438,16 +7127,6 @@ ppc_elf_relax_section (bfd *abfd,
 	    continue;
 
 	  roff = irel->r_offset;
-
-	  /* Avoid creating a lot of unnecessary fixups when
-	     relocatable if the output section size is such that a
-	     fixup can be created at final link.
-	     The max_branch_offset adjustment allows for some number
-	     of other fixups being needed at final link.  */
-	  if (bfd_link_relocatable (link_info)
-	      && (isec->output_section->rawsize - (isec->output_offset + roff)
-		  < max_branch_offset - (max_branch_offset >> 4)))
-	    continue;
 
 	  /* If the branch is in range, no need to do anything.  */
 	  if (tsec != bfd_und_section_ptr
@@ -7016,18 +7695,12 @@ ppc_elf_relocate_section (bfd *output_bfd,
   struct ppc_elf_relax_info *relax_info = NULL;
 
 #ifdef DEBUG
-  _bfd_error_handler ("ppc_elf_relocate_section called for %pB section %pA, "
+  _bfd_error_handler ("ppc_elf_relocate_section called for %B section %A, "
 		      "%ld relocations%s",
 		      input_bfd, input_section,
 		      (long) input_section->reloc_count,
 		      (bfd_link_relocatable (info)) ? " (relocatable)" : "");
 #endif
-
-  if (!is_ppc_elf (input_bfd))
-    {
-      bfd_set_error (bfd_error_wrong_format);
-      return FALSE;
-    }
 
   got2 = bfd_get_section_by_name (input_bfd, ".got2");
 
@@ -7061,10 +7734,10 @@ ppc_elf_relocate_section (bfd *output_bfd,
       unsigned long r_symndx;
       bfd_vma relocation;
       bfd_vma branch_bit, from;
-      bfd_boolean unresolved_reloc, save_unresolved_reloc;
+      bfd_boolean unresolved_reloc;
       bfd_boolean warned;
       unsigned int tls_type, tls_mask, tls_gd;
-      struct plt_entry **ifunc, **plt_list;
+      struct plt_entry **ifunc;
       struct reloc_howto_struct alt_howto;
 
     again:
@@ -7106,7 +7779,7 @@ ppc_elf_relocate_section (bfd *output_bfd,
 	    howto = ppc_elf_howto_table[r_type];
 
 	  _bfd_clear_contents (howto, input_bfd, input_section,
-			       contents, rel->r_offset);
+			       contents + rel->r_offset);
 	  wrel->r_offset = rel->r_offset;
 	  wrel->r_info = 0;
 	  wrel->r_addend = 0;
@@ -7325,18 +7998,10 @@ ppc_elf_relocate_section (bfd *output_bfd,
 	  break;
 
 	case R_PPC_TLSGD:
-	  if ((tls_mask & TLS_TLS) != 0 && (tls_mask & TLS_GD) == 0
-	      && rel + 1 < relend)
+	  if ((tls_mask & TLS_TLS) != 0 && (tls_mask & TLS_GD) == 0)
 	    {
 	      unsigned int insn2;
 	      bfd_vma offset = rel->r_offset;
-
-	      if (is_plt_seq_reloc (ELF32_R_TYPE (rel[1].r_info)))
-		{
-		  bfd_put_32 (input_bfd, NOP, contents + offset);
-		  rel[1].r_info = ELF32_R_INFO (STN_UNDEF, R_PPC_NONE);
-		  break;
-		}
 
 	      if ((tls_mask & TLS_TPRELGD) != 0)
 		{
@@ -7360,17 +8025,9 @@ ppc_elf_relocate_section (bfd *output_bfd,
 	  break;
 
 	case R_PPC_TLSLD:
-	  if ((tls_mask & TLS_TLS) != 0 && (tls_mask & TLS_LD) == 0
-	      && rel + 1 < relend)
+	  if ((tls_mask & TLS_TLS) != 0 && (tls_mask & TLS_LD) == 0)
 	    {
 	      unsigned int insn2;
-
-	      if (is_plt_seq_reloc (ELF32_R_TYPE (rel[1].r_info)))
-		{
-		  bfd_put_32 (input_bfd, NOP, contents + rel->r_offset);
-		  rel[1].r_info = ELF32_R_INFO (STN_UNDEF, R_PPC_NONE);
-		  break;
-		}
 
 	      for (r_symndx = 0;
 		   r_symndx < symtab_hdr->sh_info;
@@ -7415,7 +8072,7 @@ ppc_elf_relocate_section (bfd *output_bfd,
 	case R_PPC_ADDR14_BRNTAKEN:
 	case R_PPC_REL14_BRNTAKEN:
 	  {
-	    unsigned int insn;
+	    bfd_vma insn;
 
 	    insn = bfd_get_32 (input_bfd, contents + rel->r_offset);
 	    insn &= ~BRANCH_PREDICT_BIT;
@@ -7430,33 +8087,8 @@ ppc_elf_relocate_section (bfd *output_bfd,
 	      insn ^= BRANCH_PREDICT_BIT;
 
 	    bfd_put_32 (input_bfd, insn, contents + rel->r_offset);
+	    break;
 	  }
-	  break;
-
-	case R_PPC_PLT16_HA:
-	  {
-	    unsigned int insn;
-
-	    insn = bfd_get_32 (input_bfd,
-			       contents + rel->r_offset - d_offset);
-	    if ((insn & (0x3f << 26)) == 15u << 26
-		&& (insn & (0x1f << 16)) != 0)
-	      {
-		if (!bfd_link_pic (info))
-		  {
-		    /* Convert addis to lis.  */
-		    insn &= ~(0x1f << 16);
-		    bfd_put_32 (input_bfd, insn,
-				contents + rel->r_offset - d_offset);
-		  }
-	      }
-	    else if (bfd_link_pic (info))
-	      info->callbacks->einfo
-		(_("%P: %H: error: %s with unexpected instruction %x\n"),
-		 input_bfd, input_section, rel->r_offset,
-		 "R_PPC_PLT16_HA", insn);
-	  }
-	  break;
 	}
 
       if (ELIMINATE_COPY_RELOCS
@@ -7529,9 +8161,8 @@ ppc_elf_relocate_section (bfd *output_bfd,
 	      else
 		_bfd_error_handler
 		  /* xgettext:c-format */
-		  (_("%pB(%pA+%#" PRIx64 "): error: "
-		     "%s with unexpected instruction %#x"),
-		   input_bfd, input_section, (uint64_t) rel->r_offset,
+		  (_("%B(%A+%#Lx): error: %s with unexpected instruction %#x"),
+		   input_bfd, input_section, rel->r_offset,
 		   "R_PPC_ADDR16_HA", insn);
 	    }
 	  else if (r_type == R_PPC_ADDR16_LO)
@@ -7565,9 +8196,8 @@ ppc_elf_relocate_section (bfd *output_bfd,
 	      else
 		_bfd_error_handler
 		  /* xgettext:c-format */
-		  (_("%pB(%pA+%#" PRIx64 "): error: "
-		     "%s with unexpected instruction %#x"),
-		   input_bfd, input_section, (uint64_t) rel->r_offset,
+		  (_("%B(%A+%#Lx): error: %s with unexpected instruction %#x"),
+		   input_bfd, input_section, rel->r_offset,
 		   "R_PPC_ADDR16_LO", insn);
 	    }
 	}
@@ -7595,17 +8225,10 @@ ppc_elf_relocate_section (bfd *output_bfd,
 	  ent = NULL;
 	  if (ifunc != NULL
 	      && (!bfd_link_pic (info)
-		  || is_branch_reloc (r_type)
-		  || r_type == R_PPC_PLT16_LO
-		  || r_type == R_PPC_PLT16_HI
-		  || r_type == R_PPC_PLT16_HA))
+		  || is_branch_reloc (r_type)))
 	    {
 	      addend = 0;
-	      if (bfd_link_pic (info)
-		  && (r_type == R_PPC_PLTREL24
-		      || r_type == R_PPC_PLT16_LO
-		      || r_type == R_PPC_PLT16_HI
-		      || r_type == R_PPC_PLT16_HA))
+	      if (r_type == R_PPC_PLTREL24 && bfd_link_pic (info))
 		addend = rel->r_addend;
 	      ent = find_plt_ent (ifunc, got2, addend);
 	    }
@@ -7632,6 +8255,29 @@ ppc_elf_relocate_section (bfd *output_bfd,
 		      (_("%X%H: unsupported bss-plt -fPIC ifunc %s\n"),
 		       input_bfd, input_section, rel->r_offset, sym_name);
 		}
+	      if (h == NULL && (ent->plt.offset & 1) == 0)
+		{
+		  Elf_Internal_Rela rela;
+		  bfd_byte *loc;
+		  unsigned char *p;
+
+		  rela.r_offset = (htab->elf.iplt->output_section->vma
+				   + htab->elf.iplt->output_offset
+				   + ent->plt.offset);
+		  rela.r_info = ELF32_R_INFO (0, R_PPC_IRELATIVE);
+		  rela.r_addend = relocation;
+		  loc = htab->elf.irelplt->contents;
+		  loc += (htab->elf.irelplt->reloc_count++
+			  * sizeof (Elf32_External_Rela));
+		  bfd_elf32_swap_reloca_out (output_bfd, &rela, loc);
+		  htab->local_ifunc_resolver = 1;
+
+		  ent->plt.offset |= 1;
+
+		  p = ((unsigned char *) htab->glink->contents
+		       + ent->glink_offset);
+		  write_glink_stub (NULL, ent, htab->elf.iplt, p, info);
+		}
 
 	      unresolved_reloc = FALSE;
 	      if (htab->plt_type == PLT_NEW
@@ -7640,16 +8286,15 @@ ppc_elf_relocate_section (bfd *output_bfd,
 		  || h->dynindx == -1)
 		relocation = (htab->glink->output_section->vma
 			      + htab->glink->output_offset
-			      + (ent->glink_offset & ~1));
+			      + ent->glink_offset);
 	      else
 		relocation = (htab->elf.splt->output_section->vma
 			      + htab->elf.splt->output_offset
-			      + ent->plt.offset);
+			      + (ent->plt.offset & ~1));
 	    }
 	}
 
       addend = rel->r_addend;
-      save_unresolved_reloc = unresolved_reloc;
       howto = NULL;
       if (r_type < R_PPC_max)
 	howto = ppc_elf_howto_table[r_type];
@@ -7691,9 +8336,10 @@ ppc_elf_relocate_section (bfd *output_bfd,
       switch (r_type)
 	{
 	default:
-	  /* xgettext:c-format */
-	  _bfd_error_handler (_("%pB: %s unsupported"),
-			      input_bfd, howto->name);
+	  info->callbacks->einfo
+	    /* xgettext:c-format */
+	    (_("%P: %B: unknown relocation type %d for symbol %s\n"),
+	     input_bfd, (int) r_type, sym_name);
 
 	  bfd_set_error (bfd_error_bad_value);
 	  ret = FALSE;
@@ -7794,10 +8440,9 @@ ppc_elf_relocate_section (bfd *output_bfd,
 	      off &= ~1;
 	    else
 	      {
-		unsigned int tls_m = ((tls_mask & TLS_TLS) != 0
-				      ? tls_mask & (TLS_LD | TLS_GD | TLS_DTPREL
-						    | TLS_TPREL | TLS_TPRELGD)
-				      : 0);
+		unsigned int tls_m = (tls_mask
+				      & (TLS_LD | TLS_GD | TLS_DTPREL
+					 | TLS_TPREL | TLS_TPRELGD));
 
 		if (offp == &htab->tlsld_got.offset)
 		  tls_m = TLS_LD;
@@ -8430,65 +9075,6 @@ ppc_elf_relocate_section (bfd *output_bfd,
 	  addend = 0;
 	  break;
 
-	case R_PPC_PLTSEQ:
-	case R_PPC_PLTCALL:
-	case R_PPC_PLT16_LO:
-	case R_PPC_PLT16_HI:
-	case R_PPC_PLT16_HA:
-	  plt_list = NULL;
-	  if (h != NULL)
-	    plt_list = &h->plt.plist;
-	  else if (ifunc != NULL)
-	    plt_list = ifunc;
-	  else if (local_got_offsets != NULL)
-	    {
-	      struct plt_entry **local_plt;
-	      local_plt = (struct plt_entry **) (local_got_offsets
-						 + symtab_hdr->sh_info);
-	      plt_list = local_plt + r_symndx;
-	    }
-	  unresolved_reloc = TRUE;
-	  if (plt_list != NULL)
-	    {
-	      struct plt_entry *ent;
-
-	      ent = find_plt_ent (plt_list, got2,
-				  bfd_link_pic (info) ? addend : 0);
-	      if (ent != NULL && ent->plt.offset != (bfd_vma) -1)
-		{
-		  asection *plt;
-
-		  unresolved_reloc = FALSE;
-		  plt = htab->elf.splt;
-		  if (!htab->elf.dynamic_sections_created
-		      || h == NULL
-		      || h->dynindx == -1)
-		    {
-		      if (ifunc != NULL)
-			plt = htab->elf.iplt;
-		      else
-			plt = htab->pltlocal;
-		    }
-		  relocation = (plt->output_section->vma
-				+ plt->output_offset
-				+ ent->plt.offset);
-		  if (bfd_link_pic (info))
-		    {
-		      bfd_vma got = 0;
-
-		      if (ent->addend >= 32768)
-			got = (ent->addend
-			       + ent->sec->output_section->vma
-			       + ent->sec->output_offset);
-		      else
-			got = SYM_VAL (htab->elf.hgot);
-		      relocation -= got;
-		    }
-		}
-	    }
-	  addend = 0;
-	  break;
-
 	  /* Relocate against _SDA_BASE_.  */
 	case R_PPC_SDAREL16:
 	  {
@@ -8508,10 +9094,10 @@ ppc_elf_relocate_section (bfd *output_bfd,
 	    if (!(strcmp (name, ".sdata") == 0
 		  || strcmp (name, ".sbss") == 0))
 	      {
-		_bfd_error_handler
+		info->callbacks->einfo
 		  /* xgettext:c-format */
-		  (_("%pB: the target (%s) of a %s relocation is "
-		     "in the wrong output section (%s)"),
+		  (_("%P: %B: the target (%s) of a %s relocation is "
+		     "in the wrong output section (%s)\n"),
 		   input_bfd,
 		   sym_name,
 		   howto->name,
@@ -8539,10 +9125,10 @@ ppc_elf_relocate_section (bfd *output_bfd,
 	    if (!(strcmp (name, ".sdata2") == 0
 		  || strcmp (name, ".sbss2") == 0))
 	      {
-		_bfd_error_handler
+		info->callbacks->einfo
 		  /* xgettext:c-format */
-		  (_("%pB: the target (%s) of a %s relocation is "
-		     "in the wrong output section (%s)"),
+		  (_("%P: %B: the target (%s) of a %s relocation is "
+		     "in the wrong output section (%s)\n"),
 		   input_bfd,
 		   sym_name,
 		   howto->name,
@@ -8630,10 +9216,10 @@ ppc_elf_relocate_section (bfd *output_bfd,
 	      }
 	    else
 	      {
-		_bfd_error_handler
+		info->callbacks->einfo
 		  /* xgettext:c-format */
-		  (_("%pB: the target (%s) of a %s relocation is "
-		     "in the wrong output section (%s)"),
+		  (_("%P: %B: the target (%s) of a %s relocation is "
+		     "in the wrong output section (%s)\n"),
 		   input_bfd,
 		   sym_name,
 		   howto->name,
@@ -8720,7 +9306,7 @@ ppc_elf_relocate_section (bfd *output_bfd,
 	      {
 		_bfd_error_handler
 		  /* xgettext:c-format */
-		  (_("%pB: the target (%s) of a %s relocation is "
+		  (_("%B: the target (%s) of a %s relocation is "
 		     "in the wrong output section (%s)"),
 		   input_bfd,
 		   sym_name,
@@ -8817,61 +9403,25 @@ ppc_elf_relocate_section (bfd *output_bfd,
 	case R_PPC_IRELATIVE:
 	case R_PPC_PLT32:
 	case R_PPC_PLTREL32:
+	case R_PPC_PLT16_LO:
+	case R_PPC_PLT16_HI:
+	case R_PPC_PLT16_HA:
 	case R_PPC_ADDR30:
 	case R_PPC_EMB_RELSEC16:
 	case R_PPC_EMB_RELST_LO:
 	case R_PPC_EMB_RELST_HI:
 	case R_PPC_EMB_RELST_HA:
 	case R_PPC_EMB_BIT_FLD:
-	  /* xgettext:c-format */
-	  _bfd_error_handler (_("%pB: %s unsupported"),
-			      input_bfd, howto->name);
+	  info->callbacks->einfo
+	    /* xgettext:c-format */
+	    (_("%P: %B: relocation %s is not yet supported for symbol %s\n"),
+	     input_bfd,
+	     howto->name,
+	     sym_name);
 
 	  bfd_set_error (bfd_error_invalid_operation);
 	  ret = FALSE;
 	  goto copy_reloc;
-	}
-
-      switch (r_type)
-	{
-	default:
-	  break;
-
-	case R_PPC_PLTCALL:
-	  if (unresolved_reloc)
-	    {
-	      bfd_byte *p = contents + rel->r_offset;
-	      unsigned int insn = bfd_get_32 (input_bfd, p);
-	      insn &= 1;
-	      bfd_put_32 (input_bfd, B | insn, p);
-	      unresolved_reloc = save_unresolved_reloc;
-	      r_type = R_PPC_REL24;
-	      howto = ppc_elf_howto_table[r_type];
-	    }
-	  else if (htab->plt_type != PLT_NEW)
-	    info->callbacks->einfo
-	      (_("%X%P: %H: %s relocation unsupported for bss-plt\n"),
-	       input_bfd, input_section, rel->r_offset,
-	       howto->name);
-	  break;
-
-	case R_PPC_PLTSEQ:
-	case R_PPC_PLT16_HA:
-	case R_PPC_PLT16_LO:
-	  if (unresolved_reloc)
-	    {
-	      bfd_byte *p = contents + (rel->r_offset & ~3);
-	      bfd_put_32 (input_bfd, NOP, p);
-	      unresolved_reloc = FALSE;
-	      r_type = R_PPC_NONE;
-	      howto = ppc_elf_howto_table[r_type];
-	    }
-	  else if (htab->plt_type != PLT_NEW)
-	    info->callbacks->einfo
-	      (_("%X%P: %H: %s relocation unsupported for bss-plt\n"),
-	       input_bfd, input_section, rel->r_offset,
-	       howto->name);
-	  break;
 	}
 
       /* Do any further special processing.  */
@@ -9391,15 +9941,26 @@ ppc_elf_relocate_section (bfd *output_bfd,
   return ret;
 }
 
-/* Write out the PLT relocs and entries for H.  */
+/* Finish up dynamic symbol handling.  We set the contents of various
+   dynamic sections here.  */
 
 static bfd_boolean
-write_global_sym_plt (struct elf_link_hash_entry *h, void *inf)
+ppc_elf_finish_dynamic_symbol (bfd *output_bfd,
+			       struct bfd_link_info *info,
+			       struct elf_link_hash_entry *h,
+			       Elf_Internal_Sym *sym)
 {
-  struct bfd_link_info *info = (struct bfd_link_info *) inf;
-  struct ppc_elf_link_hash_table *htab = ppc_elf_hash_table (info);
+  struct ppc_elf_link_hash_table *htab;
   struct plt_entry *ent;
   bfd_boolean doneone;
+
+#ifdef DEBUG
+  fprintf (stderr, "ppc_elf_finish_dynamic_symbol called for %s",
+	   h->root.root.string);
+#endif
+
+  htab = ppc_elf_hash_table (info);
+  BFD_ASSERT (htab->elf.dynobj != NULL);
 
   doneone = FALSE;
   for (ent = h->plt.plist; ent != NULL; ent = ent->next)
@@ -9410,8 +9971,6 @@ write_global_sym_plt (struct elf_link_hash_entry *h, void *inf)
 	    Elf_Internal_Rela rela;
 	    bfd_byte *loc;
 	    bfd_vma reloc_index;
-	    asection *plt = htab->elf.splt;
-	    asection *relplt = htab->elf.srelplt;
 
 	    if (htab->plt_type == PLT_NEW
 		|| !htab->elf.dynamic_sections_created
@@ -9445,29 +10004,29 @@ write_global_sym_plt (struct elf_link_hash_entry *h, void *inf)
 		/* Fill in the .plt on VxWorks.  */
 		if (bfd_link_pic (info))
 		  {
-		    bfd_put_32 (info->output_bfd,
+		    bfd_put_32 (output_bfd,
 				plt_entry[0] | PPC_HA (got_offset),
-				plt->contents + ent->plt.offset + 0);
-		    bfd_put_32 (info->output_bfd,
+				htab->elf.splt->contents + ent->plt.offset + 0);
+		    bfd_put_32 (output_bfd,
 				plt_entry[1] | PPC_LO (got_offset),
-				plt->contents + ent->plt.offset + 4);
+				htab->elf.splt->contents + ent->plt.offset + 4);
 		  }
 		else
 		  {
 		    bfd_vma got_loc = got_offset + SYM_VAL (htab->elf.hgot);
 
-		    bfd_put_32 (info->output_bfd,
+		    bfd_put_32 (output_bfd,
 				plt_entry[0] | PPC_HA (got_loc),
-				plt->contents + ent->plt.offset + 0);
-		    bfd_put_32 (info->output_bfd,
+				htab->elf.splt->contents + ent->plt.offset + 0);
+		    bfd_put_32 (output_bfd,
 				plt_entry[1] | PPC_LO (got_loc),
-				plt->contents + ent->plt.offset + 4);
+				htab->elf.splt->contents + ent->plt.offset + 4);
 		  }
 
-		bfd_put_32 (info->output_bfd, plt_entry[2],
-			    plt->contents + ent->plt.offset + 8);
-		bfd_put_32 (info->output_bfd, plt_entry[3],
-			    plt->contents + ent->plt.offset + 12);
+		bfd_put_32 (output_bfd, plt_entry[2],
+			    htab->elf.splt->contents + ent->plt.offset + 8);
+		bfd_put_32 (output_bfd, plt_entry[3],
+			    htab->elf.splt->contents + ent->plt.offset + 12);
 
 		/* This instruction is an immediate load.  The value loaded is
 		   the byte offset of the R_PPC_JMP_SLOT relocation from the
@@ -9475,30 +10034,30 @@ write_global_sym_plt (struct elf_link_hash_entry *h, void *inf)
 		   low-order 16 bits of the load instruction.  */
 		/* NOTE: It appears that this is now an index rather than a
 		   prescaled offset.  */
-		bfd_put_32 (info->output_bfd,
+		bfd_put_32 (output_bfd,
 			    plt_entry[4] | reloc_index,
-			    plt->contents + ent->plt.offset + 16);
+			    htab->elf.splt->contents + ent->plt.offset + 16);
 		/* This instruction is a PC-relative branch whose target is
 		   the start of the PLT section.  The address of this branch
 		   instruction is 20 bytes beyond the start of this PLT entry.
 		   The address is encoded in bits 6-29, inclusive.  The value
 		   stored is right-shifted by two bits, permitting a 26-bit
 		   offset.  */
-		bfd_put_32 (info->output_bfd,
+		bfd_put_32 (output_bfd,
 			    (plt_entry[5]
 			     | (-(ent->plt.offset + 20) & 0x03fffffc)),
-			    plt->contents + ent->plt.offset + 20);
-		bfd_put_32 (info->output_bfd, plt_entry[6],
-			    plt->contents + ent->plt.offset + 24);
-		bfd_put_32 (info->output_bfd, plt_entry[7],
-			    plt->contents + ent->plt.offset + 28);
+			    htab->elf.splt->contents + ent->plt.offset + 20);
+		bfd_put_32 (output_bfd, plt_entry[6],
+			    htab->elf.splt->contents + ent->plt.offset + 24);
+		bfd_put_32 (output_bfd, plt_entry[7],
+			    htab->elf.splt->contents + ent->plt.offset + 28);
 
 		/* Fill in the GOT entry corresponding to this PLT slot with
 		   the address immediately after the "bctr" instruction
 		   in this PLT entry.  */
-		bfd_put_32 (info->output_bfd, (plt->output_section->vma
-					       + plt->output_offset
-					       + ent->plt.offset + 16),
+		bfd_put_32 (output_bfd, (htab->elf.splt->output_section->vma
+					 + htab->elf.splt->output_offset
+					 + ent->plt.offset + 16),
 			    htab->elf.sgotplt->contents + got_offset);
 
 		if (!bfd_link_pic (info))
@@ -9510,23 +10069,23 @@ write_global_sym_plt (struct elf_link_hash_entry *h, void *inf)
 			 * sizeof (Elf32_External_Rela));
 
 		    /* Provide the @ha relocation for the first instruction.  */
-		    rela.r_offset = (plt->output_section->vma
-				     + plt->output_offset
+		    rela.r_offset = (htab->elf.splt->output_section->vma
+				     + htab->elf.splt->output_offset
 				     + ent->plt.offset + 2);
 		    rela.r_info = ELF32_R_INFO (htab->elf.hgot->indx,
 						R_PPC_ADDR16_HA);
 		    rela.r_addend = got_offset;
-		    bfd_elf32_swap_reloca_out (info->output_bfd, &rela, loc);
+		    bfd_elf32_swap_reloca_out (output_bfd, &rela, loc);
 		    loc += sizeof (Elf32_External_Rela);
 
 		    /* Provide the @l relocation for the second instruction.  */
-		    rela.r_offset = (plt->output_section->vma
-				     + plt->output_offset
+		    rela.r_offset = (htab->elf.splt->output_section->vma
+				     + htab->elf.splt->output_offset
 				     + ent->plt.offset + 6);
 		    rela.r_info = ELF32_R_INFO (htab->elf.hgot->indx,
 						R_PPC_ADDR16_LO);
 		    rela.r_addend = got_offset;
-		    bfd_elf32_swap_reloca_out (info->output_bfd, &rela, loc);
+		    bfd_elf32_swap_reloca_out (output_bfd, &rela, loc);
 		    loc += sizeof (Elf32_External_Rela);
 
 		    /* Provide a relocation for the GOT entry corresponding to this
@@ -9537,7 +10096,7 @@ write_global_sym_plt (struct elf_link_hash_entry *h, void *inf)
 		    rela.r_info = ELF32_R_INFO (htab->elf.hplt->indx,
 						R_PPC_ADDR32);
 		    rela.r_addend = ent->plt.offset + 16;
-		    bfd_elf32_swap_reloca_out (info->output_bfd, &rela, loc);
+		    bfd_elf32_swap_reloca_out (output_bfd, &rela, loc);
 		  }
 
 		/* VxWorks uses non-standard semantics for R_PPC_JMP_SLOT.
@@ -9548,82 +10107,102 @@ write_global_sym_plt (struct elf_link_hash_entry *h, void *inf)
 		rela.r_offset = (htab->elf.sgotplt->output_section->vma
 				 + htab->elf.sgotplt->output_offset
 				 + got_offset);
-		rela.r_addend = 0;
+
 	      }
 	    else
 	      {
-		rela.r_addend = 0;
+		asection *splt = htab->elf.splt;
 		if (!htab->elf.dynamic_sections_created
 		    || h->dynindx == -1)
-		  {
-		    if (h->type == STT_GNU_IFUNC)
-		      {
-			plt = htab->elf.iplt;
-			relplt = htab->elf.irelplt;
-		      }
-		    else
-		      {
-			plt = htab->pltlocal;
-			relplt = bfd_link_pic (info) ? htab->relpltlocal : NULL;
-		      }
-		    if (h->def_regular
-			&& (h->root.type == bfd_link_hash_defined
-			    || h->root.type == bfd_link_hash_defweak))
-		      rela.r_addend = SYM_VAL (h);
-		  }
+		  splt = htab->elf.iplt;
 
-		if (relplt == NULL)
+		rela.r_offset = (splt->output_section->vma
+				 + splt->output_offset
+				 + ent->plt.offset);
+		if (htab->plt_type == PLT_OLD
+		    || !htab->elf.dynamic_sections_created
+		    || h->dynindx == -1)
 		  {
-		    loc = plt->contents + ent->plt.offset;
-		    bfd_put_32 (info->output_bfd, rela.r_addend, loc);
+		    /* We don't need to fill in the .plt.  The ppc dynamic
+		       linker will fill it in.  */
 		  }
 		else
 		  {
-		    rela.r_offset = (plt->output_section->vma
-				     + plt->output_offset
-				     + ent->plt.offset);
-
-		    if (htab->plt_type == PLT_OLD
-			|| !htab->elf.dynamic_sections_created
-			|| h->dynindx == -1)
-		      {
-			/* We don't need to fill in the .plt.  The ppc dynamic
-			   linker will fill it in.  */
-		      }
-		    else
-		      {
-			bfd_vma val = (htab->glink_pltresolve + ent->plt.offset
-				       + htab->glink->output_section->vma
-				       + htab->glink->output_offset);
-			bfd_put_32 (info->output_bfd, val,
-				    plt->contents + ent->plt.offset);
-		      }
+		    bfd_vma val = (htab->glink_pltresolve + ent->plt.offset
+				   + htab->glink->output_section->vma
+				   + htab->glink->output_offset);
+		    bfd_put_32 (output_bfd, val,
+				splt->contents + ent->plt.offset);
 		  }
 	      }
 
-	    if (relplt != NULL)
+	    /* Fill in the entry in the .rela.plt section.  */
+	    rela.r_addend = 0;
+	    if (!htab->elf.dynamic_sections_created
+		|| h->dynindx == -1)
 	      {
-		/* Fill in the entry in the .rela.plt section.  */
-		if (!htab->elf.dynamic_sections_created
-		    || h->dynindx == -1)
+		BFD_ASSERT (h->type == STT_GNU_IFUNC
+			    && h->def_regular
+			    && (h->root.type == bfd_link_hash_defined
+				|| h->root.type == bfd_link_hash_defweak));
+		rela.r_info = ELF32_R_INFO (0, R_PPC_IRELATIVE);
+		rela.r_addend = SYM_VAL (h);
+	      }
+	    else
+	      rela.r_info = ELF32_R_INFO (h->dynindx, R_PPC_JMP_SLOT);
+
+	    if (!htab->elf.dynamic_sections_created
+		|| h->dynindx == -1)
+	      {
+		loc = (htab->elf.irelplt->contents
+		       + (htab->elf.irelplt->reloc_count++
+			  * sizeof (Elf32_External_Rela)));
+		htab->local_ifunc_resolver = 1;
+	      }
+	    else
+	      {
+		loc = (htab->elf.srelplt->contents
+		       + reloc_index * sizeof (Elf32_External_Rela));
+		if (h->type == STT_GNU_IFUNC && is_static_defined (h))
+		  htab->maybe_local_ifunc_resolver = 1;
+	      }
+	    bfd_elf32_swap_reloca_out (output_bfd, &rela, loc);
+
+	    if (!h->def_regular)
+	      {
+		/* Mark the symbol as undefined, rather than as
+		   defined in the .plt section.  Leave the value if
+		   there were any relocations where pointer equality
+		   matters (this is a clue for the dynamic linker, to
+		   make function pointer comparisons work between an
+		   application and shared library), otherwise set it
+		   to zero.  */
+		sym->st_shndx = SHN_UNDEF;
+		if (!h->pointer_equality_needed)
+		  sym->st_value = 0;
+		else if (!h->ref_regular_nonweak)
 		  {
-		    if (h->type == STT_GNU_IFUNC)
-		      rela.r_info = ELF32_R_INFO (0, R_PPC_IRELATIVE);
-		    else
-		      rela.r_info = ELF32_R_INFO (0, R_PPC_RELATIVE);
-		    loc = relplt->contents + (relplt->reloc_count++
-					      * sizeof (Elf32_External_Rela));
-		    htab->local_ifunc_resolver = 1;
+		    /* This breaks function pointer comparisons, but
+		       that is better than breaking tests for a NULL
+		       function pointer.  */
+		    sym->st_value = 0;
 		  }
-		else
-		  {
-		    rela.r_info = ELF32_R_INFO (h->dynindx, R_PPC_JMP_SLOT);
-		    loc = relplt->contents + (reloc_index
-					      * sizeof (Elf32_External_Rela));
-		    if (h->type == STT_GNU_IFUNC && is_static_defined (h))
-		      htab->maybe_local_ifunc_resolver = 1;
-		  }
-		bfd_elf32_swap_reloca_out (info->output_bfd, &rela, loc);
+	      }
+	    else if (h->type == STT_GNU_IFUNC
+		     && !bfd_link_pic (info))
+	      {
+		/* Set the value of ifunc symbols in a non-pie
+		   executable to the glink entry.  This is to avoid
+		   text relocations.  We can't do this for ifunc in
+		   allocate_dynrelocs, as we do for normal dynamic
+		   function symbols with plt entries, because we need
+		   to keep the original value around for the ifunc
+		   relocation.  */
+		sym->st_shndx = (_bfd_elf_section_from_bfd_section
+				 (output_bfd, htab->glink->output_section));
+		sym->st_value = (ent->glink_offset
+				 + htab->glink->output_offset
+				 + htab->glink->output_section->vma);
 	      }
 	    doneone = TRUE;
 	  }
@@ -9633,19 +10212,14 @@ write_global_sym_plt (struct elf_link_hash_entry *h, void *inf)
 	    || h->dynindx == -1)
 	  {
 	    unsigned char *p;
-	    asection *plt = htab->elf.splt;
+	    asection *splt = htab->elf.splt;
 
 	    if (!htab->elf.dynamic_sections_created
 		|| h->dynindx == -1)
-	      {
-		if (h->type == STT_GNU_IFUNC)
-		  plt = htab->elf.iplt;
-		else
-		  break;
-	      }
+	      splt = htab->elf.iplt;
 
 	    p = (unsigned char *) htab->glink->contents + ent->glink_offset;
-	    write_glink_stub (h, ent, plt, p, info);
+	    write_glink_stub (h, ent, splt, p, info);
 
 	    if (!bfd_link_pic (info))
 	      /* We only need one non-PIC glink stub.  */
@@ -9654,177 +10228,6 @@ write_global_sym_plt (struct elf_link_hash_entry *h, void *inf)
 	else
 	  break;
       }
-  return TRUE;
-}
-
-/* Finish up PLT handling.  */
-
-bfd_boolean
-ppc_finish_symbols (struct bfd_link_info *info)
-{
-  struct ppc_elf_link_hash_table *htab = ppc_elf_hash_table (info);
-  bfd *ibfd;
-
-  if (!htab)
-    return TRUE;
-
-  elf_link_hash_traverse (&htab->elf, write_global_sym_plt, info);
-
-  for (ibfd = info->input_bfds; ibfd != NULL; ibfd = ibfd->link.next)
-    {
-      bfd_vma *local_got, *end_local_got;
-      struct plt_entry **local_plt, **lplt, **end_local_plt;
-      Elf_Internal_Shdr *symtab_hdr;
-      bfd_size_type locsymcount;
-      Elf_Internal_Sym *local_syms = NULL;
-      struct plt_entry *ent;
-
-      if (!is_ppc_elf (ibfd))
-	continue;
-
-      local_got = elf_local_got_offsets (ibfd);
-      if (!local_got)
-	continue;
-
-      symtab_hdr = &elf_symtab_hdr (ibfd);
-      locsymcount = symtab_hdr->sh_info;
-      end_local_got = local_got + locsymcount;
-      local_plt = (struct plt_entry **) end_local_got;
-      end_local_plt = local_plt + locsymcount;
-      for (lplt = local_plt; lplt < end_local_plt; ++lplt)
-	for (ent = *lplt; ent != NULL; ent = ent->next)
-	  {
-	    if (ent->plt.offset != (bfd_vma) -1)
-	      {
-		Elf_Internal_Sym *sym;
-		asection *sym_sec;
-		asection *plt, *relplt;
-		bfd_byte *loc;
-		bfd_vma val;
-		Elf_Internal_Rela rela;
-		unsigned char *p;
-
-		if (!get_sym_h (NULL, &sym, &sym_sec, NULL, &local_syms,
-				lplt - local_plt, ibfd))
-		  {
-		    if (local_syms != NULL
-			&& symtab_hdr->contents != (unsigned char *) local_syms)
-		      free (local_syms);
-		    return FALSE;
-		  }
-
-		val = sym->st_value;
-		if (sym_sec != NULL && sym_sec->output_section != NULL)
-		  val += sym_sec->output_offset + sym_sec->output_section->vma;
-
-		if (ELF_ST_TYPE (sym->st_info) == STT_GNU_IFUNC)
-		  {
-		    htab->local_ifunc_resolver = 1;
-		    plt = htab->elf.iplt;
-		    relplt = htab->elf.irelplt;
-		    rela.r_info = ELF32_R_INFO (0, R_PPC_IRELATIVE);
-		  }
-		else
-		  {
-		    plt = htab->pltlocal;
-		    if (bfd_link_pic (info))
-		      {
-			relplt = htab->relpltlocal;
-			rela.r_info = ELF32_R_INFO (0, R_PPC_RELATIVE);
-		      }
-		    else
-		      {
-			loc = plt->contents + ent->plt.offset;
-			bfd_put_32 (info->output_bfd, val, loc);
-			continue;
-		      }
-		  }
-
-		rela.r_offset = (ent->plt.offset
-				 + plt->output_offset
-				 + plt->output_section->vma);
-		rela.r_addend = val;
-		loc = relplt->contents + (relplt->reloc_count++
-					  * sizeof (Elf32_External_Rela));
-		bfd_elf32_swap_reloca_out (info->output_bfd, &rela, loc);
-
-		p = (unsigned char *) htab->glink->contents + ent->glink_offset;
-		write_glink_stub (NULL, ent, htab->elf.iplt, p, info);
-	      }
-	  }
-
-      if (local_syms != NULL
-	  && symtab_hdr->contents != (unsigned char *) local_syms)
-	{
-	  if (!info->keep_memory)
-	    free (local_syms);
-	  else
-	    symtab_hdr->contents = (unsigned char *) local_syms;
-	}
-    }
-  return TRUE;
-}
-
-/* Finish up dynamic symbol handling.  We set the contents of various
-   dynamic sections here.  */
-
-static bfd_boolean
-ppc_elf_finish_dynamic_symbol (bfd *output_bfd,
-			       struct bfd_link_info *info,
-			       struct elf_link_hash_entry *h,
-			       Elf_Internal_Sym *sym)
-{
-  struct ppc_elf_link_hash_table *htab = ppc_elf_hash_table (info);
-  struct plt_entry *ent;
-
-#ifdef DEBUG
-  fprintf (stderr, "ppc_elf_finish_dynamic_symbol called for %s",
-	   h->root.root.string);
-#endif
-
-  if (!h->def_regular
-      || (h->type == STT_GNU_IFUNC && !bfd_link_pic (info)))
-    for (ent = h->plt.plist; ent != NULL; ent = ent->next)
-      if (ent->plt.offset != (bfd_vma) -1)
-	{
-	  if (!h->def_regular)
-	    {
-	      /* Mark the symbol as undefined, rather than as
-		 defined in the .plt section.  Leave the value if
-		 there were any relocations where pointer equality
-		 matters (this is a clue for the dynamic linker, to
-		 make function pointer comparisons work between an
-		 application and shared library), otherwise set it
-		 to zero.  */
-	      sym->st_shndx = SHN_UNDEF;
-	      if (!h->pointer_equality_needed)
-		sym->st_value = 0;
-	      else if (!h->ref_regular_nonweak)
-		{
-		  /* This breaks function pointer comparisons, but
-		     that is better than breaking tests for a NULL
-		     function pointer.  */
-		  sym->st_value = 0;
-		}
-	    }
-	  else
-	    {
-	      /* Set the value of ifunc symbols in a non-pie
-		 executable to the glink entry.  This is to avoid
-		 text relocations.  We can't do this for ifunc in
-		 allocate_dynrelocs, as we do for normal dynamic
-		 function symbols with plt entries, because we need
-		 to keep the original value around for the ifunc
-		 relocation.  */
-	      sym->st_shndx
-		= (_bfd_elf_section_from_bfd_section
-		   (info->output_bfd, htab->glink->output_section));
-	      sym->st_value = (ent->glink_offset
-			       + htab->glink->output_offset
-			       + htab->glink->output_section->vma);
-	    }
-	  break;
-	}
 
   if (h->needs_copy)
     {
@@ -9999,10 +10402,11 @@ ppc_elf_finish_dynamic_sections (bfd *output_bfd,
       else
 	{
 	  /* xgettext:c-format */
-	  _bfd_error_handler (_("%s not defined in linker created %pA"),
-			      htab->elf.hgot->root.root.string,
-			      (htab->elf.sgotplt != NULL
-			       ? htab->elf.sgotplt : htab->elf.sgot));
+	  info->callbacks->einfo (_("%P: %s not defined in linker created %s\n"),
+				  htab->elf.hgot->root.root.string,
+				  (htab->elf.sgotplt != NULL
+				   ? htab->elf.sgotplt->name
+				   : htab->elf.sgot->name));
 	  bfd_set_error (bfd_error_bad_value);
 	  ret = FALSE;
 	}
@@ -10329,9 +10733,14 @@ ppc_elf_finish_dynamic_sections (bfd *output_bfd,
 #define ELF_ARCH		bfd_arch_powerpc
 #define ELF_TARGET_ID		PPC32_ELF_DATA
 #define ELF_MACHINE_CODE	EM_PPC
-#define ELF_MAXPAGESIZE		0x10000
+#ifdef __QNXTARGET__
+#define ELF_MAXPAGESIZE		0x1000
 #define ELF_COMMONPAGESIZE	0x1000
-#define ELF_RELROPAGESIZE	ELF_MAXPAGESIZE
+#else
+#define ELF_MAXPAGESIZE		0x10000
+#define ELF_COMMONPAGESIZE	0x10000
+#endif
+#define ELF_MINPAGESIZE		0x1000
 #define elf_info_to_howto	ppc_elf_info_to_howto
 
 #ifdef  EM_CYGNUS_POWERPC

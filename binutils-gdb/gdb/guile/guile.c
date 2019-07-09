@@ -1,6 +1,6 @@
 /* General GDB/Guile code.
 
-   Copyright (C) 2014-2019 Free Software Foundation, Inc.
+   Copyright (C) 2014-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -30,7 +30,7 @@
 #include "top.h"
 #include "extension-priv.h"
 #include "utils.h"
-#include "common/version.h"
+#include "version.h"
 #ifdef HAVE_GUILE
 #include "guile.h"
 #include "guile-internal.h"
@@ -46,10 +46,8 @@ int gdbscm_guile_major_version;
 int gdbscm_guile_minor_version;
 int gdbscm_guile_micro_version;
 
-#ifdef HAVE_GUILE
 /* The guile subdirectory within gdb's data-directory.  */
 static const char *guile_datadir;
-#endif
 
 /* Declared constants and enum for guile exception printing.  */
 const char gdbscm_print_excp_none[] = "none";
@@ -199,14 +197,19 @@ guile_command (const char *arg, int from_tty)
 
   if (arg && *arg)
     {
-      gdb::unique_xmalloc_ptr<char> msg = gdbscm_safe_eval_string (arg, 1);
+      char *msg = gdbscm_safe_eval_string (arg, 1);
 
       if (msg != NULL)
-	error ("%s", msg.get ());
+	{
+	  /* It is ok that this is a "dangling cleanup" because we
+	     throw immediately.  */
+	  make_cleanup (xfree, msg);
+	  error ("%s", msg);
+	}
     }
   else
     {
-      counted_command_line l = get_command_line (guile_control, "");
+      command_line_up l = get_command_line (guile_control, "");
 
       execute_control_command_untraced (l.get ());
     }
@@ -250,16 +253,24 @@ static void
 gdbscm_eval_from_control_command
   (const struct extension_language_defn *extlang, struct command_line *cmd)
 {
-  char *script;
+  char *script, *msg;
+  struct cleanup *cleanup;
 
-  if (cmd->body_list_1 != nullptr)
+  if (cmd->body_count != 1)
     error (_("Invalid \"guile\" block structure."));
 
-  script = compute_scheme_string (cmd->body_list_0.get ());
-  gdb::unique_xmalloc_ptr<char> msg = gdbscm_safe_eval_string (script, 0);
+  cleanup = make_cleanup (null_cleanup, NULL);
+
+  script = compute_scheme_string (cmd->body_list[0]);
+  msg = gdbscm_safe_eval_string (script, 0);
   xfree (script);
   if (msg != NULL)
-    error ("%s", msg.get ());
+    {
+      make_cleanup (xfree, msg);
+      error ("%s", msg);
+    }
+
+  do_cleanups (cleanup);
 }
 
 /* Read a file as Scheme code.
@@ -291,33 +302,46 @@ gdbscm_execute_gdb_command (SCM command_scm, SCM rest)
   int from_tty = 0, to_string = 0;
   const SCM keywords[] = { from_tty_keyword, to_string_keyword, SCM_BOOL_F };
   char *command;
+  struct cleanup *cleanups;
+  struct gdb_exception except = exception_none;
 
   gdbscm_parse_function_args (FUNC_NAME, SCM_ARG1, keywords, "s#tt",
 			      command_scm, &command, rest,
 			      &from_tty_arg_pos, &from_tty,
 			      &to_string_arg_pos, &to_string);
 
-  return gdbscm_wrap ([=]
-    {
-      gdb::unique_xmalloc_ptr<char> command_holder (command);
-      std::string to_string_res;
+  /* Note: The contents of "command" may get modified while it is
+     executed.  */
+  cleanups = make_cleanup (xfree, command);
 
+  std::string to_string_res;
+
+  TRY
+    {
       scoped_restore restore_async = make_scoped_restore (&current_ui->async,
 							  0);
 
       scoped_restore preventer = prevent_dont_repeat ();
       if (to_string)
-	to_string_res = execute_command_to_string (command, from_tty, false);
+	to_string_res = execute_command_to_string (command, from_tty);
       else
 	execute_command (command, from_tty);
 
       /* Do any commands attached to breakpoint we stopped at.  */
       bpstat_do_actions ();
+    }
+  CATCH (ex, RETURN_MASK_ALL)
+    {
+      except = ex;
+    }
+  END_CATCH
 
-      if (to_string)
-	return gdbscm_scm_from_c_string (to_string_res.c_str ());
-      return SCM_UNSPECIFIED;
-    });
+  do_cleanups (cleanups);
+  GDBSCM_HANDLE_GDB_EXCEPTION (except);
+
+  if (to_string)
+    return gdbscm_scm_from_c_string (to_string_res.c_str ());
+  return SCM_UNSPECIFIED;
 }
 
 /* (data-directory) -> string */
@@ -384,7 +408,7 @@ guile_command (const char *arg, int from_tty)
     {
       /* Even if Guile isn't enabled, we still have to slurp the
 	 command list to the corresponding "end".  */
-      counted_command_line l = get_command_line (guile_control, "");
+      command_line_up l = get_command_line (guile_control, "");
 
       execute_control_command_untraced (l.get ());
     }
@@ -568,7 +592,7 @@ handle_boot_error (void *boot_scm_file, SCM key, SCM args)
   warning (_("Could not complete Guile gdb module initialization from:\n"
 	     "%s.\n"
 	     "Limited Guile support is available.\n"
-	     "Suggest passing --data-directory=/path/to/gdb/data-directory."),
+	     "Suggest passing --data-directory=/path/to/gdb/data-directory.\n"),
 	   (const char *) boot_scm_file);
 
   return SCM_UNSPECIFIED;
@@ -700,9 +724,6 @@ gdbscm_set_backtrace (int enable)
 
 #endif /* HAVE_GUILE */
 
-/* See guile.h.  */
-cmd_list_element *guile_cmd_element = nullptr;
-
 /* Install the various gdb commands used by Guile.  */
 
 static void
@@ -728,7 +749,7 @@ This command is only a placeholder.")
 
   /* Since "help guile" is easy to type, and intuitive, we add general help
      in using GDB+Guile to this command.  */
-  guile_cmd_element = add_com ("guile", class_obscure, guile_command,
+  add_com ("guile", class_obscure, guile_command,
 #ifdef HAVE_GUILE
 	   _("\
 Evaluate one or more Guile expressions.\n\

@@ -1,6 +1,6 @@
 /* Interface between gdb and its extension languages.
 
-   Copyright (C) 2014-2019 Free Software Foundation, Inc.
+   Copyright (C) 2014-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -22,7 +22,6 @@
 
 #include "mi/mi-cmds.h" /* For PRINT_NO_VALUES, etc.  */
 #include "common/vec.h"
-#include "common/array-view.h"
 
 struct breakpoint;
 struct command_line;
@@ -77,35 +76,31 @@ enum ext_lang_bt_status
        succeeded.  */
     EXT_LANG_BT_OK = 1,
 
+    /* Return when the frame filter process is complete, and all
+       operations have succeeded.  */
+    EXT_LANG_BT_COMPLETED = 2,
+
     /* Return when the frame filter process is complete, but there
        were no filter registered and enabled to process.  */
-    EXT_LANG_BT_NO_FILTERS = 2
+    EXT_LANG_BT_NO_FILTERS = 3
   };
 
 /* Flags to pass to apply_extlang_frame_filter.  */
 
-enum frame_filter_flag
+enum frame_filter_flags
   {
     /* Set this flag if frame level is to be printed.  */
-    PRINT_LEVEL = 1 << 0,
+    PRINT_LEVEL = 1,
 
     /* Set this flag if frame information is to be printed.  */
-    PRINT_FRAME_INFO = 1 << 1,
+    PRINT_FRAME_INFO = 2,
 
     /* Set this flag if frame arguments are to be printed.  */
-    PRINT_ARGS = 1 << 2,
+    PRINT_ARGS = 4,
 
     /* Set this flag if frame locals are to be printed.  */
-    PRINT_LOCALS = 1 << 3,
-
-    /* Set this flag if a "More frames" message is to be printed.  */
-    PRINT_MORE_FRAMES = 1 << 4,
-
-    /* Set this flag if elided frames should not be printed.  */
-    PRINT_HIDE = 1 << 5,
+    PRINT_LOCALS = 8,
   };
-
-DEF_ENUM_FLAGS_TYPE (enum frame_filter_flag, frame_filter_flags);
 
 /* A choice of the different frame argument printing strategies that
    can occur in different cases of frame filter instantiation.  */
@@ -147,13 +142,8 @@ enum ext_lang_bp_stop
 
 struct ext_lang_type_printers
 {
-  ext_lang_type_printers ();
-  ~ext_lang_type_printers ();
-
-  DISABLE_COPY_AND_ASSIGN (ext_lang_type_printers);
-
   /* Type-printers from Python.  */
-  void *py_type_printers = nullptr;
+  void *py_type_printers;
 };
 
 /* The return code for some API calls.  */
@@ -187,35 +177,38 @@ struct xmethod_worker
   virtual ~xmethod_worker () = default;
 
   /* Invoke the xmethod encapsulated in this worker and return the result.
-     The method is invoked on OBJ with arguments in the ARGS array.  */
+     The method is invoked on OBJ with arguments in the ARGS array.  NARGS is
+     the length of the this array.  */
 
-  virtual value *invoke (value *obj, gdb::array_view<value *> args) = 0;
+  virtual value *invoke (value *obj, value **args, int nargs) = 0;
 
   /* Return the arg types of the xmethod encapsulated in this worker.
-     The type of the 'this' object is returned as the first element of
-     the vector.  */
+     An array of arg types is returned.  The length of the array is returned in
+     NARGS.  The type of the 'this' object is returned as the first element of
+     array.  */
 
-  std::vector<type *> get_arg_types ();
+  type **get_arg_types (int *nargs);
 
   /* Return the type of the result of the xmethod encapsulated in this worker.
-     OBJECT and ARGS are the same as for invoke.  */
+     OBJECT, ARGS, NARGS are the same as for invoke.  */
 
-  type *get_result_type (value *object, gdb::array_view<value *> args);
+  type *get_result_type (value *object, value **args, int nargs);
 
 private:
 
-  /* Return the types of the arguments the method takes.  The types
-     are returned in TYPE_ARGS, one per argument.  */
+  /* Return the types of the arguments the method takes.  The number of
+     arguments is returned in NARGS, and their types are returned in the array
+     ARGTYPES.  */
 
   virtual enum ext_lang_rc do_get_arg_types
-    (std::vector<type *> *type_args) = 0;
+    (int *nargs, struct type ***arg_types) = 0;
 
-  /* Fetch the type of the result of the method implemented by this
-     worker.  OBJECT and ARGS are the same as for the invoked method.
-     The result type is stored in *RESULT_TYPE.  */
+  /* Fetch the type of the result of the method implemented by this worker.
+     OBJECT, ARGS, NARGS are the same as for the invoked method.  The result
+     type is stored in *RESULT_TYPE.  */
 
   virtual enum ext_lang_rc do_get_result_type
-    (struct value *obj, gdb::array_view<value *> args,
+    (struct value *obj, struct value **args, int nargs,
      struct type **result_type_ptr) = 0;
 
   /* The language the xmethod worker is implemented in.  */
@@ -276,8 +269,12 @@ extern void eval_ext_lang_from_control_command (struct command_line *cmd);
 
 extern void auto_load_ext_lang_scripts_for_objfile (struct objfile *);
 
+extern struct ext_lang_type_printers *start_ext_lang_type_printers (void);
+
 extern char *apply_ext_lang_type_printers (struct ext_lang_type_printers *,
 					   struct type *);
+
+extern void free_ext_lang_type_printers (struct ext_lang_type_printers *);
 
 extern int apply_ext_lang_val_pretty_printer
   (struct type *type,
@@ -287,8 +284,7 @@ extern int apply_ext_lang_val_pretty_printer
    const struct language_defn *language);
 
 extern enum ext_lang_bt_status apply_ext_lang_frame_filter
-  (struct frame_info *frame, frame_filter_flags flags,
-   enum ext_lang_frame_args args_type,
+  (struct frame_info *frame, int flags, enum ext_lang_frame_args args_type,
    struct ui_out *out, int frame_low, int frame_high);
 
 extern void preserve_ext_lang_values (struct objfile *, htab_t copied_types);

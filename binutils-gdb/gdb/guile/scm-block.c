@@ -1,6 +1,6 @@
 /* Scheme interface to blocks.
 
-   Copyright (C) 2008-2019 Free Software Foundation, Inc.
+   Copyright (C) 2008-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -613,8 +613,9 @@ bkscm_block_syms_progress_p (SCM scm)
 static SCM
 gdbscm_make_block_syms_iter (SCM self)
 {
-  /* Call for side effects.  */
-  bkscm_get_valid_block_smob_arg_unsafe (self, SCM_ARG1, FUNC_NAME);
+  block_smob *b_smob
+    = bkscm_get_valid_block_smob_arg_unsafe (self, SCM_ARG1, FUNC_NAME);
+  const struct block *block = b_smob->block;
   SCM progress, iter;
 
   progress = bkscm_make_block_syms_progress_smob ();
@@ -680,20 +681,19 @@ gdbscm_lookup_block (SCM pc_scm)
 
   gdbscm_parse_function_args (FUNC_NAME, SCM_ARG1, NULL, "U", pc_scm, &pc);
 
-  gdbscm_gdb_exception exc {};
-  try
+  TRY
     {
       cust = find_pc_compunit_symtab (pc);
 
       if (cust != NULL && COMPUNIT_OBJFILE (cust) != NULL)
 	block = block_for_pc (pc);
     }
-  catch (const gdb_exception &except)
+  CATCH (except, RETURN_MASK_ALL)
     {
-      exc = unpack (except);
+      GDBSCM_HANDLE_GDB_EXCEPTION (except);
     }
+  END_CATCH
 
-  GDBSCM_HANDLE_GDB_EXCEPTION (exc);
   if (cust == NULL || COMPUNIT_OBJFILE (cust) == NULL)
     {
       gdbscm_out_of_range_error (FUNC_NAME, SCM_ARG1, pc_scm,

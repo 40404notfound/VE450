@@ -1,7 +1,7 @@
 #source: startof.s
 #ld: -shared
 #readelf: -sW
-#target: *-*-linux* *-*-gnu* arm*-*-uclinuxfdpiceabi
+#target: *-*-linux* *-*-gnu*
 
 Symbol table '\.dynsym' contains [0-9]+ entries:
  +Num: +Value +Size Type +Bind +Vis +Ndx Name

@@ -1,6 +1,6 @@
 /* TUI data manipulation routines.
 
-   Copyright (C) 1998-2019 Free Software Foundation, Inc.
+   Copyright (C) 1998-2018 Free Software Foundation, Inc.
 
    Contributed by Hewlett-Packard Company.
 
@@ -19,8 +19,8 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#ifndef TUI_TUI_DATA_H
-#define TUI_TUI_DATA_H
+#ifndef TUI_DATA_H
+#define TUI_DATA_H
 
 #include "tui/tui.h"	/* For enum tui_win_type.  */
 #include "gdb_curses.h"	/* For WINDOW.  */
@@ -229,6 +229,7 @@ union tui_which_element
 
 struct tui_win_element
 {
+  int highlight;
   union tui_which_element which_element;
 };
 
@@ -277,6 +278,7 @@ struct tui_win_info
     struct tui_source_info source_info;
     struct tui_data_info data_display_info;
     struct tui_command_info command_info;
+    void *opaque;
   }
   detail;
   int can_highlight;	/* Can this window ever be highlighted?  */
@@ -331,6 +333,8 @@ extern void tui_clear_source_windows (void);
 extern void tui_clear_source_windows_detail (void);
 extern void tui_clear_win_detail (struct tui_win_info *);
 extern void tui_add_to_source_windows (struct tui_win_info *);
+extern int tui_default_tab_len (void);
+extern void tui_set_default_tab_len (int);
 extern struct tui_win_info *tui_win_with_focus (void);
 extern void tui_set_win_with_focus (struct tui_win_info *);
 extern struct tui_layout_def *tui_layout_def (void);
@@ -342,6 +346,4 @@ extern struct tui_win_info *tui_prev_win (struct tui_win_info *);
 
 extern void tui_add_to_source_windows (struct tui_win_info *);
 
-extern unsigned int tui_tab_width;
-
-#endif /* TUI_TUI_DATA_H */
+#endif /* TUI_DATA_H */

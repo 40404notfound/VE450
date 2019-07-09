@@ -1,5 +1,5 @@
 /* BFD back-end for Irix core files.
-   Copyright (C) 1993-2019 Free Software Foundation, Inc.
+   Copyright (C) 1993-2018 Free Software Foundation, Inc.
    Written by Stu Grossman, Cygnus Support.
    Converted to back-end form by Ian Lance Taylor, Cygnus Support
 
@@ -307,16 +307,12 @@ const bfd_target core_irix_vec =
       irix_core_core_file_p		/* a core file */
     },
     {				/* bfd_set_format */
-      _bfd_bool_bfd_false_error,
-      _bfd_bool_bfd_false_error,
-      _bfd_bool_bfd_false_error,
-      _bfd_bool_bfd_false_error
+      bfd_false, bfd_false,
+      bfd_false, bfd_false
     },
     {				/* bfd_write_contents */
-      _bfd_bool_bfd_false_error,
-      _bfd_bool_bfd_false_error,
-      _bfd_bool_bfd_false_error,
-      _bfd_bool_bfd_false_error
+      bfd_false, bfd_false,
+      bfd_false, bfd_false
     },
 
     BFD_JUMP_TABLE_GENERIC (_bfd_generic),

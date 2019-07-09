@@ -2,7 +2,7 @@
 #source: armv8-2-fp16-simd.s
 #objdump: -d
 #as: -march=armv8.2-a+fp16 -mfpu=neon-fp-armv8 -mthumb
-#skip: *-*-pe *-*-wince
+#skip: *-*-*coff *-*-pe *-*-wince *-*-*aout* *-*-netbsd
 
 .*: +file format .*arm.*
 

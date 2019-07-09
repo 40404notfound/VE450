@@ -1,5 +1,5 @@
 /* VAX series support for 32-bit ELF
-   Copyright (C) 1993-2019 Free Software Foundation, Inc.
+   Copyright (C) 1993-2018 Free Software Foundation, Inc.
    Contributed by Matt Thomas <matt@3am-software.com>.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -27,7 +27,7 @@
 #include "elf/vax.h"
 
 static reloc_howto_type *reloc_type_lookup (bfd *, bfd_reloc_code_real_type);
-static bfd_boolean rtype_to_howto (bfd *, arelent *, Elf_Internal_Rela *);
+static void rtype_to_howto (bfd *, arelent *, Elf_Internal_Rela *);
 static struct bfd_hash_entry *elf_vax_link_hash_newfunc (struct bfd_hash_entry *,
 							 struct bfd_hash_table *,
 							 const char *);
@@ -278,7 +278,7 @@ static reloc_howto_type howto_table[] = {
 	 FALSE),		/* pcrel_offset */
 };
 
-static bfd_boolean
+static void
 rtype_to_howto (bfd *abfd, arelent *cache_ptr, Elf_Internal_Rela *dst)
 {
   unsigned int r_type;
@@ -287,13 +287,12 @@ rtype_to_howto (bfd *abfd, arelent *cache_ptr, Elf_Internal_Rela *dst)
   if (r_type >= R_VAX_max)
     {
       /* xgettext:c-format */
-      _bfd_error_handler (_("%pB: unsupported relocation type %#x"),
+      _bfd_error_handler (_("%B: unrecognised VAX reloc number: %d"),
 			  abfd, r_type);
       bfd_set_error (bfd_error_bad_value);
-      return FALSE;
+      r_type = R_VAX_NONE;
     }
   cache_ptr->howto = &howto_table[r_type];
-  return TRUE;
 }
 
 #define elf_info_to_howto rtype_to_howto
@@ -629,10 +628,10 @@ elf_vax_check_relocs (bfd *abfd, struct bfd_link_info *info, asection *sec,
 		  if (eh->got_addend != (bfd_vma) rel->r_addend)
 		    _bfd_error_handler
 		      /* xgettext:c-format */
-		      (_("%pB: warning: GOT addend of %" PRId64 " to `%s' does"
-			 " not match previous GOT addend of %" PRId64),
-			 abfd, (int64_t) rel->r_addend, h->root.root.string,
-			 (int64_t) eh->got_addend);
+		      (_("%B: warning: GOT addend of %Ld to `%s' does"
+			 " not match previous GOT addend of %Ld"),
+			 abfd, rel->r_addend, h->root.root.string,
+			 eh->got_addend);
 
 		}
 	    }
@@ -783,7 +782,9 @@ elf_vax_check_relocs (bfd *abfd, struct bfd_link_info *info, asection *sec,
 	  /* This relocation describes which C++ vtable entries are actually
 	     used.  Record for later use during GC.  */
 	case R_VAX_GNU_VTENTRY:
-	  if (!bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
+	  BFD_ASSERT (h != NULL);
+	  if (h != NULL
+	      && !bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
 	    return FALSE;
 	  break;
 
@@ -1441,10 +1442,9 @@ elf_vax_relocate_section (bfd *output_bfd,
 	  else if (rel->r_addend != 0)
 	    _bfd_error_handler
 	      /* xgettext:c-format */
-	      (_("%pB: warning: PLT addend of %" PRId64 " to `%s'"
-		 " from %pA section ignored"),
-	       input_bfd, (int64_t) rel->r_addend, h->root.root.string,
-	       input_section);
+	      (_("%B: warning: PLT addend of %Ld to `%s'"
+		 " from %A section ignored"),
+	       input_bfd, rel->r_addend, h->root.root.string, input_section);
 	  rel->r_addend = 0;
 
 	  break;
@@ -1567,16 +1567,15 @@ elf_vax_relocate_section (bfd *output_bfd,
 		  if (h != NULL)
 		    _bfd_error_handler
 		      /* xgettext:c-format */
-		      (_("%pB: warning: %s relocation against symbol `%s'"
-			 " from %pA section"),
+		      (_("%B: warning: %s relocation against symbol `%s'"
+			 " from %A section"),
 		      input_bfd, howto->name, h->root.root.string,
 		      input_section);
 		  else
 		    _bfd_error_handler
 		      /* xgettext:c-format */
-		      (_("%pB: warning: %s relocation to %#" PRIx64
-			 " from %pA section"),
-		      input_bfd, howto->name, (uint64_t) outrel.r_addend,
+		      (_("%B: warning: %s relocation to %#Lx from %A section"),
+		      input_bfd, howto->name, outrel.r_addend,
 		      input_section);
 		}
 	      loc = sreloc->contents;

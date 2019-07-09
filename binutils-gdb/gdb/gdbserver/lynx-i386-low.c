@@ -1,4 +1,4 @@
-/* Copyright (C) 2010-2019 Free Software Foundation, Inc.
+/* Copyright (C) 2010-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -19,21 +19,12 @@
 #include "lynx-low.h"
 #include <limits.h>
 #include <sys/ptrace.h>
-#include "common/x86-xstate.h"
+#include "x86-xstate.h"
 #include "arch/i386.h"
-#include "x86-tdesc.h"
 
 /* The following two typedefs are defined in a .h file which is not
    in the standard include path (/sys/include/family/x86/ucontext.h),
-   so we just duplicate them here.
-
-   Unfortunately for us, the definition of this structure differs between
-   LynxOS 5.x and LynxOS 178.  Rather than duplicate the code, we use
-   different definitions depending on the target.  */
-
-#ifdef VMOS_DEV
-#define LYNXOS_178
-#endif
+   so we just duplicate them here.  */
 
 /* General register context */
 typedef struct usr_econtext {
@@ -59,28 +50,6 @@ typedef struct usr_econtext {
     uint32_t    uec_fs;
     uint32_t    uec_gs;
 } usr_econtext_t;
-
-#if defined(LYNXOS_178)
-
-/* Floating point register context                                                                                      */
-typedef struct usr_fcontext {
-        uint32_t         ufc_control;
-        uint32_t         ufc_status;
-        uint32_t         ufc_tag;
-        uint8_t         *ufc_inst_off;
-        uint32_t         ufc_inst_sel;
-        uint8_t         *ufc_data_off;
-        uint32_t         ufc_data_sel;
-        struct ufp387_real {
-                uint16_t        umant4;
-        uint16_t        umant3;
-        uint16_t        umant2;
-        uint16_t        umant1;
-        uint16_t        us_and_e;
-        } ufc_reg[8];
-} usr_fcontext_t;
-
-#else /* This is LynxOS 5.x.  */
 
 /* Floating point and SIMD register context */
 typedef struct usr_fcontext {
@@ -116,8 +85,6 @@ typedef struct usr_fcontext {
         } uxmm_reg[8];
         char ureserved[16][14];
 } usr_fcontext_t;
-
-#endif
 
 /* The index of various registers inside the regcache.  */
 
@@ -251,7 +218,6 @@ lynx_i386_fill_fpregset (struct regcache *regcache, char *buf)
                     buf + offsetof (usr_fcontext_t, ufc_data_sel));
   collect_register (regcache, I386_FOOFF_REGNUM,
                     buf + offsetof (usr_fcontext_t, ufc_data_off));
-#if !defined(LYNXOS_178)
   collect_16bit_register (regcache, I386_FOP_REGNUM,
                           buf + offsetof (usr_fcontext_t, ufc_opcode));
 
@@ -262,7 +228,6 @@ lynx_i386_fill_fpregset (struct regcache *regcache, char *buf)
 		      + i * sizeof (struct uxmm_register));
   collect_register (regcache, I386_MXCSR_REGNUM,
                     buf + offsetof (usr_fcontext_t, usse_mxcsr));
-#endif
 }
 
 /* This is the supply counterpart for collect_16bit_register:
@@ -311,7 +276,6 @@ lynx_i386_store_fpregset (struct regcache *regcache, const char *buf)
                    buf + offsetof (usr_fcontext_t, ufc_data_sel));
   supply_register (regcache, I386_FOOFF_REGNUM,
                    buf + offsetof (usr_fcontext_t, ufc_data_off));
-#if !defined(LYNXOS_178)
   supply_16bit_register (regcache, I386_FOP_REGNUM,
                          buf + offsetof (usr_fcontext_t, ufc_opcode));
 
@@ -322,7 +286,6 @@ lynx_i386_store_fpregset (struct regcache *regcache, const char *buf)
 		     + i * sizeof (struct uxmm_register));
   supply_register (regcache, I386_MXCSR_REGNUM,
                    buf + offsetof (usr_fcontext_t, usse_mxcsr));
-#endif
 }
 
 /* Implements the lynx_target_ops.arch_setup routine.  */
@@ -331,9 +294,9 @@ static void
 lynx_i386_arch_setup (void)
 {
   struct target_desc *tdesc
-    = i386_create_target_description (X86_XSTATE_SSE_MASK, false, false);
+    = i386_create_target_description (X86_XSTATE_SSE_MASK, false);
 
-  init_target_desc (tdesc, i386_expedite_regs);
+  init_target_desc (tdesc);
 
   lynx_tdesc = tdesc;
 }

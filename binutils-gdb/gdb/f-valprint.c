@@ -1,6 +1,6 @@
 /* Support for printing Fortran values for GDB, the GNU debugger.
 
-   Copyright (C) 1993-2019 Free Software Foundation, Inc.
+   Copyright (C) 1993-2018 Free Software Foundation, Inc.
 
    Contributed by Motorola.  Adapted from the C definitions by Farooq Butt
    (fmbutt@engage.sps.mot.com), additionally worked over by Stan Shebs.
@@ -41,7 +41,7 @@ int f77_array_offset_tbl[MAX_FORTRAN_DIMS + 1][2];
 /* Array which holds offsets to be applied to get a row's elements
    for a given array.  Array also holds the size of each subarray.  */
 
-LONGEST
+int
 f77_get_lowerbound (struct type *type)
 {
   if (TYPE_ARRAY_LOWER_BOUND_IS_UNDEFINED (type))
@@ -50,7 +50,7 @@ f77_get_lowerbound (struct type *type)
   return TYPE_ARRAY_LOWER_BOUND_VALUE (type);
 }
 
-LONGEST
+int
 f77_get_upperbound (struct type *type)
 {
   if (TYPE_ARRAY_UPPER_BOUND_IS_UNDEFINED (type))
@@ -199,7 +199,7 @@ static const struct generic_val_print_decorations f_decorations =
   ")",
   ".TRUE.",
   ".FALSE.",
-  "void",
+  "VOID",
   "{",
   "}"
 };
@@ -366,6 +366,7 @@ f_val_print (struct type *type, int embedded_offset,
 			 &f_decorations);
       break;
     }
+  gdb_flush (stream);
 }
 
 static void
@@ -407,17 +408,17 @@ info_common_command_for_block (const struct block *block, const char *comname,
 	    printf_filtered ("%s = ",
 			     SYMBOL_PRINT_NAME (common->contents[index]));
 
-	    try
+	    TRY
 	      {
 		val = value_of_variable (common->contents[index], block);
 		value_print (val, gdb_stdout, &opts);
 	      }
 
-	    catch (const gdb_exception_error &except)
+	    CATCH (except, RETURN_MASK_ERROR)
 	      {
-		printf_filtered ("<error reading variable: %s>",
-				 except.what ());
+		printf_filtered ("<error reading variable: %s>", except.message);
 	      }
+	    END_CATCH
 
 	    putchar_filtered ('\n');
 	  }

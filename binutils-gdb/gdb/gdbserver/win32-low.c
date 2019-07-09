@@ -1,5 +1,5 @@
 /* Low level interface to Windows debugging, for gdbserver.
-   Copyright (C) 2006-2019 Free Software Foundation, Inc.
+   Copyright (C) 2006-2018 Free Software Foundation, Inc.
 
    Contributed by Leo Zayas.  Based on "win32-nat.c" from GDB.
 
@@ -32,8 +32,8 @@
 #include <tlhelp32.h>
 #include <psapi.h>
 #include <process.h>
-#include "common/gdb_tilde_expand.h"
-#include "common/common-inferior.h"
+#include "gdb_tilde_expand.h"
+#include "common-inferior.h"
 
 #ifndef USE_WIN32API
 #include <sys/cygwin.h>
@@ -120,7 +120,7 @@ current_thread_ptid (void)
 static ptid_t
 debug_event_ptid (DEBUG_EVENT *event)
 {
-  return ptid_t (event->dwProcessId, event->dwThreadId, 0);
+  return ptid_build (event->dwProcessId, event->dwThreadId, 0);
 }
 
 /* Get the thread context of the thread associated with TH.  */
@@ -208,7 +208,7 @@ static win32_thread_info *
 child_add_thread (DWORD pid, DWORD tid, HANDLE h, void *tlb)
 {
   win32_thread_info *th;
-  ptid_t ptid = ptid_t (pid, tid, 0);
+  ptid_t ptid = ptid_build (pid, tid, 0);
 
   if ((th = thread_rec (ptid, FALSE)))
     return th;
@@ -556,6 +556,7 @@ create_process (const char *program, char *args,
 		DWORD flags, PROCESS_INFORMATION *pi)
 {
   const char *inferior_cwd = get_inferior_cwd ();
+  std::string expanded_infcwd = gdb_tilde_expand (inferior_cwd);
   BOOL ret;
 
 #ifdef _WIN32_WCE
@@ -575,7 +576,6 @@ create_process (const char *program, char *args,
 
   if (inferior_cwd != NULL)
     {
-      std::string expanded_infcwd = gdb_tilde_expand (inferior_cwd);
       std::replace (expanded_infcwd.begin (), expanded_infcwd.end (),
 		    '/', '\\');
       wcwd = alloca ((expanded_infcwd.size () + 1) * sizeof (wchar_t));
@@ -607,10 +607,7 @@ Could not convert the expanded inferior cwd to wide-char."));
 			TRUE,     /* inherit handles */
 			flags,    /* start flags */
 			NULL,     /* environment */
-			/* current directory */
-			(inferior_cwd == NULL
-			 ? NULL
-			 : gdb_tilde_expand (inferior_cwd).c_str()),
+			expanded_infcwd.c_str (), /* current directory */
 			&si,      /* start info */
 			pi);      /* proc info */
 #endif
@@ -627,13 +624,14 @@ static int
 win32_create_inferior (const char *program,
 		       const std::vector<char *> &program_args)
 {
-  client_state &cs = get_client_state ();
 #ifndef USE_WIN32API
   char real_path[PATH_MAX];
   char *orig_path, *new_path, *path_ptr;
 #endif
   BOOL ret;
   DWORD flags;
+  int argslen;
+  int argc;
   PROCESS_INFORMATION pi;
   DWORD err;
   std::string str_program_args = stringify_argv (program_args);
@@ -702,10 +700,6 @@ win32_create_inferior (const char *program,
 #endif
 
   do_initial_child_stuff (pi.hProcess, pi.dwProcessId, 0);
-
-  /* Wait till we are at 1st instruction in program, return new pid
-     (assuming success).  */
-  cs.last_ptid = win32_wait (ptid_t (current_process_id), &cs.last_status, 0);
 
   return current_process_id;
 }
@@ -803,11 +797,15 @@ win32_clear_inferiors (void)
   clear_inferiors ();
 }
 
-/* Implementation of target_ops::kill.  */
-
+/* Kill all inferiors.  */
 static int
-win32_kill (process_info *process)
+win32_kill (int pid)
 {
+  struct process_info *process;
+
+  if (current_process_handle == NULL)
+    return -1;
+
   TerminateProcess (current_process_handle, 0);
   for (;;)
     {
@@ -823,15 +821,16 @@ win32_kill (process_info *process)
 
   win32_clear_inferiors ();
 
+  process = find_process_pid (pid);
   remove_process (process);
   return 0;
 }
 
-/* Implementation of target_ops::detach.  */
-
+/* Detach from inferior PID.  */
 static int
-win32_detach (process_info *process)
+win32_detach (int pid)
 {
+  struct process_info *process;
   winapi_DebugActiveProcessStop DebugActiveProcessStop = NULL;
   winapi_DebugSetProcessKillOnExit DebugSetProcessKillOnExit = NULL;
 #ifdef _WIN32_WCE
@@ -858,6 +857,7 @@ win32_detach (process_info *process)
     return -1;
 
   DebugSetProcessKillOnExit (FALSE);
+  process = find_process_pid (pid);
   remove_process (process);
 
   win32_clear_inferiors ();
@@ -870,8 +870,7 @@ win32_mourn (struct process_info *process)
   remove_process (process);
 }
 
-/* Implementation of target_ops::join.  */
-
+/* Wait for inferiors to end.  */
 static void
 win32_join (int pid)
 {
@@ -907,7 +906,7 @@ win32_resume (struct thread_resume *resume_info, size_t n)
   /* This handles the very limited set of resume packets that GDB can
      currently produce.  */
 
-  if (n == 1 && resume_info[0].thread == minus_one_ptid)
+  if (n == 1 && ptid_equal (resume_info[0].thread, minus_one_ptid))
     tid = -1;
   else if (n > 1)
     tid = -1;
@@ -916,7 +915,7 @@ win32_resume (struct thread_resume *resume_info, size_t n)
        the Windows resume code do the right thing for thread switching.  */
     tid = current_event.dwThreadId;
 
-  if (resume_info[0].thread != minus_one_ptid)
+  if (!ptid_equal (resume_info[0].thread, minus_one_ptid))
     {
       sig = gdb_signal_from_host (resume_info[0].sig);
       step = resume_info[0].kind == resume_step;
@@ -1605,7 +1604,7 @@ win32_wait (ptid_t ptid, struct target_waitstatus *ourstatus, int options)
 	  OUTMSG2 (("Child exited with retcode = %x\n",
 		    ourstatus->value.integer));
 	  win32_clear_inferiors ();
-	  return ptid_t (current_event.dwProcessId);
+	  return pid_to_ptid (current_event.dwProcessId);
 	case TARGET_WAITKIND_STOPPED:
 	case TARGET_WAITKIND_LOADED:
 	  OUTMSG2 (("Child Stopped with signal = %d \n",
@@ -1843,6 +1842,7 @@ static struct target_ops win32_target_ops = {
   NULL, /* get_min_fast_tracepoint_insn_len */
   NULL, /* qxfer_libraries_svr4 */
   NULL, /* support_agent */
+  NULL, /* support_btrace */
   NULL, /* enable_btrace */
   NULL, /* disable_btrace */
   NULL, /* read_btrace */

@@ -1,5 +1,5 @@
-	.globl	__start .text
-	.globl	gs .text
+	.globl	__start
+	.globl	gs
 __start:
 gs:
 ls:

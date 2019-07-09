@@ -1,5 +1,5 @@
 /* BFD back-end for WebAssembly modules.
-   Copyright (C) 2017-2019 Free Software Foundation, Inc.
+   Copyright (C) 2017-2018 Free Software Foundation, Inc.
 
    Based on srec.c, mmo.c, and binary.c
 
@@ -28,7 +28,9 @@
 #include "sysdep.h"
 #include "alloca-conf.h"
 #include "bfd.h"
+#include "sysdep.h"
 #include <limits.h>
+#include "bfd_stdint.h"
 #include "libiberty.h"
 #include "libbfd.h"
 #include "wasm-module.h"
@@ -307,12 +309,12 @@ wasm_scan_name_function_section (bfd *abfd, sec_ptr asect)
 
   for (symcount = 0; p < end && symcount < tdata->symcount; symcount++)
     {
-      bfd_vma idx;
+      bfd_vma index;
       bfd_vma len;
       char *name;
       asymbol *sym;
 
-      READ_LEB128 (idx, p, end);
+      READ_LEB128 (index, p, end);
       READ_LEB128 (len, p, end);
 
       if (p + len < p || p + len > end)
@@ -328,7 +330,7 @@ wasm_scan_name_function_section (bfd *abfd, sec_ptr asect)
       sym = &symbols[symcount];
       sym->the_bfd = abfd;
       sym->name = name;
-      sym->value = idx;
+      sym->value = index;
       sym->flags = BSF_GLOBAL | BSF_FUNCTION;
       sym->section = space_function_index;
       sym->udata.p = NULL;
@@ -489,12 +491,12 @@ wasm_register_section (bfd *abfd ATTRIBUTE_UNUSED,
 		       void *fsarg)
 {
   sec_ptr *numbered_sections = fsarg;
-  int idx = wasm_section_name_to_code (asect->name);
+  int index = wasm_section_name_to_code (asect->name);
 
-  if (idx == 0)
+  if (index == 0)
     return;
 
-  numbered_sections[idx] = asect;
+  numbered_sections[index] = asect;
 }
 
 struct compute_section_arg
@@ -518,14 +520,14 @@ wasm_compute_custom_section_file_position (bfd *abfd,
 					   void *fsarg)
 {
   struct compute_section_arg *fs = fsarg;
-  int idx;
+  int index;
 
   if (fs->failed)
     return;
 
-  idx = wasm_section_name_to_code (asect->name);
+  index = wasm_section_name_to_code (asect->name);
 
-  if (idx != 0)
+  if (index != 0)
     return;
 
   if (CONST_STRNEQ (asect->name, WASM_SECTION_PREFIX))
@@ -771,7 +773,7 @@ wasm_object_p (bfd *abfd)
 /* BFD_JUMP_TABLE_SYMBOLS */
 #define wasm_get_symbol_version_string	  _bfd_nosymbols_get_symbol_version_string
 #define wasm_bfd_is_local_label_name	   bfd_generic_is_local_label_name
-#define wasm_bfd_is_target_special_symbol _bfd_bool_bfd_asymbol_false
+#define wasm_bfd_is_target_special_symbol ((bfd_boolean (*) (bfd *, asymbol *)) bfd_false)
 #define wasm_get_lineno			  _bfd_nosymbols_get_lineno
 #define wasm_find_nearest_line		  _bfd_nosymbols_find_nearest_line
 #define wasm_find_line			  _bfd_nosymbols_find_line
@@ -809,16 +811,16 @@ const bfd_target wasm_vec =
     _bfd_dummy_target,
   },
   {
-    _bfd_bool_bfd_false_error,
+    bfd_false,
     wasm_mkobject,
     _bfd_generic_mkarchive,
-    _bfd_bool_bfd_false_error,
+    bfd_false,
   },
   {				/* bfd_write_contents.  */
-    _bfd_bool_bfd_false_error,
+    bfd_false,
     wasm_write_object_contents,
     _bfd_write_archive_contents,
-    _bfd_bool_bfd_false_error,
+    bfd_false,
   },
 
   BFD_JUMP_TABLE_GENERIC (_bfd_generic),

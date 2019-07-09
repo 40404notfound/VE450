@@ -1,6 +1,6 @@
 /* Target dependent code for ARC arhitecture, for GDB.
 
-   Copyright 2005-2019 Free Software Foundation, Inc.
+   Copyright 2005-2018 Free Software Foundation, Inc.
    Contributed by Synopsys Inc.
 
    This file is part of GDB.
@@ -33,7 +33,7 @@
 
 /* ARC header files.  */
 #include "opcode/arc.h"
-#include "../opcodes/arc-dis.h"
+#include "opcodes/arc-dis.h"
 #include "arc-tdep.h"
 
 /* Standard headers.  */
@@ -509,6 +509,19 @@ arc_virtual_frame_pointer (struct gdbarch *gdbarch, CORE_ADDR pc,
   *offset_ptr = 0;
 }
 
+/* Implement the "dummy_id" gdbarch method.
+
+   Tear down a dummy frame created by arc_push_dummy_call ().  This data has
+   to be constructed manually from the data in our hand.  The stack pointer
+   and program counter can be obtained from the frame info.  */
+
+static struct frame_id
+arc_dummy_id (struct gdbarch *gdbarch, struct frame_info *this_frame)
+{
+  return frame_id_build (get_frame_sp (this_frame),
+			 get_frame_pc (this_frame));
+}
+
 /* Implement the "push_dummy_call" gdbarch method.
 
    Stack Frame Layout
@@ -579,8 +592,7 @@ arc_virtual_frame_pointer (struct gdbarch *gdbarch, CORE_ADDR pc,
 static CORE_ADDR
 arc_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
 		     struct regcache *regcache, CORE_ADDR bp_addr, int nargs,
-		     struct value **args, CORE_ADDR sp,
-		     function_call_return_method return_method,
+		     struct value **args, CORE_ADDR sp, int struct_return,
 		     CORE_ADDR struct_addr)
 {
   if (arc_debug)
@@ -595,7 +607,7 @@ arc_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
      value return?  If so, struct_addr is the address of the reserved space for
      the return structure to be written on the stack, and that address is
      passed to that function as a hidden first argument.  */
-  if (return_method == return_method_struct)
+  if (struct_return)
     {
       /* Pass the return address in the first argument register.  */
       regcache_cooked_write_unsigned (regcache, arg_reg, struct_addr);
@@ -652,7 +664,7 @@ arc_push_dummy_call (struct gdbarch *gdbarch, struct value *function,
 
 	  /* Note we don't use write_unsigned here, since that would convert
 	     the byte order, but we are already in the correct byte order.  */
-	  regcache->cooked_write (arg_reg, data);
+	  regcache_cooked_write (regcache, arg_reg, data);
 
 	  data += ARC_REGISTER_SIZE;
 	  total_space -= ARC_REGISTER_SIZE;
@@ -1499,6 +1511,34 @@ arc_sw_breakpoint_from_kind (struct gdbarch *gdbarch, int kind, int *size)
     }
 }
 
+/* Implement the "unwind_pc" gdbarch method.  */
+
+static CORE_ADDR
+arc_unwind_pc (struct gdbarch *gdbarch, struct frame_info *next_frame)
+{
+  int pc_regnum = gdbarch_pc_regnum (gdbarch);
+  CORE_ADDR pc = frame_unwind_register_unsigned (next_frame, pc_regnum);
+
+  if (arc_debug)
+    debug_printf ("arc: unwind PC: %s\n", paddress (gdbarch, pc));
+
+  return pc;
+}
+
+/* Implement the "unwind_sp" gdbarch method.  */
+
+static CORE_ADDR
+arc_unwind_sp (struct gdbarch *gdbarch, struct frame_info *next_frame)
+{
+  int sp_regnum = gdbarch_sp_regnum (gdbarch);
+  CORE_ADDR sp = frame_unwind_register_unsigned (next_frame, sp_regnum);
+
+  if (arc_debug)
+    debug_printf ("arc: unwind SP: %s\n", paddress (gdbarch, sp));
+
+  return sp;
+}
+
 /* Implement the "frame_align" gdbarch method.  */
 
 static CORE_ADDR
@@ -1720,7 +1760,7 @@ static const struct frame_base arc_normal_base = {
    Returns TRUE if input tdesc was valid and in this case it will assign TDESC
    and TDESC_DATA output parameters.  */
 
-static bool
+static int
 arc_tdesc_init (struct gdbarch_info info, const struct target_desc **tdesc,
 		struct tdesc_arch_data **tdesc_data)
 {
@@ -1746,7 +1786,7 @@ arc_tdesc_init (struct gdbarch_info info, const struct target_desc **tdesc,
      tag.  */
   /* Cannot use arc_mach_is_arcv2 (), because gdbarch is not created yet.  */
   const int is_arcv2 = (info.bfd_arch_info->mach == bfd_mach_arc_arcv2);
-  bool is_reduced_rf;
+  int is_reduced_rf;
   const char *const *core_regs;
   const char *core_feature_name;
 
@@ -1803,10 +1843,10 @@ arc_tdesc_init (struct gdbarch_info info, const struct target_desc **tdesc,
 	{
 	  arc_print (_("Error: ARC v2 target description supplied for "
 		       "non-ARCv2 target.\n"));
-	  return false;
+	  return FALSE;
 	}
 
-      is_reduced_rf = false;
+      is_reduced_rf = FALSE;
       core_feature_name = core_v2_feature_name;
       core_regs = core_v2_register_names;
     }
@@ -1819,10 +1859,10 @@ arc_tdesc_init (struct gdbarch_info info, const struct target_desc **tdesc,
 	    {
 	      arc_print (_("Error: ARC v2 target description supplied for "
 			   "non-ARCv2 target.\n"));
-	      return false;
+	      return FALSE;
 	    }
 
-	  is_reduced_rf = true;
+	  is_reduced_rf = TRUE;
 	  core_feature_name = core_reduced_v2_feature_name;
 	  core_regs = core_v2_register_names;
 	}
@@ -1836,10 +1876,10 @@ arc_tdesc_init (struct gdbarch_info info, const struct target_desc **tdesc,
 		{
 		  arc_print (_("Error: ARCompact target description supplied "
 			       "for non-ARCompact target.\n"));
-		  return false;
+		  return FALSE;
 		}
 
-	      is_reduced_rf = false;
+	      is_reduced_rf = FALSE;
 	      core_feature_name = core_arcompact_feature_name;
 	      core_regs = core_arcompact_register_names;
 	    }
@@ -1847,7 +1887,7 @@ arc_tdesc_init (struct gdbarch_info info, const struct target_desc **tdesc,
 	    {
 	      arc_print (_("Error: Couldn't find core register feature in "
 			   "supplied target description."));
-	      return false;
+	      return FALSE;
 	    }
 	}
     }
@@ -1882,7 +1922,7 @@ arc_tdesc_init (struct gdbarch_info info, const struct target_desc **tdesc,
 	  arc_print (_("Error: Cannot find required register `%s' in "
 		       "feature `%s'.\n"), core_regs[i], core_feature_name);
 	  tdesc_data_cleanup (tdesc_data_loc);
-	  return false;
+	  return FALSE;
 	}
     }
 
@@ -1894,7 +1934,7 @@ arc_tdesc_init (struct gdbarch_info info, const struct target_desc **tdesc,
       arc_print (_("Error: Cannot find required feature `%s' in supplied "
 		   "target description.\n"), aux_minimal_feature_name);
       tdesc_data_cleanup (tdesc_data_loc);
-      return false;
+      return FALSE;
     }
 
   for (int i = ARC_FIRST_AUX_REGNUM; i <= ARC_LAST_AUX_REGNUM; i++)
@@ -1907,42 +1947,14 @@ arc_tdesc_init (struct gdbarch_info info, const struct target_desc **tdesc,
 		       "in feature `%s'.\n"),
 		     name, tdesc_feature_name (feature));
 	  tdesc_data_cleanup (tdesc_data_loc);
-	  return false;
+	  return FALSE;
 	}
     }
 
   *tdesc = tdesc_loc;
   *tdesc_data = tdesc_data_loc;
 
-  return true;
-}
-
-/* Implement the type_align gdbarch function.  */
-
-static ULONGEST
-arc_type_align (struct gdbarch *gdbarch, struct type *type)
-{
-  switch (TYPE_CODE (type))
-    {
-    case TYPE_CODE_PTR:
-    case TYPE_CODE_FUNC:
-    case TYPE_CODE_FLAGS:
-    case TYPE_CODE_INT:
-    case TYPE_CODE_RANGE:
-    case TYPE_CODE_FLT:
-    case TYPE_CODE_ENUM:
-    case TYPE_CODE_REF:
-    case TYPE_CODE_RVALUE_REF:
-    case TYPE_CODE_CHAR:
-    case TYPE_CODE_BOOL:
-    case TYPE_CODE_DECFLOAT:
-    case TYPE_CODE_METHODPTR:
-    case TYPE_CODE_MEMBERPTR:
-      type = check_typedef (type);
-      return std::min<ULONGEST> (4, TYPE_LENGTH (type));
-    default:
-      return 0;
-    }
+  return TRUE;
 }
 
 /* Implement the "init" gdbarch method.  */
@@ -1970,7 +1982,7 @@ arc_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_int_bit (gdbarch, 32);
   set_gdbarch_long_bit (gdbarch, 32);
   set_gdbarch_long_long_bit (gdbarch, 64);
-  set_gdbarch_type_align (gdbarch, arc_type_align);
+  set_gdbarch_long_long_align_bit (gdbarch, 32);
   set_gdbarch_float_bit (gdbarch, 32);
   set_gdbarch_float_format (gdbarch, floatformats_ieee_single);
   set_gdbarch_double_bit (gdbarch, 64);
@@ -1993,6 +2005,7 @@ arc_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   set_gdbarch_ps_regnum (gdbarch, ARC_STATUS32_REGNUM);
   set_gdbarch_fp0_regnum (gdbarch, -1);	/* No FPU registers.  */
 
+  set_gdbarch_dummy_id (gdbarch, arc_dummy_id);
   set_gdbarch_push_dummy_call (gdbarch, arc_push_dummy_call);
   set_gdbarch_push_dummy_code (gdbarch, arc_push_dummy_code);
 
@@ -2014,6 +2027,9 @@ arc_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
     set_gdbarch_decr_pc_after_break (gdbarch, 0);
   else
     set_gdbarch_decr_pc_after_break (gdbarch, 2);
+
+  set_gdbarch_unwind_pc (gdbarch, arc_unwind_pc);
+  set_gdbarch_unwind_sp (gdbarch, arc_unwind_sp);
 
   set_gdbarch_frame_align (gdbarch, arc_frame_align);
 

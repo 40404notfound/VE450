@@ -1,6 +1,6 @@
 /* Scheme interface to types.
 
-   Copyright (C) 2008-2019 Free Software Foundation, Inc.
+   Copyright (C) 2008-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -26,7 +26,7 @@
 #include "gdbtypes.h"
 #include "objfiles.h"
 #include "language.h"
-#include "common/vec.h"
+#include "vec.h"
 #include "bcache.h"
 #include "dwarf2loc.h"
 #include "typeprint.h"
@@ -105,20 +105,21 @@ tyscm_type_smob_type (type_smob *t_smob)
 static std::string
 tyscm_type_name (struct type *type)
 {
-  SCM excp;
-  try
+  TRY
     {
       string_file stb;
 
       LA_PRINT_TYPE (type, "", &stb, -1, 0, &type_print_raw_options);
       return std::move (stb.string ());
     }
-  catch (const gdb_exception &except)
+  CATCH (except, RETURN_MASK_ALL)
     {
-      excp = gdbscm_scm_from_gdb_exception (unpack (except));
+      SCM excp = gdbscm_scm_from_gdb_exception (except);
+      gdbscm_throw (excp);
     }
+  END_CATCH
 
-  gdbscm_throw (excp);
+  gdb_assert_not_reached ("no way to get here");
 }
 
 /* Administrivia for type smobs.  */
@@ -223,7 +224,7 @@ tyscm_equal_p_type_smob (SCM type1_scm, SCM type2_scm)
 {
   type_smob *type1_smob, *type2_smob;
   struct type *type1, *type2;
-  bool result = false;
+  int result = 0;
 
   SCM_ASSERT_TYPE (tyscm_is_type (type1_scm), type1_scm, SCM_ARG1, FUNC_NAME,
 		   type_smob_name);
@@ -234,17 +235,16 @@ tyscm_equal_p_type_smob (SCM type1_scm, SCM type2_scm)
   type1 = type1_smob->type;
   type2 = type2_smob->type;
 
-  gdbscm_gdb_exception exc {};
-  try
+  TRY
     {
       result = types_deeply_equal (type1, type2);
     }
-  catch (const gdb_exception &except)
+  CATCH (except, RETURN_MASK_ALL)
     {
-      exc = unpack (except);
+      GDBSCM_HANDLE_GDB_EXCEPTION (except);
     }
+  END_CATCH
 
-  GDBSCM_HANDLE_GDB_EXCEPTION (exc);
   return scm_from_bool (result);
 }
 
@@ -576,16 +576,10 @@ gdbscm_type_tag (SCM self)
   type_smob *t_smob
     = tyscm_get_type_smob_arg_unsafe (self, SCM_ARG1, FUNC_NAME);
   struct type *type = t_smob->type;
-  const char *tagname = nullptr;
 
-  if (TYPE_CODE (type) == TYPE_CODE_STRUCT
-      || TYPE_CODE (type) == TYPE_CODE_UNION
-      || TYPE_CODE (type) == TYPE_CODE_ENUM)
-    tagname = TYPE_NAME (type);
-
-  if (tagname == nullptr)
+  if (!TYPE_TAG_NAME (type))
     return SCM_BOOL_F;
-  return gdbscm_scm_from_c_string (tagname);
+  return gdbscm_scm_from_c_string (TYPE_TAG_NAME (type));
 }
 
 /* (type-name <gdb:type>) -> string
@@ -629,13 +623,14 @@ gdbscm_type_sizeof (SCM self)
     = tyscm_get_type_smob_arg_unsafe (self, SCM_ARG1, FUNC_NAME);
   struct type *type = t_smob->type;
 
-  try
+  TRY
     {
       check_typedef (type);
     }
-  catch (const gdb_exception &except)
+  CATCH (except, RETURN_MASK_ALL)
     {
     }
+  END_CATCH
 
   /* Ignore exceptions.  */
 
@@ -652,17 +647,16 @@ gdbscm_type_strip_typedefs (SCM self)
     = tyscm_get_type_smob_arg_unsafe (self, SCM_ARG1, FUNC_NAME);
   struct type *type = t_smob->type;
 
-  gdbscm_gdb_exception exc {};
-  try
+  TRY
     {
       type = check_typedef (type);
     }
-  catch (const gdb_exception &except)
+  CATCH (except, RETURN_MASK_ALL)
     {
-      exc = unpack (except);
+      GDBSCM_HANDLE_GDB_EXCEPTION (except);
     }
+  END_CATCH
 
-  GDBSCM_HANDLE_GDB_EXCEPTION (exc);
   return tyscm_scm_from_type (type);
 }
 
@@ -675,17 +669,16 @@ tyscm_get_composite (struct type *type)
 
   for (;;)
     {
-      gdbscm_gdb_exception exc {};
-      try
+      TRY
 	{
 	  type = check_typedef (type);
 	}
-      catch (const gdb_exception &except)
+      CATCH (except, RETURN_MASK_ALL)
 	{
-	  exc = unpack (except);
+	  GDBSCM_HANDLE_GDB_EXCEPTION (except);
 	}
+      END_CATCH
 
-      GDBSCM_HANDLE_GDB_EXCEPTION (exc);
       if (TYPE_CODE (type) != TYPE_CODE_PTR
 	  && TYPE_CODE (type) != TYPE_CODE_REF)
 	break;
@@ -731,19 +724,18 @@ tyscm_array_1 (SCM self, SCM n1_scm, SCM n2_scm, int is_vector,
 				 _("Array length must not be negative"));
     }
 
-  gdbscm_gdb_exception exc {};
-  try
+  TRY
     {
       array = lookup_array_range_type (type, n1, n2);
       if (is_vector)
 	make_vector_type (array);
     }
-  catch (const gdb_exception &except)
+  CATCH (except, RETURN_MASK_ALL)
     {
-      exc = unpack (except);
+      GDBSCM_HANDLE_GDB_EXCEPTION (except);
     }
+  END_CATCH
 
-  GDBSCM_HANDLE_GDB_EXCEPTION (exc);
   return tyscm_scm_from_type (array);
 }
 
@@ -789,17 +781,16 @@ gdbscm_type_pointer (SCM self)
     = tyscm_get_type_smob_arg_unsafe (self, SCM_ARG1, FUNC_NAME);
   struct type *type = t_smob->type;
 
-  gdbscm_gdb_exception exc {};
-  try
+  TRY
     {
       type = lookup_pointer_type (type);
     }
-  catch (const gdb_exception &except)
+  CATCH (except, RETURN_MASK_ALL)
     {
-      exc = unpack (except);
+      GDBSCM_HANDLE_GDB_EXCEPTION (except);
     }
+  END_CATCH
 
-  GDBSCM_HANDLE_GDB_EXCEPTION (exc);
   return tyscm_scm_from_type (type);
 }
 
@@ -852,17 +843,16 @@ gdbscm_type_reference (SCM self)
     = tyscm_get_type_smob_arg_unsafe (self, SCM_ARG1, FUNC_NAME);
   struct type *type = t_smob->type;
 
-  gdbscm_gdb_exception exc {};
-  try
+  TRY
     {
       type = lookup_lvalue_reference_type (type);
     }
-  catch (const gdb_exception &except)
+  CATCH (except, RETURN_MASK_ALL)
     {
-      exc = unpack (except);
+      GDBSCM_HANDLE_GDB_EXCEPTION (except);
     }
+  END_CATCH
 
-  GDBSCM_HANDLE_GDB_EXCEPTION (exc);
   return tyscm_scm_from_type (type);
 }
 
@@ -891,17 +881,16 @@ gdbscm_type_const (SCM self)
     = tyscm_get_type_smob_arg_unsafe (self, SCM_ARG1, FUNC_NAME);
   struct type *type = t_smob->type;
 
-  gdbscm_gdb_exception exc {};
-  try
+  TRY
     {
       type = make_cv_type (1, 0, type, NULL);
     }
-  catch (const gdb_exception &except)
+  CATCH (except, RETURN_MASK_ALL)
     {
-      exc = unpack (except);
+      GDBSCM_HANDLE_GDB_EXCEPTION (except);
     }
+  END_CATCH
 
-  GDBSCM_HANDLE_GDB_EXCEPTION (exc);
   return tyscm_scm_from_type (type);
 }
 
@@ -915,17 +904,16 @@ gdbscm_type_volatile (SCM self)
     = tyscm_get_type_smob_arg_unsafe (self, SCM_ARG1, FUNC_NAME);
   struct type *type = t_smob->type;
 
-  gdbscm_gdb_exception exc {};
-  try
+  TRY
     {
       type = make_cv_type (0, 1, type, NULL);
     }
-  catch (const gdb_exception &except)
+  CATCH (except, RETURN_MASK_ALL)
     {
-      exc = unpack (except);
+      GDBSCM_HANDLE_GDB_EXCEPTION (except);
     }
+  END_CATCH
 
-  GDBSCM_HANDLE_GDB_EXCEPTION (exc);
   return tyscm_scm_from_type (type);
 }
 
@@ -939,17 +927,16 @@ gdbscm_type_unqualified (SCM self)
     = tyscm_get_type_smob_arg_unsafe (self, SCM_ARG1, FUNC_NAME);
   struct type *type = t_smob->type;
 
-  gdbscm_gdb_exception exc {};
-  try
+  TRY
     {
       type = make_cv_type (0, 0, type, NULL);
     }
-  catch (const gdb_exception &except)
+  CATCH (except, RETURN_MASK_ALL)
     {
-      exc = unpack (except);
+      GDBSCM_HANDLE_GDB_EXCEPTION (except);
     }
+  END_CATCH
 
-  GDBSCM_HANDLE_GDB_EXCEPTION (exc);
   return tyscm_scm_from_type (type);
 }
 
@@ -982,6 +969,9 @@ gdbscm_type_field (SCM self, SCM field_scm)
   type_smob *t_smob
     = tyscm_get_type_smob_arg_unsafe (self, SCM_ARG1, FUNC_NAME);
   struct type *type = t_smob->type;
+  char *field;
+  int i;
+  struct cleanup *cleanups;
 
   SCM_ASSERT_TYPE (scm_is_string (field_scm), field_scm, SCM_ARG2, FUNC_NAME,
 		   _("string"));
@@ -995,20 +985,21 @@ gdbscm_type_field (SCM self, SCM field_scm)
     gdbscm_out_of_range_error (FUNC_NAME, SCM_ARG1, self,
 			       _(not_composite_error));
 
-  {
-    gdb::unique_xmalloc_ptr<char> field = gdbscm_scm_to_c_string (field_scm);
+  field = gdbscm_scm_to_c_string (field_scm);
+  cleanups = make_cleanup (xfree, field);
 
-    for (int i = 0; i < TYPE_NFIELDS (type); i++)
-      {
-	const char *t_field_name = TYPE_FIELD_NAME (type, i);
+  for (i = 0; i < TYPE_NFIELDS (type); i++)
+    {
+      const char *t_field_name = TYPE_FIELD_NAME (type, i);
 
-	if (t_field_name && (strcmp_iw (t_field_name, field.get ()) == 0))
-	  {
-	    field.reset (nullptr);
+      if (t_field_name && (strcmp_iw (t_field_name, field) == 0))
+	{
+	    do_cleanups (cleanups);
 	    return tyscm_make_field_smob (self, i);
-	  }
-      }
-  }
+	}
+    }
+
+  do_cleanups (cleanups);
 
   gdbscm_out_of_range_error (FUNC_NAME, SCM_ARG1, field_scm,
 			     _("Unknown field"));
@@ -1023,6 +1014,9 @@ gdbscm_type_has_field_p (SCM self, SCM field_scm)
   type_smob *t_smob
     = tyscm_get_type_smob_arg_unsafe (self, SCM_ARG1, FUNC_NAME);
   struct type *type = t_smob->type;
+  char *field;
+  int i;
+  struct cleanup *cleanups;
 
   SCM_ASSERT_TYPE (scm_is_string (field_scm), field_scm, SCM_ARG2, FUNC_NAME,
 		   _("string"));
@@ -1036,18 +1030,21 @@ gdbscm_type_has_field_p (SCM self, SCM field_scm)
     gdbscm_out_of_range_error (FUNC_NAME, SCM_ARG1, self,
 			       _(not_composite_error));
 
-  {
-    gdb::unique_xmalloc_ptr<char> field
-      = gdbscm_scm_to_c_string (field_scm);
+  field = gdbscm_scm_to_c_string (field_scm);
+  cleanups = make_cleanup (xfree, field);
 
-    for (int i = 0; i < TYPE_NFIELDS (type); i++)
-      {
-	const char *t_field_name = TYPE_FIELD_NAME (type, i);
+  for (i = 0; i < TYPE_NFIELDS (type); i++)
+    {
+      const char *t_field_name = TYPE_FIELD_NAME (type, i);
 
-	if (t_field_name && (strcmp_iw (t_field_name, field.get ()) == 0))
-	  return SCM_BOOL_T;
-      }
-  }
+      if (t_field_name && (strcmp_iw (t_field_name, field) == 0))
+	{
+	    do_cleanups (cleanups);
+	    return SCM_BOOL_T;
+	}
+    }
+
+  do_cleanups (cleanups);
 
   return SCM_BOOL_F;
 }
@@ -1221,6 +1218,7 @@ gdbscm_field_baseclass_p (SCM self)
 {
   field_smob *f_smob
     = tyscm_get_field_smob_arg_unsafe (self, SCM_ARG1, FUNC_NAME);
+  struct field *field = tyscm_field_smob_to_field (f_smob);
   struct type *type = tyscm_field_smob_containing_type (f_smob);
 
   if (TYPE_CODE (type) == TYPE_CODE_STRUCT)
@@ -1237,7 +1235,7 @@ tyscm_lookup_typename (const char *type_name, const struct block *block)
 {
   struct type *type = NULL;
 
-  try
+  TRY
     {
       if (startswith (type_name, "struct "))
 	type = lookup_struct (type_name + 7, NULL);
@@ -1249,10 +1247,11 @@ tyscm_lookup_typename (const char *type_name, const struct block *block)
 	type = lookup_typename (current_language, get_current_arch (),
 				type_name, block, 0);
     }
-  catch (const gdb_exception &except)
+  CATCH (except, RETURN_MASK_ALL)
     {
       return NULL;
     }
+  END_CATCH
 
   return type;
 }

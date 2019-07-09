@@ -1,6 +1,6 @@
 /* TUI display locator.
 
-   Copyright (C) 1998-2019 Free Software Foundation, Inc.
+   Copyright (C) 1998-2018 Free Software Foundation, Inc.
 
    Contributed by Hewlett-Packard Company.
 
@@ -72,14 +72,10 @@ tui_make_status_line (struct tui_locator_element *loc)
   int pid_width;
   int line_width;
 
-  std::string pid_name_holder;
-  if (inferior_ptid == null_ptid)
+  if (ptid_equal (inferior_ptid, null_ptid))
     pid_name = "No process";
   else
-    {
-      pid_name_holder = target_pid_to_str (inferior_ptid);
-      pid_name = pid_name_holder.c_str ();
-    }
+    pid_name = target_pid_to_str (inferior_ptid);
 
   target_width = strlen (target_shortname);
   if (target_width > MAX_TARGET_WIDTH)
@@ -362,6 +358,7 @@ tui_show_frame_info (struct frame_info *fi)
 {
   struct tui_win_info *win_info;
   int locator_changed_p;
+  int i;
 
   if (fi)
     {
@@ -476,7 +473,7 @@ tui_show_frame_info (struct frame_info *fi)
 	return 0;
 
       tui_show_locator_content ();
-      for (int i = 0; i < (tui_source_windows ())->count; i++)
+      for (i = 0; i < (tui_source_windows ())->count; i++)
 	{
 	  win_info = (tui_source_windows ())->list[i];
 	  tui_clear_source_content (win_info, EMPTY_SOURCE_PROMPT);
@@ -495,7 +492,7 @@ _initialize_tui_stack (void)
 {
   add_com ("update", class_tui, tui_update_command,
 	   _("Update the source window and locator to "
-	     "display the current execution point."));
+	     "display the current execution point.\n"));
 }
 
 /* Command to update the display with the current execution point.  */

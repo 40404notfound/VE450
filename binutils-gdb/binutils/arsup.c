@@ -1,5 +1,5 @@
 /* arsup.c - Archive support for MRI compatibility
-   Copyright (C) 1992-2019 Free Software Foundation, Inc.
+   Copyright (C) 1992-2018 Free Software Foundation, Inc.
 
    This file is part of GNU Binutils.
 
@@ -96,7 +96,7 @@ map_over_list (bfd *arch, void (*function) (bfd *, bfd *), struct list *list)
 static void
 ar_directory_doer (bfd *abfd, bfd *ignore ATTRIBUTE_UNUSED)
 {
-  print_arelt_descr(outfile, abfd, verbose, FALSE);
+  print_arelt_descr(outfile, abfd, verbose);
 }
 
 void
@@ -149,20 +149,13 @@ maybequit (void)
 void
 ar_open (char *name, int t)
 {
-  char *tname;
+  char *tname = (char *) xmalloc (strlen (name) + 10);
   const char *bname = lbasename (name);
   real_name = name;
 
   /* Prepend tmp- to the beginning, to avoid file-name clashes after
      truncation on filesystems with limited namespaces (DOS).  */
-  if (asprintf (&tname, "%.*stmp-%s", (int) (bname - name), name, bname) == -1)
-    {
-      fprintf (stderr, _("%s: Can't allocate memory for temp name (%s)\n"),
-	       program_name, strerror(errno));
-      maybequit ();
-      return;
-    }
-
+  sprintf (tname, "%.*stmp-%s", (int) (bname - name), name, bname);
   obfd = bfd_openw (tname, NULL);
 
   if (!obfd)

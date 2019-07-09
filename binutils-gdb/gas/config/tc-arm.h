@@ -1,5 +1,5 @@
 /* This file is tc-arm.h
-   Copyright (C) 1994-2019 Free Software Foundation, Inc.
+   Copyright (C) 1994-2018 Free Software Foundation, Inc.
    Contributed by Richard Earnshaw (rwe@pegasus.esprit.ec.org)
 	Modified by David Taylor (dtaylor@armltd.co.uk)
 
@@ -46,10 +46,26 @@
 
 struct fix;
 
-#if defined OBJ_COFF
+#if defined OBJ_AOUT
+# if defined TE_RISCIX
+#  define TARGET_FORMAT "a.out-riscix"
+# elif defined TE_LINUX
+#  define ARM_BI_ENDIAN
+#  define TARGET_FORMAT "a.out-arm-linux"
+# elif defined TE_NetBSD
+#  define TARGET_FORMAT "a.out-arm-netbsd"
+# else
+#  define ARM_BI_ENDIAN
+#  define TARGET_FORMAT (target_big_endian ? "a.out-arm-big" : "a.out-arm-little")
+# endif
+#elif defined OBJ_AIF
+# define TARGET_FORMAT "aif"
+#elif defined OBJ_COFF
 # define ARM_BI_ENDIAN
 # if defined TE_PE
-#  if defined TE_WINCE
+#  if defined TE_EPOC
+#   define TARGET_FORMAT (target_big_endian ? "epoc-pe-arm-big" : "epoc-pe-arm-little")
+#  elif defined TE_WINCE
 #   define TARGET_FORMAT (target_big_endian ? "pe-arm-wince-big" : "pe-arm-wince-little")
 #  else
 #   define TARGET_FORMAT (target_big_endian ? "pe-arm-big" : "pe-arm-little")
@@ -229,7 +245,8 @@ arm_min (int am_p1, int am_p2)
 }
 
 #define TC_FRAG_TYPE		struct arm_frag_type
-#define TC_FRAG_INIT(fragp, max_bytes) arm_init_frag (fragp, max_bytes)
+/* NOTE: max_chars is a local variable from frag_var / frag_variant.  */
+#define TC_FRAG_INIT(fragp)	arm_init_frag (fragp, max_chars)
 #define TC_ALIGN_ZERO_IS_DEFAULT 1
 #define HANDLE_ALIGN(fragp)	arm_handle_align (fragp)
 /* PR gas/19276: COFF/PE segment alignment is already handled in coff_frob_section().  */
@@ -254,25 +271,21 @@ arm_min (int am_p1, int am_p2)
 /* Registers are generally saved at negative offsets to the CFA.  */
 #define DWARF2_CIE_DATA_ALIGNMENT     (-4)
 
-/* State variables for predication block handling.  */
-enum pred_state
+/* State variables for IT block handling.  */
+enum it_state
 {
-  OUTSIDE_PRED_BLOCK, MANUAL_PRED_BLOCK, AUTOMATIC_PRED_BLOCK
+  OUTSIDE_IT_BLOCK, MANUAL_IT_BLOCK, AUTOMATIC_IT_BLOCK
 };
-enum pred_type {
-  SCALAR_PRED, VECTOR_PRED
-};
-struct current_pred
+struct current_it
 {
   int mask;
-  enum pred_state state;
+  enum it_state state;
   int cc;
   int block_length;
   char *insn;
   int state_handled;
   int warn_deprecated;
   int insn_cond;
-  enum pred_type type;
 };
 
 #ifdef OBJ_ELF
@@ -307,7 +320,7 @@ struct arm_segment_info_type
      emitted only once per section, to save unnecessary bloat.  */
   unsigned int marked_pr_dependency;
 
-  struct current_pred current_pred;
+  struct current_it current_it;
 };
 
 /* We want .cfi_* pseudo-ops for generating unwind info.  */

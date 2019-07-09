@@ -1,5 +1,5 @@
 # Expect script for ld-powerpc tests
-#   Copyright (C) 2002-2019 Free Software Foundation, Inc.
+#   Copyright (C) 2002-2018 Free Software Foundation, Inc.
 #
 # This file is part of the GNU Binutils.
 #
@@ -70,7 +70,7 @@ if {[istarget "*-*-vxworks"]} {
 # is ELF, because we pass -melf32ppc to ld and powerpc-nto-ld wants
 # -melf32ppcnto.
 
-if { [istarget "*-*-macos*"]
+if { [istarget "*-*-macos*"] || [istarget "*-*-netware*"]
      || [istarget "*-*-pe"] || [istarget "*-*-winnt*"]
      || [istarget "*-*-cygwin*"] || [istarget "*-*-aix*"]
      || [istarget "*-*-beos*"] || [istarget "*-*-lynxos*"]
@@ -160,9 +160,6 @@ set ppcelftests {
     {"relocatable relaxing" "-melf32ppc -r --relax" "" "-a32" "relax.s"
      {{objdump -dr relaxr.d}}
      "rrelax"}
-    {"relocatable relaxing large" "-melf32ppc -r --relax" "" "-a32" "relax.s big.s"
-     {{objdump -dr relaxrl.d}}
-     "rrelax"}
 }
 
 set ppc64elftests {
@@ -224,7 +221,7 @@ set ppc64elftests {
      "tlsopt4"}
     {"TLS DLL" "-shared -melf64ppc --version-script tlsdll.ver" "" "-a64" {tlsdll.s}
      {} "tlsdll.so"}
-    {"TLS opt 5" "-melf64ppc -shared --hash-style=both --gc-sections --no-plt-localentry tmpdir/tlsdll.so" "" "-a64"  {tlsopt5.s}
+    {"TLS opt 5" "-melf64ppc --no-plt-align -shared --gc-sections --no-plt-localentry tmpdir/tlsdll.so" "" "-a64"  {tlsopt5.s}
      {{objdump -dr tlsopt5.d} {readelf -wf tlsopt5.wf}}
      "tlsopt5"}
     {"sym@tocbase" "-shared -melf64ppc" "" "-a64" {symtocbase-1.s symtocbase-2.s}
@@ -257,15 +254,6 @@ set ppc64elftests {
 	{{objdump -dr tocsave2a.d}} "tocsave2a"}
     {"ambig shared v1" "-shared -melf64ppc" "" "-a64" {funv1.s} {} "funv1.so"}
     {"ambig shared v2" "-shared -melf64ppc" "" "-a64" {funv2.s} {} "funv2.so"}
-    {"notoc ext" "" "" "-a64" {ext.s} {} ""}
-    {"notoc" "-melf64ppc --no-plt-localentry -T ext.lnk" "" "-a64" {notoc.s}
-	{{objdump -d notoc.d} {readelf {-wf -W} notoc.wf}} "notoc"}
-    {"notoc2" "-melf64ppc -shared" "" "-a64 -mfuture" {notoc2.s}
-	{{objdump {-d -Mfuture} notoc2.d}} "notoc2"}
-    {"pcrelopt" "-melf64ppc --hash-style=gnu" "tmpdir/symtocbase.so"
-	"-a64 -mfuture" {pcrelopt.s}
-	{{objdump {-d -Mfuture} pcrelopt.d}
-	 {readelf {-S --wide} pcrelopt.sec}} "pcrelopt" }
 }
 
 set ppceabitests {
@@ -340,7 +328,6 @@ if [ supports_ppc64 ] then {
     run_dump_test "dotsym2"
     run_dump_test "dotsym3"
     run_dump_test "dotsym4"
-    run_dump_test "pr23937"
 }
 
 run_dump_test "tlsld32"

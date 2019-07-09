@@ -1,5 +1,5 @@
 /* BFD back-end for TMS320C30 a.out binaries.
-   Copyright (C) 1998-2019 Free Software Foundation, Inc.
+   Copyright (C) 1998-2018 Free Software Foundation, Inc.
    Contributed by Steven Haworth (steve@pm.cse.rmit.edu.au)
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -710,87 +710,53 @@ static bfd_boolean
 MY_bfd_final_link (bfd *abfd, struct bfd_link_info *info)
 {
   struct internal_exec *execp = exec_hdr (abfd);
-  asection *objsym_section;
   file_ptr pos;
   bfd_vma vma = 0;
+  int pad;
 
   /* Set the executable header size to 0, as we don't want one for an
-     output.  FIXME: Really?  tic30_aout_object_p doesn't accept such
-     an executable!  */
+     output.  */
   adata (abfd).exec_bytes_size = 0;
-
   pos = adata (abfd).exec_bytes_size;
-  /* ??? Why are we looking at create_object_symbols_section?  */
-  objsym_section = info->create_object_symbols_section;
-  if (objsym_section != NULL)
-    vma = objsym_section->vma;
-
   /* Text.  */
-  if (obj_textsec (abfd) != NULL)
-    {
-      pos += vma;
-      obj_textsec (abfd)->filepos = pos;
-      obj_textsec (abfd)->vma = vma;
-      obj_textsec (abfd)->user_set_vma = 1;
-      execp->a_text = obj_textsec (abfd)->size;
-      pos += obj_textsec (abfd)->size;
-      vma += obj_textsec (abfd)->size;
-    }
+  vma = info->create_object_symbols_section->vma;
+  pos += vma;
+  obj_textsec (abfd)->filepos = pos;
+  obj_textsec (abfd)->vma = vma;
+  obj_textsec (abfd)->user_set_vma = 1;
+  pos += obj_textsec (abfd)->size;
+  vma += obj_textsec (abfd)->size;
 
   /* Data.  */
-  if (obj_datasec (abfd) != NULL)
+  if (abfd->flags & D_PAGED)
     {
-      if (abfd->flags & D_PAGED)
-	{
-	  if (objsym_section != NULL
-	      && objsym_section->next != NULL
-	      && objsym_section->next->vma != 0)
-	    obj_datasec (abfd)->vma = objsym_section->next->vma;
-	  else
-	    obj_datasec (abfd)->vma = BFD_ALIGN (vma, adata (abfd).segment_size);
-	}
+      if (info->create_object_symbols_section->next->vma > 0)
+	obj_datasec (abfd)->vma = info->create_object_symbols_section->next->vma;
       else
-	obj_datasec (abfd)->vma = BFD_ALIGN (vma, 4);
-
-      if (obj_datasec (abfd)->vma < vma)
-	obj_datasec (abfd)->vma = BFD_ALIGN (vma, 4);
-
-      pos += obj_datasec (abfd)->vma - vma;
-      obj_datasec (abfd)->filepos = pos;
-      obj_datasec (abfd)->user_set_vma = 1;
-
-      vma = obj_datasec (abfd)->vma;
-      if (obj_textsec (abfd) != NULL)
-	{
-	  execp->a_text = vma - obj_textsec (abfd)->vma;
-	  obj_textsec (abfd)->size = execp->a_text;
-	}
-      execp->a_data = obj_datasec (abfd)->size;
-      vma += obj_datasec (abfd)->size;
+	obj_datasec (abfd)->vma = BFD_ALIGN (vma, adata (abfd).segment_size);
     }
+  else
+    obj_datasec (abfd)->vma = BFD_ALIGN (vma, 4);
+
+  if (obj_datasec (abfd)->vma < vma)
+    obj_datasec (abfd)->vma = BFD_ALIGN (vma, 4);
+
+  obj_datasec (abfd)->user_set_vma = 1;
+  vma = obj_datasec (abfd)->vma;
+  obj_datasec (abfd)->filepos = vma + adata (abfd).exec_bytes_size;
+  execp->a_text = vma - obj_textsec (abfd)->vma;
+  obj_textsec (abfd)->size = execp->a_text;
 
   /* Since BSS follows data immediately, see if it needs alignment.  */
-  if (obj_bsssec (abfd) != NULL)
-    {
-      int pad;
+  vma += obj_datasec (abfd)->size;
+  pad = align_power (vma, obj_bsssec (abfd)->alignment_power) - vma;
+  obj_datasec (abfd)->size += pad;
+  pos += obj_datasec (abfd)->size;
+  execp->a_data = obj_datasec (abfd)->size;
 
-      pad = align_power (vma, obj_bsssec (abfd)->alignment_power) - vma;
-      if (obj_datasec (abfd) != NULL)
-	{
-	  obj_datasec (abfd)->size += pad;
-	  execp->a_data += pad;
-	}
-      else if (obj_textsec (abfd) != NULL)
-	{
-	  obj_textsec (abfd)->size += pad;
-	  execp->a_text += pad;
-	}
-
-      /* BSS.  */
-      vma += pad;
-      obj_bsssec (abfd)->vma = vma;
-      obj_bsssec (abfd)->user_set_vma = 1;
-    }
+  /* BSS.  */
+  obj_bsssec (abfd)->vma = vma;
+  obj_bsssec (abfd)->user_set_vma = 1;
 
   /* We are fully resized, so don't readjust in final_link.  */
   adata (abfd).magic = z_magic;
@@ -896,13 +862,14 @@ tic30_aout_set_arch_mach (bfd *abfd,
 #endif
 
 #ifndef MY_bfd_debug_info_start
-#define MY_bfd_debug_info_start		_bfd_void_bfd
+#define MY_bfd_debug_info_start		bfd_void
 #endif
 #ifndef MY_bfd_debug_info_end
-#define MY_bfd_debug_info_end		_bfd_void_bfd
+#define MY_bfd_debug_info_end		bfd_void
 #endif
 #ifndef MY_bfd_debug_info_accumulate
-#define MY_bfd_debug_info_accumulate	_bfd_void_bfd_asection
+#define MY_bfd_debug_info_accumulate	\
+		(void (*) (bfd*, struct bfd_section *)) bfd_void
 #endif
 
 #ifndef MY_core_file_failing_command
@@ -1001,9 +968,6 @@ tic30_aout_set_arch_mach (bfd *abfd,
 #ifndef MY_bfd_define_common_symbol
 #define MY_bfd_define_common_symbol bfd_generic_define_common_symbol
 #endif
-#ifndef MY_bfd_link_hide_symbol
-#define MY_bfd_link_hide_symbol _bfd_generic_link_hide_symbol
-#endif
 #ifndef MY_bfd_define_start_stop
 #define MY_bfd_define_start_stop bfd_generic_define_start_stop
 #endif
@@ -1072,7 +1036,8 @@ tic30_aout_set_arch_mach (bfd *abfd,
 #endif
 
 #ifndef MY_bfd_is_target_special_symbol
-#define MY_bfd_is_target_special_symbol _bfd_bool_bfd_asymbol_false
+#define MY_bfd_is_target_special_symbol  \
+  ((bfd_boolean (*) (bfd *, asymbol *)) bfd_false)
 #endif
 
 #ifndef MY_bfd_free_cached_info
@@ -1134,24 +1099,12 @@ const bfd_target tic30_aout_vec =
   bfd_getb64, bfd_getb_signed_64, bfd_putb64,
   bfd_getb32, bfd_getb_signed_32, bfd_putb32,
   bfd_getb16, bfd_getb_signed_16, bfd_putb16,	/* Headers.  */
-  {				/* bfd_check_format.  */
-    _bfd_dummy_target,
-    MY_object_p,
-    bfd_generic_archive_p,
-    MY_core_file_p
-  },
-  {				/* bfd_set_format.  */
-    _bfd_bool_bfd_false_error,
-    MY_mkobject,
-    _bfd_generic_mkarchive,
-    _bfd_bool_bfd_false_error
-  },
-  {				/* bfd_write_contents.  */
-    _bfd_bool_bfd_false_error,
-    MY_write_object_contents,
-    _bfd_write_archive_contents,
-    _bfd_bool_bfd_false_error
-  },
+  {_bfd_dummy_target, MY_object_p,		/* bfd_check_format.  */
+   bfd_generic_archive_p, MY_core_file_p},
+  {bfd_false, MY_mkobject,			/* bfd_set_format.  */
+   _bfd_generic_mkarchive, bfd_false},
+  {bfd_false, MY_write_object_contents,		/* bfd_write_contents.  */
+   _bfd_write_archive_contents, bfd_false},
 
   BFD_JUMP_TABLE_GENERIC (MY),
   BFD_JUMP_TABLE_COPY (MY),

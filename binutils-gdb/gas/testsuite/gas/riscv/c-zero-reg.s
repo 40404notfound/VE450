@@ -8,8 +8,6 @@
 	# Don't let these compress to hints.
 	li x0, 5
 	lui x0, 6
-	slli x0, x0, 7
+	slli x0, x1, 7
 	mv x0, x1
 	add x0, x0, x1
-# RV128 support not implemented yet.
-#	slli x0, x0, 64

@@ -1,6 +1,6 @@
 /* GNU/Linux/x86-64 specific target description, for the remote server
    for GDB.
-   Copyright (C) 2017-2019 Free Software Foundation, Inc.
+   Copyright (C) 2017-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -25,7 +25,6 @@
 #ifdef __x86_64__
 #include "arch/amd64.h"
 #endif
-#include "x86-tdesc.h"
 
 /* Return the right x86_linux_tdesc index for a given XCR0.  Return
    X86_TDESC_LAST if can't find a match.  */
@@ -69,9 +68,9 @@ xcr0_to_tdesc_idx (uint64_t xcr0, bool is_x32)
     return X86_TDESC_LAST;
 }
 
-#if defined __i386__ || !defined IN_PROCESS_AGENT
-
 static struct target_desc *i386_tdescs[X86_TDESC_LAST] = { };
+
+#if defined __i386__ || !defined IN_PROCESS_AGENT
 
 /* Return the target description according to XCR0.  */
 
@@ -87,9 +86,14 @@ i386_linux_read_description (uint64_t xcr0)
 
   if (*tdesc == NULL)
     {
-      *tdesc = i386_create_target_description (xcr0, true, false);
+      *tdesc = i386_create_target_description (xcr0, true);
 
-      init_target_desc (*tdesc, i386_expedite_regs);
+      init_target_desc (*tdesc);
+
+#ifndef IN_PROCESS_AGENT
+      static const char *expedite_regs_i386[] = { "ebp", "esp", "eip", NULL };
+      (*tdesc)->expedite_regs = expedite_regs_i386;
+#endif
     }
 
   return *tdesc;;
@@ -118,9 +122,14 @@ amd64_linux_read_description (uint64_t xcr0, bool is_x32)
 
   if (*tdesc == NULL)
     {
-      *tdesc = amd64_create_target_description (xcr0, is_x32, true, true);
+      *tdesc = amd64_create_target_description (xcr0, is_x32, true);
 
-      init_target_desc (*tdesc, amd64_expedite_regs);
+      init_target_desc (*tdesc);
+
+#ifndef IN_PROCESS_AGENT
+      static const char *expedite_regs_amd64[] = { "rbp", "rsp", "rip", NULL };
+      (*tdesc)->expedite_regs = expedite_regs_amd64;
+#endif
     }
   return *tdesc;
 }

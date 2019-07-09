@@ -1,5 +1,5 @@
 /* FRV-specific support for 32-bit ELF.
-   Copyright (C) 2002-2019 Free Software Foundation, Inc.
+   Copyright (C) 2002-2018 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -25,7 +25,6 @@
 #include "elf/frv.h"
 #include "dwarf2.h"
 #include "hashtab.h"
-#include "libiberty.h"
 
 /* Forward declarations.  */
 
@@ -2533,7 +2532,7 @@ frv_reloc_name_lookup (bfd *abfd ATTRIBUTE_UNUSED, const char *r_name)
 
 /* Set the howto pointer for an FRV ELF reloc.  */
 
-static bfd_boolean
+static void
 frv_info_to_howto_rela (bfd *abfd ATTRIBUTE_UNUSED,
 			arelent *cache_ptr,
 			Elf_Internal_Rela *dst)
@@ -2552,23 +2551,19 @@ frv_info_to_howto_rela (bfd *abfd ATTRIBUTE_UNUSED,
       break;
 
     default:
-      if (r_type >= ARRAY_SIZE (elf32_frv_howto_table))
+      if (r_type >= (unsigned int) R_FRV_max)
 	{
 	  /* xgettext:c-format */
-	  _bfd_error_handler (_("%pB: unsupported relocation type %#x"),
-			      abfd, r_type);
-	  bfd_set_error (bfd_error_bad_value);
-	  return FALSE;
+	  _bfd_error_handler (_("%B: invalid FRV reloc number: %d"), abfd, r_type);
+	  r_type = 0;
 	}
       cache_ptr->howto = & elf32_frv_howto_table [r_type];
       break;
     }
-  return TRUE;
 }
 
 /* Set the howto pointer for an FRV ELF REL reloc.  */
-
-static bfd_boolean
+static void
 frvfdpic_info_to_howto_rel (bfd *abfd ATTRIBUTE_UNUSED,
 			    arelent *cache_ptr, Elf_Internal_Rela *dst)
 {
@@ -2599,9 +2594,8 @@ frvfdpic_info_to_howto_rel (bfd *abfd ATTRIBUTE_UNUSED,
 
     default:
       cache_ptr->howto = NULL;
-      return FALSE;
+      break;
     }
-  return TRUE;
 }
 
 /* Perform a single relocation.  By default we use the standard BFD
@@ -3535,10 +3529,9 @@ elf32_frv_relocate_section (bfd *output_bfd ATTRIBUTE_UNUSED,
 		    if (addend)
 		      {
 			info->callbacks->einfo
-			  (_("%H: %s references dynamic symbol"
+			  (_("%H: R_FRV_FUNCDESC references dynamic symbol"
 			     " with nonzero addend\n"),
-			   input_bfd, input_section, rel->r_offset,
-			   "R_FRV_FUNCDESC");
+			   input_bfd, input_section, rel->r_offset);
 			return FALSE;
 		      }
 		    dynindx = h->dynindx;
@@ -3657,10 +3650,9 @@ elf32_frv_relocate_section (bfd *output_bfd ATTRIBUTE_UNUSED,
 		if (addend && r_type == R_FRV_FUNCDESC_VALUE)
 		  {
 		    info->callbacks->einfo
-		      (_("%H: %s references dynamic symbol"
-			 " with nonzero addend\n"),
-		       input_bfd, input_section, rel->r_offset,
-		       "R_FRV_FUNCDESC_VALUE");
+		      (_("%H: R_FRV_FUNCDESC_VALUE"
+			 " references dynamic symbol with nonzero addend\n"),
+		       input_bfd, input_section, rel->r_offset);
 		    return FALSE;
 		  }
 		dynindx = h->dynindx;
@@ -6237,7 +6229,9 @@ elf32_frv_check_relocs (bfd *abfd,
 	/* This relocation describes which C++ vtable entries are actually
 	   used.  Record for later use during GC.  */
 	case R_FRV_GNU_VTENTRY:
-	  if (!bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
+	  BFD_ASSERT (h != NULL);
+	  if (h != NULL
+	      && !bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
 	    return FALSE;
 	  break;
 
@@ -6256,9 +6250,10 @@ elf32_frv_check_relocs (bfd *abfd,
 
 	default:
 	bad_reloc:
-	  /* xgettext:c-format */
-	  _bfd_error_handler (_("%pB: unsupported relocation type %#x"),
-			      abfd, (unsigned int) ELF32_R_TYPE (rel->r_info));
+	  info->callbacks->einfo
+	    /* xgettext:c-format */
+	    (_("%B: unsupported relocation type %i\n"),
+	     abfd, ELF32_R_TYPE (rel->r_info));
 	  return FALSE;
 	}
     }
@@ -6509,7 +6504,7 @@ frv_elf_merge_private_bfd_data (bfd *ibfd, struct bfd_link_info *info)
 	      error = TRUE;
 	      _bfd_error_handler
 		/* xgettext:c-format */
-		(_("%pB: compiled with %s and linked with modules"
+		(_("%B: compiled with %s and linked with modules"
 		   " that use non-pic relocations"),
 		 ibfd, (new_flags & EF_FRV_BIGPIC) ? "-fPIC" : "-fpic");
 #endif
@@ -6563,7 +6558,7 @@ frv_elf_merge_private_bfd_data (bfd *ibfd, struct bfd_link_info *info)
 	  error = TRUE;
 	  _bfd_error_handler
 	    /* xgettext:c-format */
-	    (_("%pB: compiled with %s and linked with modules compiled with %s"),
+	    (_("%B: compiled with %s and linked with modules compiled with %s"),
 	     ibfd, new_opt, old_opt);
 	}
 
@@ -6576,7 +6571,7 @@ frv_elf_merge_private_bfd_data (bfd *ibfd, struct bfd_link_info *info)
 	  error = TRUE;
 	  _bfd_error_handler
 	    /* xgettext:c-format */
-	    (_("%pB: uses different unknown e_flags (%#x) fields"
+	    (_("%B: uses different unknown e_flags (%#x) fields"
 	       " than previous modules (%#x)"),
 	     ibfd, new_partial, old_partial);
 	}
@@ -6598,11 +6593,11 @@ frv_elf_merge_private_bfd_data (bfd *ibfd, struct bfd_link_info *info)
       error = TRUE;
       if (IS_FDPIC (obfd))
 	_bfd_error_handler
-	  (_("%pB: cannot link non-fdpic object file into fdpic executable"),
+	  (_("%B: cannot link non-fdpic object file into fdpic executable"),
 	   ibfd);
       else
 	_bfd_error_handler
-	  (_("%pB: cannot link fdpic object file into non-fdpic executable"),
+	  (_("%B: cannot link fdpic object file into non-fdpic executable"),
 	   ibfd);
     }
 

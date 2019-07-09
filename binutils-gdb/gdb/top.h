@@ -1,6 +1,6 @@
 /* Top level stuff for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2019 Free Software Foundation, Inc.
+   Copyright (C) 1986-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -20,7 +20,7 @@
 #ifndef TOP_H
 #define TOP_H
 
-#include "common/buffer.h"
+#include "buffer.h"
 #include "event-loop.h"
 #include "value.h"
 
@@ -81,7 +81,7 @@ struct ui
 
   /* The function to invoke when a complete line of input is ready for
      processing.  */
-  void (*input_handler) (gdb::unique_xmalloc_ptr<char> &&);
+  void (*input_handler) (char *);
 
   /* True if this UI is using the readline library for command
      editing; false if using GDB's own simple readline emulation, with
@@ -217,17 +217,12 @@ extern void ui_register_input_event_handler (struct ui *ui);
 extern void ui_unregister_input_event_handler (struct ui *ui);
 
 /* From top.c.  */
+extern char *saved_command_line;
 extern int confirm;
 extern int inhibit_gdbinit;
 extern const char gdbinit[];
 
-/* Print the GDB version banner to STREAM.  If INTERACTIVE is false,
-   then information referring to commands (e.g., "show configuration")
-   is omitted; this mode is used for the --version command line
-   option.  If INTERACTIVE is true, then interactive commands are
-   mentioned.  */
-extern void print_gdb_version (struct ui_file *stream, bool interactive);
-
+extern void print_gdb_version (struct ui_file *);
 extern void print_gdb_configuration (struct ui_file *);
 
 extern void read_command_file (FILE *);
@@ -280,7 +275,7 @@ extern void gdb_init (char *);
 /* For use by event-top.c.  */
 /* Variables from top.c.  */
 extern int source_line_number;
-extern std::string source_file_name;
+extern const char *source_file_name;
 extern int history_expansion_p;
 extern int server_command;
 extern char *lim_at_start;
@@ -296,7 +291,7 @@ extern void show_history (const char *, int);
 extern void set_verbose (const char *, int, struct cmd_list_element *);
 
 extern char *handle_line_of_input (struct buffer *cmd_line_buffer,
-				   const char *rl, int repeat,
+				   char *rl, int repeat,
 				   const char *annotation_suffix);
 
 #endif

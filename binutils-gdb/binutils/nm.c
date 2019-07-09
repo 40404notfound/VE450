@@ -1,5 +1,5 @@
 /* nm.c -- Describe symbol table of a rel file.
-   Copyright (C) 1991-2019 Free Software Foundation, Inc.
+   Copyright (C) 1991-2018 Free Software Foundation, Inc.
 
    This file is part of GNU Binutils.
 
@@ -141,7 +141,6 @@ static struct output_fns formats[] =
 
 /* The output format to use.  */
 static struct output_fns *format = &formats[FORMAT_DEFAULT];
-static unsigned int print_format = FORMAT_DEFAULT;
 
 /* Command options.  */
 
@@ -163,12 +162,21 @@ static int line_numbers = 0;	/* Print line numbers for symbols.  */
 static int allow_special_symbols = 0;  /* Allow special symbols.  */
 static int with_symbol_versions = 0; /* Include symbol version information in the output.  */
 
-static int demangle_flags = DMGL_ANSI | DMGL_PARAMS;
-
 /* When to print the names of files.  Not mutually exclusive in SYSV format.  */
 static int filename_per_file = 0;	/* Once per file, on its own line.  */
 static int filename_per_symbol = 0;	/* Once per symbol, at start of line.  */
 
+/* Print formats for printing a symbol value.  */
+static char value_format_32bit[] = "%08lx";
+#if BFD_HOST_64BIT_LONG
+static char value_format_64bit[] = "%016lx";
+#elif BFD_HOST_64BIT_LONG_LONG
+#ifndef __MSVCRT__
+static char value_format_64bit[] = "%016llx";
+#else
+static char value_format_64bit[] = "%016I64x";
+#endif
+#endif
 static int print_width = 0;
 static int print_radix = 16;
 /* Print formats for printing stab info.  */
@@ -186,14 +194,9 @@ static const char *plugin_target = NULL;
 static bfd *lineno_cache_bfd;
 static bfd *lineno_cache_rel_bfd;
 
-enum long_option_values
-{
-  OPTION_TARGET = 200,
-  OPTION_PLUGIN,
-  OPTION_SIZE_SORT,
-  OPTION_RECURSE_LIMIT,
-  OPTION_NO_RECURSE_LIMIT
-};
+#define OPTION_TARGET 200
+#define OPTION_PLUGIN (OPTION_TARGET + 1)
+#define OPTION_SIZE_SORT (OPTION_PLUGIN + 1)
 
 static struct option long_options[] =
 {
@@ -206,8 +209,6 @@ static struct option long_options[] =
   {"line-numbers", no_argument, 0, 'l'},
   {"no-cplus", no_argument, &do_demangle, 0},  /* Linux compatibility.  */
   {"no-demangle", no_argument, &do_demangle, 0},
-  {"no-recurse-limit", no_argument, NULL, OPTION_NO_RECURSE_LIMIT},
-  {"no-recursion-limit", no_argument, NULL, OPTION_NO_RECURSE_LIMIT},
   {"no-sort", no_argument, 0, 'p'},
   {"numeric-sort", no_argument, 0, 'n'},
   {"plugin", required_argument, 0, OPTION_PLUGIN},
@@ -216,8 +217,6 @@ static struct option long_options[] =
   {"print-file-name", no_argument, 0, 'o'},
   {"print-size", no_argument, 0, 'S'},
   {"radix", required_argument, 0, 't'},
-  {"recurse-limit", no_argument, NULL, OPTION_RECURSE_LIMIT},
-  {"recursion-limit", no_argument, NULL, OPTION_RECURSE_LIMIT},
   {"reverse-sort", no_argument, &reverse_sort, 1},
   {"size-sort", no_argument, 0, OPTION_SIZE_SORT},
   {"special-syms", no_argument, &allow_special_symbols, 1},
@@ -246,8 +245,6 @@ usage (FILE *stream, int status)
                           `gnu', `lucid', `arm', `hp', `edg', `gnu-v3', `java'\n\
                           or `gnat'\n\
       --no-demangle      Do not demangle low-level symbol names\n\
-      --recurse-limit    Enable a demangling recursion limit.  This is the default.\n\
-      --no-recurse-limit Disable a demangling recursion limit.\n\
   -D, --dynamic          Display dynamic symbols instead of normal symbols\n\
       --defined-only     Display only defined symbols\n\
   -e                     (ignored)\n\
@@ -293,15 +290,29 @@ set_print_radix (char *radix)
 {
   switch (*radix)
     {
-    case 'x': print_radix = 16; break;
-    case 'd': print_radix = 10; break;
-    case 'o': print_radix =  8; break;
-
+    case 'x':
+      break;
+    case 'd':
+    case 'o':
+      if (*radix == 'd')
+	print_radix = 10;
+      else
+	print_radix = 8;
+      value_format_32bit[4] = *radix;
+#if BFD_HOST_64BIT_LONG
+      value_format_64bit[5] = *radix;
+#elif BFD_HOST_64BIT_LONG_LONG
+#ifndef __MSVCRT__
+      value_format_64bit[6] = *radix;
+#else
+      value_format_64bit[7] = *radix;
+#endif
+#endif
+      other_format[3] = desc_format[3] = *radix;
+      break;
     default:
       fatal (_("%s: invalid radix"), radix);
     }
-
-  other_format[3] = desc_format[3] = *radix;
 }
 
 static void
@@ -327,7 +338,6 @@ set_output_format (char *f)
       fatal (_("%s: invalid output format"), f);
     }
   format = &formats[i];
-  print_format = i;
 }
 
 static const char *
@@ -397,7 +407,7 @@ print_symname (const char *form, const char *name, bfd *abfd)
 {
   if (do_demangle && *name)
     {
-      char *res = bfd_demangle (abfd, name, demangle_flags);
+      char *res = bfd_demangle (abfd, name, DMGL_ANSI | DMGL_PARAMS);
 
       if (res != NULL)
 	{
@@ -966,6 +976,7 @@ print_symbol (bfd *        abfd,
 	    }
 
 	  symname = bfd_asymbol_name (sym);
+
 	  for (i = 0; i < seccount; i++)
 	    {
 	      long j;
@@ -975,7 +986,9 @@ print_symbol (bfd *        abfd,
 		  arelent *r;
 
 		  r = relocs[i][j];
+
 		  if (r->sym_ptr_ptr != NULL
+		      && * r->sym_ptr_ptr != NULL
 		      && (*r->sym_ptr_ptr)->section == sym->section
 		      && (*r->sym_ptr_ptr)->value == sym->value
 		      && strcmp (symname,
@@ -1152,14 +1165,17 @@ display_rel_file (bfd *abfd, bfd *archive_bfd)
       if (synth_count > 0)
 	{
 	  asymbol **symp;
+	  void *new_mini;
 	  long i;
 
-	  minisyms = xrealloc (minisyms,
-			       (symcount + synth_count + 1) * sizeof (*symp));
-	  symp = (asymbol **) minisyms + symcount;
+	  new_mini = xmalloc ((symcount + synth_count + 1) * sizeof (*symp));
+	  symp = (asymbol **) new_mini;
+	  memcpy (symp, minisyms, symcount * sizeof (*symp));
+	  symp += symcount;
 	  for (i = 0; i < synth_count; i++)
 	    *symp++ = synthsyms + i;
 	  *symp = 0;
+	  minisyms = new_mini;
 	  symcount += synth_count;
 	}
     }
@@ -1457,58 +1473,6 @@ print_symbol_filename_posix (bfd *archive_bfd, bfd *abfd)
     }
 }
 
-/* Construct a formatting string for printing symbol values.  */
-
-static const char *
-get_print_format (void)
-{
-  static const char * saved_format = NULL;
-
-  /* See if we have already constructed the format.  */
-  if (saved_format)
-    return saved_format;
-
-  const char * padding;
-  if (print_format == FORMAT_POSIX)
-    {
-      /* POSIX compatible output does not have any padding.  */
-      padding = "";
-    }
-  else if (print_width == 32)
-    {
-      padding ="08";
-    }
-  else /* print_width == 64 */
-    {
-      padding = "016";
-    }
-
-  const char * length = "l";
-  if (print_width == 64)
-    {
-#if BFD_HOST_64BIT_LONG
-      ;
-#elif BFD_HOST_64BIT_LONG_LONG
-#ifndef __MSVCRT__
-      length = "ll";
-#else
-      length = "I64";
-#endif
-#endif
-    }
-
-  const char * radix = NULL;
-  switch (print_radix)
-    {
-    case 8:  radix = "o"; break;
-    case 10: radix = "d"; break;
-    case 16: radix = "x"; break;
-    }
-
-  saved_format = concat ("%", padding, length, radix, NULL);
-  return saved_format;
-}
-
 /* Print a symbol value.  */
 
 static void
@@ -1517,12 +1481,12 @@ print_value (bfd *abfd ATTRIBUTE_UNUSED, bfd_vma val)
   switch (print_width)
     {
     case 32:
-      printf (get_print_format (), (unsigned long) val);
+      printf (value_format_32bit, (unsigned long) val);
       break;
 
     case 64:
 #if BFD_HOST_64BIT_LONG || BFD_HOST_64BIT_LONG_LONG
-      printf (get_print_format (), val);
+      printf (value_format_64bit, val);
 #else
       /* We have a 64 bit value to print, but the host is only 32 bit.  */
       if (print_radix == 16)
@@ -1693,8 +1657,7 @@ main (int argc, char **argv)
 
   expandargv (&argc, &argv);
 
-  if (bfd_init () != BFD_INIT_MAGIC)
-    fatal (_("fatal error: libbfd ABI mismatch"));
+  bfd_init ();
   set_default_bfd_target ();
 
   while ((c = getopt_long (argc, argv, "aABCDef:gHhlnopPrSst:uvVvX:",
@@ -1725,12 +1688,6 @@ main (int argc, char **argv)
 
 	      cplus_demangle_set_style (style);
 	    }
-	  break;
-	case OPTION_RECURSE_LIMIT:
-	  demangle_flags &= ~ DMGL_NO_RECURSE_LIMIT;
-	  break;
-	case OPTION_NO_RECURSE_LIMIT:
-	  demangle_flags |= DMGL_NO_RECURSE_LIMIT;
 	  break;
 	case 'D':
 	  dynamic = 1;

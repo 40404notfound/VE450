@@ -1,7 +1,7 @@
 # name: Ldr immediate on armv6t2
 # as: -march=armv6t2
 # objdump: -dr --prefix-addresses --show-raw-insn
-#skip: *-*-pe *-wince-*
+#skip: *-*-pe *-wince-* *-*-coff
 
 .*: +file format .*arm.*
 

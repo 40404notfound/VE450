@@ -1,6 +1,6 @@
 /* Perform arithmetic and other operations on values, for GDB.
 
-   Copyright (C) 1986-2019 Free Software Foundation, Inc.
+   Copyright (C) 1986-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -60,6 +60,8 @@ find_size_for_pointer_math (struct type *ptr_type)
 	  const char *name;
 	  
 	  name = TYPE_NAME (ptr_target);
+	  if (name == NULL)
+	    name = TYPE_TAG_NAME (ptr_target);
 	  if (name == NULL)
 	    error (_("Cannot perform pointer math on incomplete types, "
 		   "try casting to a known type, or void *."));
@@ -189,11 +191,8 @@ value_subscripted_rvalue (struct value *array, LONGEST index, int lowerbound)
   ULONGEST elt_size = type_length_units (elt_type);
   ULONGEST elt_offs = elt_size * (index - lowerbound);
 
-  if (index < lowerbound
-      || (!TYPE_ARRAY_UPPER_BOUND_IS_UNDEFINED (array_type)
-          && elt_offs >= type_length_units (array_type))
-      || (VALUE_LVAL (array) != lval_memory
-          && TYPE_ARRAY_UPPER_BOUND_IS_UNDEFINED (array_type)))
+  if (index < lowerbound || (!TYPE_ARRAY_UPPER_BOUND_IS_UNDEFINED (array_type)
+			     && elt_offs >= type_length_units (array_type)))
     {
       if (type_not_associated (array_type))
         error (_("no such vector element (vector not associated)"));
@@ -281,14 +280,14 @@ unop_user_defined_p (enum exp_opcode op, struct value *arg1)
    situations or combinations thereof.  */
 
 static struct value *
-value_user_defined_cpp_op (gdb::array_view<value *> args, char *oper,
+value_user_defined_cpp_op (struct value **args, int nargs, char *oper,
                            int *static_memfuncp, enum noside noside)
 {
 
   struct symbol *symp = NULL;
   struct value *valp = NULL;
 
-  find_overload_match (args, oper, BOTH /* could be method */,
+  find_overload_match (args, nargs, oper, BOTH /* could be method */,
                        &args[0] /* objp */,
                        NULL /* pass NULL symbol since symbol is unknown */,
                        &valp, &symp, static_memfuncp, 0, noside);
@@ -312,19 +311,19 @@ value_user_defined_cpp_op (gdb::array_view<value *> args, char *oper,
    function, otherwise return NULL.  */
 
 static struct value *
-value_user_defined_op (struct value **argp, gdb::array_view<value *> args,
-		       char *name, int *static_memfuncp, enum noside noside)
+value_user_defined_op (struct value **argp, struct value **args, char *name,
+                       int *static_memfuncp, int nargs, enum noside noside)
 {
   struct value *result = NULL;
 
   if (current_language->la_language == language_cplus)
     {
-      result = value_user_defined_cpp_op (args, name, static_memfuncp,
+      result = value_user_defined_cpp_op (args, nargs, name, static_memfuncp,
 					  noside);
     }
   else
-    result = value_struct_elt (argp, args.data (), name, static_memfuncp,
-			       "structure");
+    result = value_struct_elt (argp, args, name, static_memfuncp,
+                               "structure");
 
   return result;
 }
@@ -342,6 +341,7 @@ struct value *
 value_x_binop (struct value *arg1, struct value *arg2, enum exp_opcode op,
 	       enum exp_opcode otherop, enum noside noside)
 {
+  struct value **argvec;
   char *ptr;
   char tstr[13];
   int static_memfuncp;
@@ -355,11 +355,10 @@ value_x_binop (struct value *arg1, struct value *arg2, enum exp_opcode op,
   if (TYPE_CODE (check_typedef (value_type (arg1))) != TYPE_CODE_STRUCT)
     error (_("Can't do that binary op on that type"));	/* FIXME be explicit */
 
-  value *argvec_storage[3];
-  gdb::array_view<value *> argvec = argvec_storage;
-
+  argvec = (struct value **) alloca (sizeof (struct value *) * 4);
   argvec[1] = value_addr (arg1);
   argvec[2] = arg2;
+  argvec[3] = 0;
 
   /* Make the right function name up.  */
   strcpy (tstr, "operator__");
@@ -469,15 +468,15 @@ value_x_binop (struct value *arg1, struct value *arg2, enum exp_opcode op,
       error (_("Invalid binary operation specified."));
     }
 
-  argvec[0] = value_user_defined_op (&arg1, argvec.slice (1), tstr,
-				     &static_memfuncp, noside);
+  argvec[0] = value_user_defined_op (&arg1, argvec + 1, tstr,
+                                     &static_memfuncp, 2, noside);
 
   if (argvec[0])
     {
       if (static_memfuncp)
 	{
 	  argvec[1] = argvec[0];
-	  argvec = argvec.slice (1);
+	  argvec++;
 	}
       if (TYPE_CODE (value_type (argvec[0])) == TYPE_CODE_XMETHOD)
 	{
@@ -486,13 +485,13 @@ value_x_binop (struct value *arg1, struct value *arg2, enum exp_opcode op,
 	  if (noside == EVAL_AVOID_SIDE_EFFECTS)
 	    {
 	      struct type *return_type
-		= result_type_of_xmethod (argvec[0], argvec.slice (1));
+		= result_type_of_xmethod (argvec[0], 2, argvec + 1);
 
 	      if (return_type == NULL)
 		error (_("Xmethod is missing return type."));
 	      return value_zero (return_type, VALUE_LVAL (arg1));
 	    }
-	  return call_xmethod (argvec[0], argvec.slice (1));
+	  return call_xmethod (argvec[0], 2, argvec + 1);
 	}
       if (noside == EVAL_AVOID_SIDE_EFFECTS)
 	{
@@ -502,11 +501,14 @@ value_x_binop (struct value *arg1, struct value *arg2, enum exp_opcode op,
 	    = TYPE_TARGET_TYPE (check_typedef (value_type (argvec[0])));
 	  return value_zero (return_type, VALUE_LVAL (arg1));
 	}
-      return call_function_by_hand (argvec[0], NULL,
-				    argvec.slice (1, 2 - static_memfuncp));
+      return call_function_by_hand (argvec[0], NULL, 2 - static_memfuncp,
+				    argvec + 1);
     }
   throw_error (NOT_FOUND_ERROR,
                _("member function %s not found"), tstr);
+#ifdef lint
+  return call_function_by_hand (argvec[0], 2 - static_memfuncp, argvec + 1);
+#endif
 }
 
 /* We know that arg1 is a structure, so try to find a unary user
@@ -519,6 +521,7 @@ struct value *
 value_x_unop (struct value *arg1, enum exp_opcode op, enum noside noside)
 {
   struct gdbarch *gdbarch = get_type_arch (value_type (arg1));
+  struct value **argvec;
   char *ptr;
   char tstr[13], mangle_tstr[13];
   int static_memfuncp, nargs;
@@ -531,9 +534,7 @@ value_x_unop (struct value *arg1, enum exp_opcode op, enum noside noside)
   if (TYPE_CODE (check_typedef (value_type (arg1))) != TYPE_CODE_STRUCT)
     error (_("Can't do that unary op on that type"));	/* FIXME be explicit */
 
-  value *argvec_storage[3];
-  gdb::array_view<value *> argvec = argvec_storage;
-
+  argvec = (struct value **) alloca (sizeof (struct value *) * 4);
   argvec[1] = value_addr (arg1);
   argvec[2] = 0;
 
@@ -554,11 +555,13 @@ value_x_unop (struct value *arg1, enum exp_opcode op, enum noside noside)
     case UNOP_POSTINCREMENT:
       strcpy (ptr, "++");
       argvec[2] = value_from_longest (builtin_type (gdbarch)->builtin_int, 0);
+      argvec[3] = 0;
       nargs ++;
       break;
     case UNOP_POSTDECREMENT:
       strcpy (ptr, "--");
       argvec[2] = value_from_longest (builtin_type (gdbarch)->builtin_int, 0);
+      argvec[3] = 0;
       nargs ++;
       break;
     case UNOP_LOGICAL_NOT:
@@ -583,15 +586,16 @@ value_x_unop (struct value *arg1, enum exp_opcode op, enum noside noside)
       error (_("Invalid unary operation specified."));
     }
 
-  argvec[0] = value_user_defined_op (&arg1, argvec.slice (1, nargs), tstr,
-				     &static_memfuncp, noside);
+  argvec[0] = value_user_defined_op (&arg1, argvec + 1, tstr,
+                                     &static_memfuncp, nargs, noside);
 
   if (argvec[0])
     {
       if (static_memfuncp)
 	{
 	  argvec[1] = argvec[0];
-	  argvec = argvec.slice (1);
+	  nargs --;
+	  argvec++;
 	}
       if (TYPE_CODE (value_type (argvec[0])) == TYPE_CODE_XMETHOD)
 	{
@@ -600,13 +604,13 @@ value_x_unop (struct value *arg1, enum exp_opcode op, enum noside noside)
 	  if (noside == EVAL_AVOID_SIDE_EFFECTS)
 	    {
 	      struct type *return_type
-		= result_type_of_xmethod (argvec[0], argvec[1]);
+		= result_type_of_xmethod (argvec[0], 1, argvec + 1);
 
 	      if (return_type == NULL)
 		error (_("Xmethod is missing return type."));
 	      return value_zero (return_type, VALUE_LVAL (arg1));
 	    }
-	  return call_xmethod (argvec[0], argvec[1]);
+	  return call_xmethod (argvec[0], 1, argvec + 1);
 	}
       if (noside == EVAL_AVOID_SIDE_EFFECTS)
 	{
@@ -616,11 +620,12 @@ value_x_unop (struct value *arg1, enum exp_opcode op, enum noside noside)
 	    = TYPE_TARGET_TYPE (check_typedef (value_type (argvec[0])));
 	  return value_zero (return_type, VALUE_LVAL (arg1));
 	}
-      return call_function_by_hand (argvec[0], NULL,
-				    argvec.slice (1, nargs));
+      return call_function_by_hand (argvec[0], NULL, nargs, argvec + 1);
     }
   throw_error (NOT_FOUND_ERROR,
                _("member function %s not found"), tstr);
+
+  return 0;			/* For lint -- never reached */
 }
 
 
@@ -1530,7 +1535,10 @@ value_equal (struct value *arg1, struct value *arg2)
       return value_strcmp (arg1, arg2) == 0;
     }
   else
-    error (_("Invalid type combination in equality test."));
+    {
+      error (_("Invalid type combination in equality test."));
+      return 0;			/* For lint -- never reached.  */
+    }
 }
 
 /* Compare values based on their raw contents.  Useful for arrays since
@@ -1622,7 +1630,10 @@ value_pos (struct value *arg1)
       || (TYPE_CODE (type) == TYPE_CODE_ARRAY && TYPE_VECTOR (type)))
     return value_from_contents (type, value_contents (arg1));
   else
-    error (_("Argument to positive operation not a number."));
+    {
+      error (_("Argument to positive operation not a number."));
+      return 0;			/* For lint -- never reached.  */
+    }
 }
 
 struct value *
@@ -1654,7 +1665,10 @@ value_neg (struct value *arg1)
       return val;
     }
   else
-    error (_("Argument to negate operation not a number."));
+    {
+      error (_("Argument to negate operation not a number."));
+      return 0;			/* For lint -- never reached.  */
+    }
 }
 
 struct value *
@@ -1739,4 +1753,9 @@ value_in (struct value *element, struct value *set)
   if (member < 0)
     error (_("First argument of 'IN' not in range"));
   return member;
+}
+
+void
+_initialize_valarith (void)
+{
 }

@@ -1,5 +1,5 @@
 /* Support for the generic parts of COFF, for BFD.
-   Copyright (C) 1990-2019 Free Software Foundation, Inc.
+   Copyright (C) 1990-2018 Free Software Foundation, Inc.
    Written by Cygnus Support.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -37,7 +37,6 @@
    coff_data (abfd).  */
 
 #include "sysdep.h"
-#include <limits.h>
 #include "bfd.h"
 #include "libbfd.h"
 #include "coff/internal.h"
@@ -176,7 +175,7 @@ make_a_section_from_file (bfd *abfd,
 	    {
 	      _bfd_error_handler
 		/* xgettext: c-format */
-		(_("%pB: unable to initialize compress status for section %s"),
+		(_("%B: unable to initialize compress status for section %s"),
 		 abfd, name);
 	      return FALSE;
 	    }
@@ -200,7 +199,7 @@ make_a_section_from_file (bfd *abfd,
 	    {
 	      _bfd_error_handler
 		/* xgettext: c-format */
-		(_("%pB: unable to initialize decompress status for section %s"),
+		(_("%B: unable to initialize decompress status for section %s"),
 		 abfd, name);
 	      return FALSE;
 	    }
@@ -1522,8 +1521,7 @@ coff_pointerize_aux (bfd *abfd,
 		     combined_entry_type *table_base,
 		     combined_entry_type *symbol,
 		     unsigned int indaux,
-		     combined_entry_type *auxent,
-		     combined_entry_type *table_end)
+		     combined_entry_type *auxent)
 {
   unsigned int type = symbol->u.syment.n_type;
   unsigned int n_sclass = symbol->u.syment.n_sclass;
@@ -1549,22 +1547,15 @@ coff_pointerize_aux (bfd *abfd,
 
   if ((ISFCN (type) || ISTAG (n_sclass) || n_sclass == C_BLOCK
        || n_sclass == C_FCN)
-      && auxent->u.auxent.x_sym.x_fcnary.x_fcn.x_endndx.l > 0
-      && auxent->u.auxent.x_sym.x_fcnary.x_fcn.x_endndx.l
-      < (long) obj_raw_syment_count (abfd)
-      && table_base + auxent->u.auxent.x_sym.x_fcnary.x_fcn.x_endndx.l
-      < table_end)
+      && auxent->u.auxent.x_sym.x_fcnary.x_fcn.x_endndx.l > 0)
     {
       auxent->u.auxent.x_sym.x_fcnary.x_fcn.x_endndx.p =
 	table_base + auxent->u.auxent.x_sym.x_fcnary.x_fcn.x_endndx.l;
       auxent->fix_end = 1;
     }
-
   /* A negative tagndx is meaningless, but the SCO 3.2v4 cc can
      generate one, so we must be careful to ignore it.  */
-  if ((unsigned long) auxent->u.auxent.x_sym.x_tagndx.l
-      < obj_raw_syment_count (abfd)
-      && table_base + auxent->u.auxent.x_sym.x_tagndx.l < table_end)
+  if (auxent->u.auxent.x_sym.x_tagndx.l > 0)
     {
       auxent->u.auxent.x_sym.x_tagndx.p =
 	table_base + auxent->u.auxent.x_sym.x_tagndx.l;
@@ -1655,8 +1646,8 @@ _bfd_coff_get_external_symbols (bfd *abfd)
 	  && size > bfd_get_file_size (abfd)))
 
     {
-      _bfd_error_handler (_("%pB: corrupt symbol count: %#" PRIx64 ""),
-			  abfd, (uint64_t) obj_raw_syment_count (abfd));
+      _bfd_error_handler (_("%B: corrupt symbol count: %#Lx"),
+			  abfd, obj_raw_syment_count (abfd));
       return FALSE;
     }
 
@@ -1664,10 +1655,8 @@ _bfd_coff_get_external_symbols (bfd *abfd)
   if (syms == NULL)
     {
       /* PR 21013: Provide an error message when the alloc fails.  */
-      _bfd_error_handler (_("%pB: not enough memory to allocate space "
-			    "for %#" PRIx64 " symbols of size %#" PRIx64),
-			  abfd, (uint64_t) obj_raw_syment_count (abfd),
-			  (uint64_t) symesz);
+      _bfd_error_handler (_("%B: not enough memory to allocate space for %#Lx symbols of size %#Lx"),
+			  abfd, obj_raw_syment_count (abfd), symesz);
       return FALSE;
     }
 
@@ -1733,7 +1722,7 @@ _bfd_coff_read_string_table (bfd *abfd)
     {
       _bfd_error_handler
 	/* xgettext: c-format */
-	(_("%pB: bad string table size %" PRIu64), abfd, (uint64_t) strsize);
+	(_("%B: bad string table size %Lu"), abfd, strsize);
       bfd_set_error (bfd_error_bad_value);
       return NULL;
     }
@@ -1875,7 +1864,7 @@ coff_get_normalized_symtab (bfd *abfd)
 
 	  internal_ptr->is_sym = FALSE;
 	  coff_pointerize_aux (abfd, internal, symbol_ptr, i,
-			       internal_ptr, internal_end);
+			       internal_ptr);
 	}
     }
 
@@ -2015,13 +2004,6 @@ coff_get_reloc_upper_bound (bfd *abfd, sec_ptr asect)
       bfd_set_error (bfd_error_invalid_operation);
       return -1;
     }
-#if SIZEOF_LONG == SIZEOF_INT
-  if (asect->reloc_count >= LONG_MAX / sizeof (arelent *))
-    {
-      bfd_set_error (bfd_error_file_too_big);
-      return -1;
-    }
-#endif
   return (asect->reloc_count + 1) * sizeof (arelent *);
 }
 
@@ -2302,7 +2284,7 @@ coff_find_nearest_line_with_names (bfd *abfd,
      information.  So try again, using a bias against the address sought.  */
   if (coff_data (abfd)->dwarf2_find_line_info != NULL)
     {
-      bfd_signed_vma bias = 0;
+      bfd_signed_vma bias;
 
       /* Create a cache of the result for the next call.  */
       if (sec_data == NULL && section->owner == abfd)
@@ -2314,11 +2296,10 @@ coff_find_nearest_line_with_names (bfd *abfd,
 
       if (sec_data != NULL && sec_data->saved_bias)
 	bias = sec_data->saved_bias;
-      else if (symbols)
+      else
 	{
 	  bias = _bfd_dwarf2_find_symbol_bias (symbols,
 					       & coff_data (abfd)->dwarf2_find_line_info);
-
 	  if (sec_data)
 	    {
 	      sec_data->saved_bias = TRUE;
@@ -2646,9 +2627,6 @@ _bfd_coff_section_already_linked (bfd *abfd,
   struct bfd_section_already_linked *l;
   struct bfd_section_already_linked_hash_entry *already_linked_list;
   struct coff_comdat_info *s_comdat;
-
-  if (sec->output_section == bfd_abs_section_ptr)
-    return FALSE;
 
   flags = sec->flags;
   if ((flags & SEC_LINK_ONCE) == 0)
@@ -3043,7 +3021,7 @@ coff_gc_sweep (bfd *abfd ATTRIBUTE_UNUSED, struct bfd_link_info *info)
 
 	  if (info->print_gc_sections && o->size != 0)
 	    /* xgettext: c-format */
-	    _bfd_error_handler (_("removing unused section '%pA' in file '%pB'"),
+	    _bfd_error_handler (_("Removing unused section '%A' in file '%B'"),
 				o, sub);
 
 #if 0
@@ -3120,7 +3098,7 @@ bfd_coff_gc_sections (bfd *abfd ATTRIBUTE_UNUSED, struct bfd_link_info *info)
   if (!bed->can_gc_sections
       || !is_coff_hash_table (info->hash))
     {
-      _bfd_error_handler(_("warning: gc-sections option ignored"));
+      _bfd_error_handler(_("Warning: gc-sections option ignored"));
       return TRUE;
     }
 #endif

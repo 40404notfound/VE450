@@ -1,6 +1,6 @@
 /* TUI layout window management.
 
-   Copyright (C) 1998-2019 Free Software Foundation, Inc.
+   Copyright (C) 1998-2018 Free Software Foundation, Inc.
 
    Contributed by Hewlett-Packard Company.
 
@@ -374,7 +374,7 @@ _initialize_tui_layout (void)
 
   cmd = add_com ("layout", class_tui, tui_layout_command, _("\
 Change the layout of windows.\n\
-Usage: layout prev | next | LAYOUT-NAME\n\
+Usage: layout prev | next | <layout_name> \n\
 Layout names are:\n\
    src   : Displays source and command windows.\n\
    asm   : Displays disassembly and command windows.\n\
@@ -384,7 +384,7 @@ Layout names are:\n\
            register window is displayed. If the\n\
            source/assembly/command (split) is displayed, \n\
            the register window is displayed with \n\
-           the window that has current logical focus."));
+           the window that has current logical focus.\n"));
   set_cmd_completer (cmd, layout_completer);
 }
 
@@ -401,7 +401,7 @@ tui_set_layout_by_name (const char *layout_name)
 {
   enum tui_status status = TUI_SUCCESS;
 
-  if (layout_name != NULL)
+  if (layout_name != (char *) NULL)
     {
       int i;
       enum tui_layout_type new_layout = UNDEFINED_LAYOUT;

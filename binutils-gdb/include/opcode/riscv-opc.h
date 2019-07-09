@@ -141,8 +141,6 @@
 #define MASK_FENCE  0x707f
 #define MATCH_FENCE_I 0x100f
 #define MASK_FENCE_I  0x707f
-#define MATCH_FENCE_TSO 0x8330000f
-#define MASK_FENCE_TSO  0xfff0707f
 #define MATCH_MUL 0x2000033
 #define MASK_MUL  0xfe00707f
 #define MATCH_MULH 0x2001033
@@ -461,12 +459,8 @@
 #define MASK_C_LUI  0xe003
 #define MATCH_C_SRLI 0x8001
 #define MASK_C_SRLI  0xec03
-#define MATCH_C_SRLI64 0x8001
-#define MASK_C_SRLI64  0xfc7f
 #define MATCH_C_SRAI 0x8401
 #define MASK_C_SRAI  0xec03
-#define MATCH_C_SRAI64 0x8401
-#define MASK_C_SRAI64  0xfc7f
 #define MATCH_C_ANDI 0x8801
 #define MASK_C_ANDI  0xec03
 #define MATCH_C_SUB 0x8c01
@@ -489,8 +483,6 @@
 #define MASK_C_BNEZ  0xe003
 #define MATCH_C_SLLI 0x2
 #define MASK_C_SLLI  0xe003
-#define MATCH_C_SLLI64 0x2
-#define MASK_C_SLLI64 0xf07f
 #define MATCH_C_FLDSP 0x2002
 #define MASK_C_FLDSP  0xe003
 #define MATCH_C_LWSP 0x4002

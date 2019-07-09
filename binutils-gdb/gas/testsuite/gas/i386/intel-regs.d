@@ -1,4 +1,3 @@
-#as: -O0
 #objdump: -drw
 #name: i386 Intel register names
 

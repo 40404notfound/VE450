@@ -1,5 +1,5 @@
 # Expect script for ld-weak tests
-#   Copyright (C) 2001-2019 Free Software Foundation, Inc.
+#   Copyright (C) 2001-2018 Free Software Foundation, Inc.
 #
 # This file is part of the GNU Binutils.
 #
@@ -23,7 +23,7 @@
 #
 
 # Check to see if the C compiler works
-if { ![check_compiler_available] } {
+if { [which $CC] == 0 } {
     return
 }
 
@@ -55,6 +55,12 @@ if {    ![istarget alpha*-*-linux*]
      && ![istarget *-*-nacl*] } {
     return
 }
+
+if { [istarget *-*-linux*aout*]
+     || [istarget *-*-linux*oldld*] } {
+    return
+}
+
 if { [istarget rs6000*-*-aix*] || [istarget powerpc*-*-aix*] } {
     return
 }
@@ -378,7 +384,11 @@ if { [istarget mips*-*-*] && ! [at_least_gcc_version 4 3] } then {
 	 || [string match "*option ignored*" $exec_output]
 	 || [string match "*unrecognized option*" $exec_output]
 	 || [string match "*passed to ld*" $exec_output] } {
-	set picflag "-KPIC"
+	if [istarget *-*-sunos4*] {
+	    set picflag "-pic"
+	} else {
+	    set picflag "-KPIC"
+	}
     }
 }
 verbose "Using $picflag to compile PIC code"

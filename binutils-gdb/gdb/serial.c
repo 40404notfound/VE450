@@ -1,6 +1,6 @@
 /* Generic serial interface routines
 
-   Copyright (C) 1992-2019 Free Software Foundation, Inc.
+   Copyright (C) 1992-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -27,9 +27,12 @@
 
 static unsigned int global_serial_debug_p;
 
+typedef const struct serial_ops *serial_ops_p;
+DEF_VEC_P (serial_ops_p);
+
 /* Serial I/O handlers.  */
 
-static std::vector<const struct serial_ops *> serial_ops_list;
+VEC (serial_ops_p) *serial_ops_list = NULL;
 
 /* Pointer to list of scb's.  */
 
@@ -143,7 +146,10 @@ serial_log_command (struct target_ops *self, const char *cmd)
 static const struct serial_ops *
 serial_interface_lookup (const char *name)
 {
-  for (const serial_ops *ops : serial_ops_list)
+  const struct serial_ops *ops;
+  int i;
+
+  for (i = 0; VEC_iterate (serial_ops_p, serial_ops_list, i, ops); ++i)
     if (strcmp (name, ops->name) == 0)
       return ops;
 
@@ -153,7 +159,7 @@ serial_interface_lookup (const char *name)
 void
 serial_add_interface (const struct serial_ops *optable)
 {
-  serial_ops_list.push_back (optable);
+  VEC_safe_push (serial_ops_p, serial_ops_list, optable);
 }
 
 /* Return the open serial device for FD, if found, or NULL if FD is
@@ -213,17 +219,7 @@ serial_open (const char *name)
   else if (strchr (name, ':'))
     ops = serial_interface_lookup ("tcp");
   else
-    {
-#ifndef USE_WIN32API
-      /* Check to see if name is a socket.  If it is, then treat it
-         as such.  Otherwise assume that it's a character device.  */
-      struct stat sb;
-      if (stat (name, &sb) == 0 && (sb.st_mode & S_IFMT) == S_IFSOCK)
-	ops = serial_interface_lookup ("local");
-      else
-#endif
-	ops = serial_interface_lookup ("hardwire");
-    }
+    ops = serial_interface_lookup ("hardwire");
 
   if (!ops)
     return NULL;
@@ -444,14 +440,16 @@ serial_write (struct serial *scb, const void *buf, size_t count)
 }
 
 void
-serial_printf (struct serial *desc, const char *format, ...)
+serial_printf (struct serial *desc, const char *format,...)
 {
   va_list args;
+  char *buf;
   va_start (args, format);
 
-  std::string buf = string_vprintf (format, args);
-  serial_write (desc, buf.c_str (), buf.length ());
+  buf = xstrvprintf (format, args);
+  serial_write (desc, buf, strlen (buf));
 
+  xfree (buf);
   va_end (args);
 }
 

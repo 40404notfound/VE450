@@ -1,6 +1,6 @@
 /* Helper routines for parsing XML using Expat.
 
-   Copyright (C) 2006-2019 Free Software Foundation, Inc.
+   Copyright (C) 2006-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -22,9 +22,8 @@
 #define XML_SUPPORT_H
 
 #include "gdb_obstack.h"
-#include "common/vec.h"
-#include "common/xml-utils.h"
-#include "common/byte-vector.h"
+#include "vec.h"
+#include "xml-utils.h"
 
 struct gdb_xml_parser;
 struct gdb_xml_element;
@@ -53,8 +52,8 @@ extern const char *xml_builtin[][2];
 
 /* Callback to fetch a new XML file, based on the provided HREF.  */
 
-typedef gdb::optional<gdb::char_vector> (*xml_fetch_another) (const char *href,
-							      void *baton);
+typedef gdb::unique_xmalloc_ptr<char> (*xml_fetch_another) (const char *href,
+							    void *baton);
 
 /* Append the expansion of TEXT after processing <xi:include> tags in
    RESULT.  FETCHER will be called (with FETCHER_BATON) to retrieve
@@ -232,10 +231,9 @@ ULONGEST gdb_xml_parse_ulongest (struct gdb_xml_parser *parser,
 				 const char *value);
 
 /* Open FILENAME, read all its text into memory, close it, and return
-   the text.  If something goes wrong, return an uninstantiated optional
-   and warn.  */
+   the text.  If something goes wrong, return NULL and warn.  */
 
-extern gdb::optional<gdb::char_vector> xml_fetch_content_from_file
+extern gdb::unique_xmalloc_ptr<char> xml_fetch_content_from_file
     (const char *filename, void *baton);
 
 #endif

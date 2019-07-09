@@ -1,5 +1,5 @@
 /* BFD back-end for PDP-11 a.out binaries.
-   Copyright (C) 2001-2019 Free Software Foundation, Inc.
+   Copyright (C) 2001-2018 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -66,7 +66,6 @@
 		     && N_MAGIC(x) != ZMAGIC)
 
 #include "sysdep.h"
-#include <limits.h>
 #include "bfd.h"
 
 #define external_exec pdp11_external_exec
@@ -468,7 +467,10 @@ NAME (aout, some_aout_object_p) (bfd *abfd,
   oldrawptr = abfd->tdata.aout_data;
   abfd->tdata.aout_data = rawptr;
 
-  /* Copy the contents of the old tdata struct.  */
+  /* Copy the contents of the old tdata struct.
+     In particular, we want the subformat, since for hpux it was set in
+     hp300hpux.c:swap_exec_header_in and will be used in
+     hp300hpux.c:callback.  */
   if (oldrawptr != NULL)
     *abfd->tdata.aout_data = *oldrawptr;
 
@@ -695,6 +697,17 @@ NAME (aout, machine_type) (enum bfd_architecture arch,
 	arch_flags = M_SPARC;
       else if (machine == bfd_mach_sparc_sparclet)
 	arch_flags = M_SPARCLET;
+      break;
+
+    case bfd_arch_m68k:
+      switch (machine)
+	{
+	case 0:		      arch_flags = M_68010; break;
+	case bfd_mach_m68000: arch_flags = M_UNKNOWN; *unknown = FALSE; break;
+	case bfd_mach_m68010: arch_flags = M_68010; break;
+	case bfd_mach_m68020: arch_flags = M_68020; break;
+	default:	      arch_flags = M_UNKNOWN; break;
+	}
       break;
 
     case bfd_arch_i386:
@@ -1136,7 +1149,7 @@ NAME (aout, set_section_contents) (bfd *abfd,
     {
       _bfd_error_handler
 	/* xgettext:c-format */
-	(_("%pB: can not represent section `%pA' in a.out object file format"),
+	(_("%B: can not represent section `%A' in a.out object file format"),
 	 abfd, section);
       bfd_set_error (bfd_error_nonrepresentable_section);
       return FALSE;
@@ -1146,6 +1159,14 @@ NAME (aout, set_section_contents) (bfd *abfd,
     {
       if (bfd_seek (abfd, section->filepos + offset, SEEK_SET) != 0
 	  || bfd_bwrite (location, count, abfd) != count)
+	return FALSE;
+
+      /* If necessary, pad the section to its aligned size.  */
+      if ((section == obj_datasec (abfd)
+	   || section == obj_textsec (abfd))
+	  && count < section->size
+	  && (bfd_seek (abfd, section->filepos + offset + section->size - 1, SEEK_SET) != 0
+	      || bfd_bwrite ("", 1, abfd) != 1))
 	return FALSE;
     }
 
@@ -1361,7 +1382,7 @@ translate_to_native_sym_flags (bfd *abfd,
 	 file.  */
       _bfd_error_handler
 	/* xgettext:c-format */
-	(_("%pB: can not represent section for symbol `%s' in a.out object file format"),
+	(_("%B: can not represent section for symbol `%s' in a.out object file format"),
 	 abfd, cache_ptr->name != NULL ? cache_ptr->name : "*unknown*");
       bfd_set_error (bfd_error_nonrepresentable_section);
       return FALSE;
@@ -1389,7 +1410,7 @@ translate_to_native_sym_flags (bfd *abfd,
     {
       _bfd_error_handler
 	/* xgettext:c-format */
-	(_("%pB: can not represent section `%pA' in a.out object file format"),
+	(_("%B: can not represent section `%A' in a.out object file format"),
 	 abfd, sec);
       bfd_set_error (bfd_error_nonrepresentable_section);
       return FALSE;
@@ -1981,8 +2002,6 @@ NAME (aout, canonicalize_reloc) (bfd *abfd,
 long
 NAME (aout, get_reloc_upper_bound) (bfd *abfd, sec_ptr asect)
 {
-  bfd_size_type count;
-
   if (bfd_get_format (abfd) != bfd_object)
     {
       bfd_set_error (bfd_error_invalid_operation);
@@ -1990,25 +2009,28 @@ NAME (aout, get_reloc_upper_bound) (bfd *abfd, sec_ptr asect)
     }
 
   if (asect->flags & SEC_CONSTRUCTOR)
-    count = asect->reloc_count;
-  else if (asect == obj_datasec (abfd))
-    count = exec_hdr (abfd)->a_drsize / obj_reloc_entry_size (abfd);
-  else if (asect == obj_textsec (abfd))
-    count = exec_hdr (abfd)->a_trsize / obj_reloc_entry_size (abfd);
-  else if (asect == obj_bsssec (abfd))
-    count = 0;
-  else
-    {
-      bfd_set_error (bfd_error_invalid_operation);
-      return -1;
-    }
+    return (sizeof (arelent *) * (asect->reloc_count + 1));
 
-  if (count >= LONG_MAX / sizeof (arelent *))
-    {
-      bfd_set_error (bfd_error_file_too_big);
-      return -1;
-    }
-  return (count + 1) * sizeof (arelent *);
+  if (asect == obj_datasec (abfd))
+    return (sizeof (arelent *)
+	    * ((exec_hdr (abfd)->a_drsize / obj_reloc_entry_size (abfd))
+	       + 1));
+
+  if (asect == obj_textsec (abfd))
+    return (sizeof (arelent *)
+	    * ((exec_hdr (abfd)->a_trsize / obj_reloc_entry_size (abfd))
+	       + 1));
+
+  /* TODO: why are there two if statements for obj_bsssec()? */
+
+  if (asect == obj_bsssec (abfd))
+    return sizeof (arelent *);
+
+  if (asect == obj_bsssec (abfd))
+    return 0;
+
+  bfd_set_error (bfd_error_invalid_operation);
+  return -1;
 }
 
 
@@ -3683,7 +3705,7 @@ NAME (aout, final_link) (bfd *abfd,
 		 by the reloc size.  */
 	      _bfd_error_handler
 		/* xgettext:c-format */
-		(_("%pB: relocatable link from %s to %s not supported"),
+		(_("%B: relocatable link from %s to %s not supported"),
 		 abfd, sub->xvec->name, abfd->xvec->name);
 	      bfd_set_error (bfd_error_invalid_operation);
 	      goto error_return;
@@ -3740,7 +3762,8 @@ NAME (aout, final_link) (bfd *abfd,
      FIXME: At this point we do not know how much space the symbol
      table will require.  This will not work for any (nonstandard)
      a.out target that needs to know the symbol table size before it
-     can compute the relocation file positions.  */
+     can compute the relocation file positions.  This may or may not
+     be the case for the hp300hpux target, for example.  */
   (*callback) (abfd, &aout_info.treloff, &aout_info.dreloff,
 	       &aout_info.symoff);
   obj_textsec (abfd)->rel_filepos = aout_info.treloff;
@@ -4496,34 +4519,22 @@ const bfd_target MY (vec) =
   bfd_getl64, bfd_getl_signed_64, bfd_putl64,
      bfd_getp32, bfd_getp_signed_32, bfd_putp32,
      bfd_getl16, bfd_getl_signed_16, bfd_putl16, /* Headers.  */
-  {				/* bfd_check_format.  */
-    _bfd_dummy_target,
-    MY_object_p,
-    bfd_generic_archive_p,
-    MY_core_file_p
-  },
-  {				/* bfd_set_format.  */
-    _bfd_bool_bfd_false_error,
-    MY_mkobject,
-    _bfd_generic_mkarchive,
-    _bfd_bool_bfd_false_error
-  },
-  {			/* bfd_write_contents.  */
-    _bfd_bool_bfd_false_error,
-    MY_write_object_contents,
-    _bfd_write_archive_contents,
-    _bfd_bool_bfd_false_error
-  },
+    {_bfd_dummy_target, MY_object_p,		/* bfd_check_format.  */
+       bfd_generic_archive_p, MY_core_file_p},
+    {bfd_false, MY_mkobject,			/* bfd_set_format.  */
+       _bfd_generic_mkarchive, bfd_false},
+    {bfd_false, MY_write_object_contents,	/* bfd_write_contents.  */
+       _bfd_write_archive_contents, bfd_false},
 
-  BFD_JUMP_TABLE_GENERIC (MY),
-  BFD_JUMP_TABLE_COPY (MY),
-  BFD_JUMP_TABLE_CORE (MY),
-  BFD_JUMP_TABLE_ARCHIVE (MY),
-  BFD_JUMP_TABLE_SYMBOLS (MY),
-  BFD_JUMP_TABLE_RELOCS (MY),
-  BFD_JUMP_TABLE_WRITE (MY),
-  BFD_JUMP_TABLE_LINK (MY),
-  BFD_JUMP_TABLE_DYNAMIC (MY),
+     BFD_JUMP_TABLE_GENERIC (MY),
+     BFD_JUMP_TABLE_COPY (MY),
+     BFD_JUMP_TABLE_CORE (MY),
+     BFD_JUMP_TABLE_ARCHIVE (MY),
+     BFD_JUMP_TABLE_SYMBOLS (MY),
+     BFD_JUMP_TABLE_RELOCS (MY),
+     BFD_JUMP_TABLE_WRITE (MY),
+     BFD_JUMP_TABLE_LINK (MY),
+     BFD_JUMP_TABLE_DYNAMIC (MY),
 
   /* Alternative_target.  */
   NULL,

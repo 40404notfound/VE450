@@ -1,6 +1,6 @@
 /* Definitions for values of C expressions, for GDB.
 
-   Copyright (C) 1986-2019 Free Software Foundation, Inc.
+   Copyright (C) 1986-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -22,7 +22,6 @@
 
 #include "frame.h"		/* For struct frame_id.  */
 #include "extension.h"
-#include "common/gdb_ref_ptr.h"
 
 struct block;
 struct expression;
@@ -87,34 +86,6 @@ struct value_print_options;
    variable).  */
 
 struct value;
-
-/* Increase VAL's reference count.  */
-
-extern void value_incref (struct value *val);
-
-/* Decrease VAL's reference count.  When the reference count drops to
-   0, VAL will be freed.  */
-
-extern void value_decref (struct value *val);
-
-/* A policy class to interface gdb::ref_ptr with struct value.  */
-
-struct value_ref_policy
-{
-  static void incref (struct value *ptr)
-  {
-    value_incref (ptr);
-  }
-
-  static void decref (struct value *ptr)
-  {
-    value_decref (ptr);
-  }
-};
-
-/* A gdb:;ref_ptr pointer to a struct value.  */
-
-typedef gdb::ref_ptr<struct value, value_ref_policy> value_ref_ptr;
 
 /* Values are stored in a chain, so that they can be deleted easily
    over calls to the inferior.  Values assigned to internal variables,
@@ -669,7 +640,6 @@ extern void pack_long (gdb_byte *buf, struct type *type, LONGEST num);
 extern struct value *value_from_longest (struct type *type, LONGEST num);
 extern struct value *value_from_ulongest (struct type *type, ULONGEST num);
 extern struct value *value_from_pointer (struct type *type, CORE_ADDR addr);
-extern struct value *value_from_host_double (struct type *type, double d);
 extern struct value *value_from_history_ref (const char *, const char **);
 extern struct value *value_from_component (struct value *, struct type *,
 					   LONGEST);
@@ -836,7 +806,7 @@ extern struct value *value_static_field (struct type *type, int fieldno);
 
 enum oload_search_type { NON_METHOD, METHOD, BOTH };
 
-extern int find_overload_match (gdb::array_view<value *> args,
+extern int find_overload_match (struct value **args, int nargs,
 				const char *name,
 				enum oload_search_type method,
 				struct value **objp, struct symbol *fsym,
@@ -916,10 +886,10 @@ extern value *eval_skip_value (expression *exp);
 
 extern void fetch_subexp_value (struct expression *exp, int *pc,
 				struct value **valp, struct value **resultp,
-				std::vector<value_ref_ptr> *val_chain,
+				struct value **val_chain,
 				int preserve_errors);
 
-extern const char *extract_field_op (struct expression *exp, int *subexp);
+extern char *extract_field_op (struct expression *exp, int *subexp);
 
 extern struct value *evaluate_subexp_with_coercion (struct expression *,
 						    int *, enum noside);
@@ -1054,7 +1024,32 @@ extern int unop_user_defined_p (enum exp_opcode op, struct value *arg1);
 
 extern int destructor_name_p (const char *name, struct type *type);
 
-extern value_ref_ptr release_value (struct value *val);
+extern void value_incref (struct value *val);
+
+extern void value_free (struct value *val);
+
+/* A free policy class to interface std::unique_ptr with
+   value_free.  */
+
+struct value_deleter
+{
+  void operator() (struct value *value) const
+  {
+    value_free (value);
+  }
+};
+
+/* A unique pointer to a struct value.  */
+
+typedef std::unique_ptr<struct value, value_deleter> gdb_value_up;
+
+extern void free_all_values (void);
+
+extern void free_value_chain (struct value *v);
+
+extern void release_value (struct value *val);
+
+extern void release_value_or_incref (struct value *val);
 
 extern int record_latest_value (struct value *val);
 
@@ -1083,14 +1078,7 @@ extern void value_print_array_elements (struct value *val,
 					struct ui_file *stream, int format,
 					enum val_prettyformat pretty);
 
-/* Release values from the value chain and return them.  Values
-   created after MARK are released.  If MARK is nullptr, or if MARK is
-   not found on the value chain, then all values are released.  Values
-   are returned in reverse order of creation; that is, newest
-   first.  */
-
-extern std::vector<value_ref_ptr> value_release_to_mark
-    (const struct value *mark);
+extern struct value *value_release_to_mark (const struct value *mark);
 
 extern void val_print (struct type *type,
 		       LONGEST embedded_offset, CORE_ADDR address,
@@ -1176,21 +1164,9 @@ char *value_internal_function_name (struct value *);
 extern struct value *value_from_xmethod (xmethod_worker_up &&worker);
 
 extern struct type *result_type_of_xmethod (struct value *method,
-					    gdb::array_view<value *> argv);
+					    int argc, struct value **argv);
 
 extern struct value *call_xmethod (struct value *method,
-				   gdb::array_view<value *> argv);
-
-/* Given a discriminated union type and some corresponding value
-   contents, this will return the field index of the currently active
-   variant.  This will throw an exception if no active variant can be
-   found.  */
-
-extern int value_union_variant (struct type *union_type,
-				const gdb_byte *contents);
-
-/* Destroy the values currently allocated.  This is called when GDB is
-   exiting (e.g., on quit_force).  */
-extern void finalize_values ();
+				   int argc, struct value **argv);
 
 #endif /* !defined (VALUE_H) */

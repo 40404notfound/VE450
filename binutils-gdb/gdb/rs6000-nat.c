@@ -1,6 +1,6 @@
 /* IBM RS/6000 native-dependent code for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2019 Free Software Foundation, Inc.
+   Copyright (C) 1986-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -33,7 +33,7 @@
 #include "rs6000-tdep.h"
 #include "rs6000-aix-tdep.h"
 #include "exec.h"
-#include "observable.h"
+#include "observer.h"
 #include "xcoffread.h"
 
 #include <sys/ptrace.h>
@@ -74,34 +74,7 @@
 # define ARCH64() (register_size (target_gdbarch (), 0) == 8)
 #endif
 
-class rs6000_nat_target final : public inf_ptrace_target
-{
-public:
-  void fetch_registers (struct regcache *, int) override;
-  void store_registers (struct regcache *, int) override;
-
-  enum target_xfer_status xfer_partial (enum target_object object,
-					const char *annex,
-					gdb_byte *readbuf,
-					const gdb_byte *writebuf,
-					ULONGEST offset, ULONGEST len,
-					ULONGEST *xfered_len) override;
-
-  void create_inferior (const char *, const std::string &,
-			char **, int) override;
-
-  ptid_t wait (ptid_t, struct target_waitstatus *, int) override;
-
-private:
-  enum target_xfer_status
-    xfer_shared_libraries (enum target_object object,
-			   const char *annex, gdb_byte *readbuf,
-			   const gdb_byte *writebuf,
-			   ULONGEST offset, ULONGEST len,
-			   ULONGEST *xfered_len);
-};
-
-static rs6000_nat_target the_rs6000_nat_target;
+static target_xfer_partial_ftype rs6000_xfer_shared_libraries;
 
 /* Given REGNO, a gdb register number, return the corresponding
    number suitable for use as a ptrace() parameter.  Return -1 if
@@ -191,7 +164,7 @@ fetch_register (struct regcache *regcache, int regno)
   struct gdbarch *gdbarch = regcache->arch ();
   int addr[PPC_MAX_REGISTER_SIZE];
   int nr, isfloat;
-  pid_t pid = regcache->ptid ().pid ();
+  pid_t pid = ptid_get_pid (regcache_get_ptid (regcache));
 
   /* Retrieved values may be -1, so infer errors from errno.  */
   errno = 0;
@@ -231,7 +204,7 @@ fetch_register (struct regcache *regcache, int regno)
     }
 
   if (!errno)
-    regcache->raw_supply (regno, (char *) addr);
+    regcache_raw_supply (regcache, regno, (char *) addr);
   else
     {
 #if 0
@@ -250,10 +223,10 @@ store_register (struct regcache *regcache, int regno)
   struct gdbarch *gdbarch = regcache->arch ();
   int addr[PPC_MAX_REGISTER_SIZE];
   int nr, isfloat;
-  pid_t pid = regcache->ptid ().pid ();
+  pid_t pid = ptid_get_pid (regcache_get_ptid (regcache));
 
   /* Fetch the register's value from the register cache.  */
-  regcache->raw_collect (regno, addr);
+  regcache_raw_collect (regcache, regno, addr);
 
   /* -1 can be a successful return value, so infer errors from errno.  */
   errno = 0;
@@ -304,8 +277,9 @@ store_register (struct regcache *regcache, int regno)
 /* Read from the inferior all registers if REGNO == -1 and just register
    REGNO otherwise.  */
 
-void
-rs6000_nat_target::fetch_registers (struct regcache *regcache, int regno)
+static void
+rs6000_fetch_inferior_registers (struct target_ops *ops,
+				 struct regcache *regcache, int regno)
 {
   struct gdbarch *gdbarch = regcache->arch ();
   if (regno != -1)
@@ -346,8 +320,9 @@ rs6000_nat_target::fetch_registers (struct regcache *regcache, int regno)
    If REGNO is -1, do this for all registers.
    Otherwise, REGNO specifies which register (so we can save time).  */
 
-void
-rs6000_nat_target::store_registers (struct regcache *regcache, int regno)
+static void
+rs6000_store_inferior_registers (struct target_ops *ops,
+				 struct regcache *regcache, int regno)
 {
   struct gdbarch *gdbarch = regcache->arch ();
   if (regno != -1)
@@ -386,22 +361,21 @@ rs6000_nat_target::store_registers (struct regcache *regcache, int regno)
 
 /* Implement the to_xfer_partial target_ops method.  */
 
-enum target_xfer_status
-rs6000_nat_target::xfer_partial (enum target_object object,
-				 const char *annex, gdb_byte *readbuf,
-				 const gdb_byte *writebuf,
-				 ULONGEST offset, ULONGEST len,
-				 ULONGEST *xfered_len)
+static enum target_xfer_status
+rs6000_xfer_partial (struct target_ops *ops, enum target_object object,
+		     const char *annex, gdb_byte *readbuf,
+		     const gdb_byte *writebuf,
+		     ULONGEST offset, ULONGEST len, ULONGEST *xfered_len)
 {
-  pid_t pid = inferior_ptid.pid ();
+  pid_t pid = ptid_get_pid (inferior_ptid);
   int arch64 = ARCH64 ();
 
   switch (object)
     {
     case TARGET_OBJECT_LIBRARIES_AIX:
-      return xfer_shared_libraries (object, annex,
-				    readbuf, writebuf,
-				    offset, len, xfered_len);
+      return rs6000_xfer_shared_libraries (ops, object, annex,
+					   readbuf, writebuf,
+					   offset, len, xfered_len);
     case TARGET_OBJECT_MEMORY:
       {
 	union
@@ -493,9 +467,9 @@ rs6000_nat_target::xfer_partial (enum target_object object,
    process ID of the child, or MINUS_ONE_PTID in case of error; store
    the status in *OURSTATUS.  */
 
-ptid_t
-rs6000_nat_target::wait (ptid_t ptid, struct target_waitstatus *ourstatus,
-			 int options)
+static ptid_t
+rs6000_wait (struct target_ops *ops,
+	     ptid_t ptid, struct target_waitstatus *ourstatus, int options)
 {
   pid_t pid;
   int status, save_errno;
@@ -506,7 +480,7 @@ rs6000_nat_target::wait (ptid_t ptid, struct target_waitstatus *ourstatus,
 
       do
 	{
-	  pid = waitpid (ptid.pid (), &status, 0);
+	  pid = waitpid (ptid_get_pid (ptid), &status, 0);
 	  save_errno = errno;
 	}
       while (pid == -1 && errno == EINTR);
@@ -526,7 +500,7 @@ rs6000_nat_target::wait (ptid_t ptid, struct target_waitstatus *ourstatus,
 	}
 
       /* Ignore terminated detached child processes.  */
-      if (!WIFSTOPPED (status) && pid != inferior_ptid.pid ())
+      if (!WIFSTOPPED (status) && pid != ptid_get_pid (inferior_ptid))
 	pid = -1;
     }
   while (pid == -1);
@@ -543,24 +517,27 @@ rs6000_nat_target::wait (ptid_t ptid, struct target_waitstatus *ourstatus,
   else
     store_waitstatus (ourstatus, status);
 
-  return ptid_t (pid);
+  return pid_to_ptid (pid);
 }
 
 
 /* Set the current architecture from the host running GDB.  Called when
    starting a child process.  */
 
-void
-rs6000_nat_target::create_inferior (const char *exec_file,
-				    const std::string &allargs,
-				    char **env, int from_tty)
+static void (*super_create_inferior) (struct target_ops *,
+				      const char *exec_file,
+				      const std::string &allargs,
+				      char **env, int from_tty);
+static void
+rs6000_create_inferior (struct target_ops * ops, const char *exec_file,
+			const std::string &allargs, char **env, int from_tty)
 {
   enum bfd_architecture arch;
   unsigned long mach;
   bfd abfd;
   struct gdbarch_info info;
 
-  inf_ptrace_target::create_inferior (exec_file, allargs, env, from_tty);
+  super_create_inferior (ops, exec_file, allargs, env, from_tty);
 
   if (__power_rs ())
     {
@@ -606,23 +583,25 @@ rs6000_nat_target::create_inferior (const char *exec_file,
 /* Shared Object support.  */
 
 /* Return the LdInfo data for the given process.  Raises an error
-   if the data could not be obtained.  */
+   if the data could not be obtained.
 
-static gdb::byte_vector
+   The returned value must be deallocated after use.  */
+
+static gdb_byte *
 rs6000_ptrace_ldinfo (ptid_t ptid)
 {
-  const int pid = ptid.pid ();
-  gdb::byte_vector ldi (1024);
+  const int pid = ptid_get_pid (ptid);
+  int ldi_size = 1024;
+  void *ldi = xmalloc (ldi_size);
   int rc = -1;
 
   while (1)
     {
       if (ARCH64 ())
-	rc = rs6000_ptrace64 (PT_LDINFO, pid, (unsigned long) ldi.data (),
-			      ldi.size (), NULL);
+	rc = rs6000_ptrace64 (PT_LDINFO, pid, (unsigned long) ldi, ldi_size,
+			      NULL);
       else
-	rc = rs6000_ptrace32 (PT_LDINFO, pid, (int *) ldi.data (),
-			      ldi.size (), NULL);
+	rc = rs6000_ptrace32 (PT_LDINFO, pid, (int *) ldi, ldi_size, NULL);
 
       if (rc != -1)
 	break; /* Success, we got the entire ld_info data.  */
@@ -631,22 +610,25 @@ rs6000_ptrace_ldinfo (ptid_t ptid)
 	perror_with_name (_("ptrace ldinfo"));
 
       /* ldi is not big enough.  Double it and try again.  */
-      ldi.resize (ldi.size () * 2);
+      ldi_size *= 2;
+      ldi = xrealloc (ldi, ldi_size);
     }
 
-  return ldi;
+  return (gdb_byte *) ldi;
 }
 
 /* Implement the to_xfer_partial target_ops method for
    TARGET_OBJECT_LIBRARIES_AIX objects.  */
 
-enum target_xfer_status
-rs6000_nat_target::xfer_shared_libraries
-  (enum target_object object,
+static enum target_xfer_status
+rs6000_xfer_shared_libraries
+  (struct target_ops *ops, enum target_object object,
    const char *annex, gdb_byte *readbuf, const gdb_byte *writebuf,
    ULONGEST offset, ULONGEST len, ULONGEST *xfered_len)
 {
+  gdb_byte *ldi_buf;
   ULONGEST result;
+  struct cleanup *cleanup;
 
   /* This function assumes that it is being run with a live process.
      Core files are handled via gdbarch.  */
@@ -655,9 +637,14 @@ rs6000_nat_target::xfer_shared_libraries
   if (writebuf)
     return TARGET_XFER_E_IO;
 
-  gdb::byte_vector ldi_buf = rs6000_ptrace_ldinfo (inferior_ptid);
-  result = rs6000_aix_ld_info_to_xml (target_gdbarch (), ldi_buf.data (),
+  ldi_buf = rs6000_ptrace_ldinfo (inferior_ptid);
+  gdb_assert (ldi_buf != NULL);
+  cleanup = make_cleanup (xfree, ldi_buf);
+  result = rs6000_aix_ld_info_to_xml (target_gdbarch (), ldi_buf,
 				      readbuf, offset, len, 1);
+  xfree (ldi_buf);
+
+  do_cleanups (cleanup);
 
   if (result == 0)
     return TARGET_XFER_EOF;
@@ -671,5 +658,17 @@ rs6000_nat_target::xfer_shared_libraries
 void
 _initialize_rs6000_nat (void)
 {
-  add_inf_child_target (&the_rs6000_nat_target);
+  struct target_ops *t;
+
+  t = inf_ptrace_target ();
+  t->to_fetch_registers = rs6000_fetch_inferior_registers;
+  t->to_store_registers = rs6000_store_inferior_registers;
+  t->to_xfer_partial = rs6000_xfer_partial;
+
+  super_create_inferior = t->to_create_inferior;
+  t->to_create_inferior = rs6000_create_inferior;
+
+  t->to_wait = rs6000_wait;
+
+  add_target (t);
 }

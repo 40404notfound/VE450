@@ -1,6 +1,6 @@
 /* Support for printing Fortran types for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2019 Free Software Foundation, Inc.
+   Copyright (C) 1986-2018 Free Software Foundation, Inc.
 
    Contributed by Motorola.  Adapted from the C version by Farooq Butt
    (fmbutt@engage.sps.mot.com).
@@ -68,20 +68,13 @@ f_print_type (struct type *type, const char *varstring, struct ui_file *stream,
   f_type_print_base (type, stream, show, level);
   code = TYPE_CODE (type);
   if ((varstring != NULL && *varstring != '\0')
-      /* Need a space if going to print stars or brackets; but not if we
-	 will print just a type name.  */
-      || ((show > 0
-	   || TYPE_NAME (type) == 0)
-          && (code == TYPE_CODE_FUNC
+  /* Need a space if going to print stars or brackets;
+     but not if we will print just a type name.  */
+      || ((show > 0 || TYPE_NAME (type) == 0)
+          && (code == TYPE_CODE_PTR || code == TYPE_CODE_FUNC
 	      || code == TYPE_CODE_METHOD
 	      || code == TYPE_CODE_ARRAY
-	      || ((code == TYPE_CODE_PTR
-		   || code == TYPE_CODE_REF)
-		  && (TYPE_CODE (TYPE_TARGET_TYPE (type)) == TYPE_CODE_FUNC
-		      || (TYPE_CODE (TYPE_TARGET_TYPE (type))
-			  == TYPE_CODE_METHOD)
-		      || (TYPE_CODE (TYPE_TARGET_TYPE (type))
-			  == TYPE_CODE_ARRAY))))))
+	      || code == TYPE_CODE_REF)))
     fputs_filtered (" ", stream);
   f_type_print_varspec_prefix (type, stream, show, 0);
 
@@ -168,6 +161,8 @@ f_type_print_varspec_suffix (struct type *type, struct ui_file *stream,
 			     int show, int passed_a_ptr, int demangled_args,
 			     int arrayprint_recurse_level)
 {
+  int upper_bound, lower_bound;
+
   /* No static variables are permitted as an error call may occur during
      execution of this function.  */
 
@@ -197,10 +192,9 @@ f_type_print_varspec_suffix (struct type *type, struct ui_file *stream,
             f_type_print_varspec_suffix (TYPE_TARGET_TYPE (type), stream, 0,
                                         0, 0, arrayprint_recurse_level);
 
-          LONGEST lower_bound = f77_get_lowerbound (type);
-
+          lower_bound = f77_get_lowerbound (type);
           if (lower_bound != 1)	/* Not the default.  */
-            fprintf_filtered (stream, "%s:", plongest (lower_bound));
+            fprintf_filtered (stream, "%d:", lower_bound);
 
           /* Make sure that, if we have an assumed size array, we
              print out a warning and print the upperbound as '*'.  */
@@ -209,9 +203,8 @@ f_type_print_varspec_suffix (struct type *type, struct ui_file *stream,
             fprintf_filtered (stream, "*");
           else
             {
-              LONGEST upper_bound = f77_get_upperbound (type);
-
-              fputs_filtered (plongest (upper_bound), stream);
+              upper_bound = f77_get_upperbound (type);
+              fprintf_filtered (stream, "%d", upper_bound);
             }
 
           if (TYPE_CODE (TYPE_TARGET_TYPE (type)) != TYPE_CODE_ARRAY)
@@ -229,33 +222,16 @@ f_type_print_varspec_suffix (struct type *type, struct ui_file *stream,
     case TYPE_CODE_REF:
       f_type_print_varspec_suffix (TYPE_TARGET_TYPE (type), stream, 0, 1, 0,
 				   arrayprint_recurse_level);
-      fprintf_filtered (stream, " )");
+      fprintf_filtered (stream, ")");
       break;
 
     case TYPE_CODE_FUNC:
-      {
-	int i, nfields = TYPE_NFIELDS (type);
-
-	f_type_print_varspec_suffix (TYPE_TARGET_TYPE (type), stream, 0,
-				     passed_a_ptr, 0, arrayprint_recurse_level);
-	if (passed_a_ptr)
-	  fprintf_filtered (stream, ") ");
-	fprintf_filtered (stream, "(");
-	if (nfields == 0 && TYPE_PROTOTYPED (type))
-	  f_print_type (builtin_f_type (get_type_arch (type))->builtin_void,
-			"", stream, -1, 0, 0);
-	else
-	  for (i = 0; i < nfields; i++)
-	    {
-	      if (i > 0)
-		{
-		  fputs_filtered (", ", stream);
-		  wrap_here ("    ");
-		}
-	      f_print_type (TYPE_FIELD_TYPE (type, i), "", stream, -1, 0, 0);
-	    }
+      f_type_print_varspec_suffix (TYPE_TARGET_TYPE (type), stream, 0,
+				   passed_a_ptr, 0, arrayprint_recurse_level);
+      if (passed_a_ptr)
 	fprintf_filtered (stream, ")");
-      }
+
+      fprintf_filtered (stream, "()");
       break;
 
     case TYPE_CODE_UNDEF:
@@ -297,6 +273,7 @@ void
 f_type_print_base (struct type *type, struct ui_file *stream, int show,
 		   int level)
 {
+  int upper_bound;
   int index;
 
   QUIT;
@@ -313,12 +290,7 @@ f_type_print_base (struct type *type, struct ui_file *stream, int show,
 
   if ((show <= 0) && (TYPE_NAME (type) != NULL))
     {
-      const char *prefix = "";
-      if (TYPE_CODE (type) == TYPE_CODE_UNION)
-	prefix = "Type, C_Union :: ";
-      else if (TYPE_CODE (type) == TYPE_CODE_STRUCT)
-	prefix = "Type ";
-      fprintfi_filtered (level, stream, "%s%s", prefix, TYPE_NAME (type));
+      fprintfi_filtered (level, stream, "%s", TYPE_NAME (type));
       return;
     }
 
@@ -352,11 +324,7 @@ f_type_print_base (struct type *type, struct ui_file *stream, int show,
       break;
 
     case TYPE_CODE_VOID:
-      {
-	gdbarch *gdbarch = get_type_arch (type);
-	struct type *void_type = builtin_f_type (gdbarch)->builtin_void;
-	fprintfi_filtered (level, stream, "%s", TYPE_NAME (void_type));
-      }
+      fprintfi_filtered (level, stream, "VOID");
       break;
 
     case TYPE_CODE_UNDEF:
@@ -391,9 +359,8 @@ f_type_print_base (struct type *type, struct ui_file *stream, int show,
 	fprintfi_filtered (level, stream, "character*(*)");
       else
 	{
-	  LONGEST upper_bound = f77_get_upperbound (type);
-
-	  fprintf_filtered (stream, "character*%s", pulongest (upper_bound));
+	  upper_bound = f77_get_upperbound (type);
+	  fprintf_filtered (stream, "character*%d", upper_bound);
 	}
       break;
 
@@ -403,7 +370,7 @@ f_type_print_base (struct type *type, struct ui_file *stream, int show,
 	fprintfi_filtered (level, stream, "Type, C_Union :: ");
       else
 	fprintfi_filtered (level, stream, "Type ");
-      fputs_filtered (TYPE_NAME (type), stream);
+      fputs_filtered (TYPE_TAG_NAME (type), stream);
       /* According to the definition,
          we only print structure elements in case show > 0.  */
       if (show > 0)
@@ -420,12 +387,12 @@ f_type_print_base (struct type *type, struct ui_file *stream, int show,
 	      fputs_filtered ("\n", stream);
 	    }
 	  fprintfi_filtered (level, stream, "End Type ");
-	  fputs_filtered (TYPE_NAME (type), stream);
+	  fputs_filtered (TYPE_TAG_NAME (type), stream);
 	}
       break;
 
     case TYPE_CODE_MODULE:
-      fprintfi_filtered (level, stream, "module %s", TYPE_NAME (type));
+      fprintfi_filtered (level, stream, "module %s", TYPE_TAG_NAME (type));
       break;
 
     default_case:
@@ -440,7 +407,4 @@ f_type_print_base (struct type *type, struct ui_file *stream, int show,
 	error (_("Invalid type code (%d) in symbol table."), TYPE_CODE (type));
       break;
     }
-
-  if (TYPE_IS_ALLOCATABLE (type))
-    fprintf_filtered (stream, ", allocatable");
 }

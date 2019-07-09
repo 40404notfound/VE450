@@ -1,6 +1,6 @@
 /* Scheme interface to symbols.
 
-   Copyright (C) 2008-2019 Free Software Foundation, Inc.
+   Copyright (C) 2008-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -486,17 +486,16 @@ gdbscm_symbol_needs_frame_p (SCM self)
   struct symbol *symbol = s_smob->symbol;
   int result = 0;
 
-  gdbscm_gdb_exception exc {};
-  try
+  TRY
     {
       result = symbol_read_needs_frame (symbol);
     }
-  catch (const gdb_exception &except)
+  CATCH (except, RETURN_MASK_ALL)
     {
-      exc = unpack (except);
+      GDBSCM_HANDLE_GDB_EXCEPTION (except);
     }
+  END_CATCH
 
-  GDBSCM_HANDLE_GDB_EXCEPTION (exc);
   return scm_from_bool (result);
 }
 
@@ -540,8 +539,7 @@ gdbscm_symbol_value (SCM self, SCM rest)
 				 _("cannot get the value of a typedef"));
     }
 
-  gdbscm_gdb_exception exc {};
-  try
+  TRY
     {
       if (f_smob != NULL)
 	{
@@ -559,12 +557,12 @@ gdbscm_symbol_value (SCM self, SCM rest)
 	 can happen with nested functions).  */
       value = read_var_value (symbol, NULL, frame_info);
     }
-  catch (const gdb_exception &except)
+  CATCH (except, RETURN_MASK_ALL)
     {
-      exc = unpack (except);
+      GDBSCM_HANDLE_GDB_EXCEPTION (except);
     }
+  END_CATCH
 
-  GDBSCM_HANDLE_GDB_EXCEPTION (exc);
   return vlscm_scm_from_value (value);
 }
 
@@ -584,11 +582,15 @@ gdbscm_lookup_symbol (SCM name_scm, SCM rest)
   int block_arg_pos = -1, domain_arg_pos = -1;
   struct field_of_this_result is_a_field_of_this;
   struct symbol *symbol = NULL;
+  struct cleanup *cleanups;
+  struct gdb_exception except = exception_none;
 
   gdbscm_parse_function_args (FUNC_NAME, SCM_ARG1, keywords, "s#Oi",
 			      name_scm, &name, rest,
 			      &block_arg_pos, &block_scm,
 			      &domain_arg_pos, &domain);
+
+  cleanups = make_cleanup (xfree, name);
 
   if (block_arg_pos >= 0)
     {
@@ -598,7 +600,7 @@ gdbscm_lookup_symbol (SCM name_scm, SCM rest)
 				  &except_scm);
       if (block == NULL)
 	{
-	  xfree (name);
+	  do_cleanups (cleanups);
 	  gdbscm_throw (except_scm);
 	}
     }
@@ -606,32 +608,30 @@ gdbscm_lookup_symbol (SCM name_scm, SCM rest)
     {
       struct frame_info *selected_frame;
 
-      gdbscm_gdb_exception exc {};
-      try
+      TRY
 	{
 	  selected_frame = get_selected_frame (_("no frame selected"));
 	  block = get_frame_block (selected_frame, NULL);
 	}
-      catch (const gdb_exception &ex)
+      CATCH (except, RETURN_MASK_ALL)
 	{
-	  xfree (name);
-	  exc = unpack (ex);
+	  GDBSCM_HANDLE_GDB_EXCEPTION_WITH_CLEANUPS (except, cleanups);
 	}
-      GDBSCM_HANDLE_GDB_EXCEPTION (exc);
+      END_CATCH
     }
 
-  gdbscm_gdb_exception except {};
-  try
+  TRY
     {
       symbol = lookup_symbol (name, block, (domain_enum) domain,
 			      &is_a_field_of_this).symbol;
     }
-  catch (const gdb_exception &ex)
+  CATCH (ex, RETURN_MASK_ALL)
     {
-      except = unpack (ex);
+      except = ex;
     }
+  END_CATCH
 
-  xfree (name);
+  do_cleanups (cleanups);
   GDBSCM_HANDLE_GDB_EXCEPTION (except);
 
   if (symbol == NULL)
@@ -652,22 +652,26 @@ gdbscm_lookup_global_symbol (SCM name_scm, SCM rest)
   int domain_arg_pos = -1;
   int domain = VAR_DOMAIN;
   struct symbol *symbol = NULL;
-  gdbscm_gdb_exception except {};
+  struct cleanup *cleanups;
+  struct gdb_exception except = exception_none;
 
   gdbscm_parse_function_args (FUNC_NAME, SCM_ARG1, keywords, "s#i",
 			      name_scm, &name, rest,
 			      &domain_arg_pos, &domain);
 
-  try
+  cleanups = make_cleanup (xfree, name);
+
+  TRY
     {
       symbol = lookup_global_symbol (name, NULL, (domain_enum) domain).symbol;
     }
-  catch (const gdb_exception &ex)
+  CATCH (ex, RETURN_MASK_ALL)
     {
-      except = unpack (ex);
+      except = ex;
     }
+  END_CATCH
 
-  xfree (name);
+  do_cleanups (cleanups);
   GDBSCM_HANDLE_GDB_EXCEPTION (except);
 
   if (symbol == NULL)

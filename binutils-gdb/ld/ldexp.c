@@ -1,5 +1,5 @@
 /* This module handles expression trees.
-   Copyright (C) 1991-2019 Free Software Foundation, Inc.
+   Copyright (C) 1991-2018 Free Software Foundation, Inc.
    Written by Steve Chamberlain of Cygnus Support <sac@cygnus.com>.
 
    This file is part of the GNU Binutils.
@@ -280,7 +280,7 @@ definedness_newfunc (struct bfd_hash_entry *entry,
       bfd_hash_allocate (table, sizeof (struct definedness_hash_entry));
 
   if (ret == NULL)
-    einfo (_("%F%P: bfd_hash_allocate failed creating symbol %s\n"), name);
+    einfo (_("%P%F: bfd_hash_allocate failed creating symbol %s\n"), name);
 
   ret->by_object = 0;
   ret->iteration = 0;
@@ -311,7 +311,7 @@ update_definedness (const char *name, struct bfd_link_hash_entry *h)
     bfd_hash_lookup (&definedness_table, name, TRUE, FALSE);
 
   if (defentry == NULL)
-    einfo (_("%F%P: bfd_hash_lookup failed creating symbol %s\n"), name);
+    einfo (_("%P%F: bfd_hash_lookup failed creating symbol %s\n"), name);
 
   /* If the symbol was already defined, and not by a script, then it
      must be defined by an object file or by the linker target code.  */
@@ -534,7 +534,6 @@ fold_binary (etree_type *tree)
      operand, binary.rhs is first operand.  */
   if (expld.result.valid_p && tree->type.node_code == SEGMENT_START)
     {
-      bfd_vma value = expld.result.value;
       const char *segment_name;
       segment_type *seg;
 
@@ -546,16 +545,14 @@ fold_binary (etree_type *tree)
 	  {
 	    if (!seg->used
 		&& config.magic_demand_paged
-		&& config.maxpagesize != 0
 		&& (seg->value % config.maxpagesize) != 0)
 	      einfo (_("%P: warning: address of `%s' "
 		       "isn't multiple of maximum page size\n"),
 		     segment_name);
 	    seg->used = TRUE;
-	    value = seg->value;
+	    new_rel_from_abs (seg->value);
 	    break;
 	  }
-      new_rel_from_abs (value);
       return;
     }
 
@@ -627,7 +624,7 @@ fold_binary (etree_type *tree)
 	    expld.result.value = ((bfd_signed_vma) lhs.value
 				  % (bfd_signed_vma) expld.result.value);
 	  else if (expld.phase != lang_mark_phase_enum)
-	    einfo (_("%F%P:%pS %% by zero\n"), tree->binary.rhs);
+	    einfo (_("%F%S %% by zero\n"), tree->binary.rhs);
 	  arith_result_section (&lhs);
 	  break;
 
@@ -636,7 +633,7 @@ fold_binary (etree_type *tree)
 	    expld.result.value = ((bfd_signed_vma) lhs.value
 				  / (bfd_signed_vma) expld.result.value);
 	  else if (expld.phase != lang_mark_phase_enum)
-	    einfo (_("%F%P:%pS / by zero\n"), tree->binary.rhs);
+	    einfo (_("%F%S / by zero\n"), tree->binary.rhs);
 	  arith_result_section (&lhs);
 	  break;
 
@@ -692,7 +689,6 @@ fold_name (etree_type *tree)
   switch (tree->type.node_code)
     {
     case SIZEOF_HEADERS:
-      link_info.load_phdrs = 1;
       if (expld.phase != lang_first_phase_enum)
 	{
 	  bfd_vma hdr_size = 0;
@@ -720,6 +716,23 @@ fold_name (etree_type *tree)
       break;
 
     case NAME:
+      if (expld.assign_name != NULL
+	  && strcmp (expld.assign_name, tree->name.name) == 0)
+	{
+	  /* Self-assignment is only allowed for absolute symbols
+	     defined in a linker script.  */
+	  h = bfd_wrapped_link_hash_lookup (link_info.output_bfd,
+					    &link_info,
+					    tree->name.name,
+					    FALSE, FALSE, TRUE);
+	  if (!(h != NULL
+		&& (h->type == bfd_link_hash_defined
+		    || h->type == bfd_link_hash_defweak)
+		&& h->u.def.section == bfd_abs_section_ptr
+		&& (def = symbol_defined (tree->name.name)) != NULL
+		&& def->iteration == (lang_statement_iteration & 255)))
+	    expld.assign_name = NULL;
+	}
       if (tree->name.name[0] == '.' && tree->name.name[1] == 0)
 	new_rel_from_abs (expld.dot);
       else
@@ -729,7 +742,7 @@ fold_name (etree_type *tree)
 					    tree->name.name,
 					    TRUE, FALSE, TRUE);
 	  if (!h)
-	    einfo (_("%F%P: bfd_link_hash_lookup failed: %E\n"));
+	    einfo (_("%P%F: bfd_link_hash_lookup failed: %E\n"));
 	  else if (h->type == bfd_link_hash_defined
 		   || h->type == bfd_link_hash_defweak)
 	    {
@@ -741,7 +754,7 @@ fold_name (etree_type *tree)
 		  if (expld.phase <= lang_mark_phase_enum)
 		    new_rel (h->u.def.value, h->u.def.section);
 		  else
-		    einfo (_("%X%P:%pS: unresolvable symbol `%s'"
+		    einfo (_("%X%S: unresolvable symbol `%s'"
 			     " referenced in expression\n"),
 			   tree, tree->name.name);
 		}
@@ -756,7 +769,7 @@ fold_name (etree_type *tree)
 	  else if (expld.phase == lang_final_phase_enum
 		   || (expld.phase != lang_mark_phase_enum
 		       && expld.assigning_to_dot))
-	    einfo (_("%F%P:%pS: undefined symbol `%s'"
+	    einfo (_("%F%S: undefined symbol `%s'"
 		     " referenced in expression\n"),
 		   tree, tree->name.name);
 	  else if (h->type == bfd_link_hash_new)
@@ -769,19 +782,7 @@ fold_name (etree_type *tree)
 	  if (expld.assign_src == NULL)
 	    expld.assign_src = h;
 	  else
-	    expld.assign_src = (struct bfd_link_hash_entry *) - 1;
-
-	  /* Self-assignment is only allowed for absolute symbols
-	     defined in a linker script.  */
-	  if (expld.assign_name != NULL
-	      && strcmp (expld.assign_name, tree->name.name) == 0
-	      && !(h != NULL
-		   && (h->type == bfd_link_hash_defined
-		       || h->type == bfd_link_hash_defweak)
-		   && h->u.def.section == bfd_abs_section_ptr
-		   && (def = symbol_defined (tree->name.name)) != NULL
-		   && def->iteration == (lang_statement_iteration & 255)))
-	    expld.assign_name = NULL;
+	    expld.assign_src = (struct bfd_link_hash_entry *) 0 - 1;
 	}
       break;
 
@@ -794,7 +795,7 @@ fold_name (etree_type *tree)
 	  if (os == NULL)
 	    {
 	      if (expld.phase == lang_final_phase_enum)
-		einfo (_("%F%P:%pS: undefined section `%s'"
+		einfo (_("%F%S: undefined section `%s'"
 			 " referenced in expression\n"),
 		       tree, tree->name.name);
 	    }
@@ -812,7 +813,7 @@ fold_name (etree_type *tree)
 	  if (os == NULL)
 	    {
 	      if (expld.phase == lang_final_phase_enum)
-		einfo (_("%F%P:%pS: undefined section `%s'"
+		einfo (_("%F%S: undefined section `%s'"
 			 " referenced in expression\n"),
 		       tree, tree->name.name);
 	    }
@@ -840,7 +841,7 @@ fold_name (etree_type *tree)
 	  if (os == NULL)
 	    {
 	      if (expld.phase == lang_final_phase_enum)
-		einfo (_("%F%P:%pS: undefined section `%s'"
+		einfo (_("%F%S: undefined section `%s'"
 			 " referenced in expression\n"),
 		       tree, tree->name.name);
 	      new_number (0);
@@ -864,30 +865,34 @@ fold_name (etree_type *tree)
 
     case LENGTH:
       {
-	lang_memory_region_type *mem;
+      if (expld.phase != lang_first_phase_enum)
+	{
+	  lang_memory_region_type *mem;
 
-	mem = lang_memory_region_lookup (tree->name.name, FALSE);
-	if (mem != NULL)
-	  new_number (mem->length);
-	else
-	  einfo (_("%F%P:%pS: undefined MEMORY region `%s'"
-		   " referenced in expression\n"),
-		 tree, tree->name.name);
+	  mem = lang_memory_region_lookup (tree->name.name, FALSE);
+	  if (mem != NULL)
+	    new_number (mem->length);
+	  else
+	    einfo (_("%F%S: undefined MEMORY region `%s'"
+		     " referenced in expression\n"),
+		   tree, tree->name.name);
+	}
       }
       break;
 
     case ORIGIN:
-      {
-	lang_memory_region_type *mem;
+      if (expld.phase != lang_first_phase_enum)
+	{
+	  lang_memory_region_type *mem;
 
-	mem = lang_memory_region_lookup (tree->name.name, FALSE);
-	if (mem != NULL)
-	  new_rel_from_abs (mem->origin);
-	else
-	  einfo (_("%F%P:%pS: undefined MEMORY region `%s'"
-		   " referenced in expression\n"),
-		 tree, tree->name.name);
-      }
+	  mem = lang_memory_region_lookup (tree->name.name, FALSE);
+	  if (mem != NULL)
+	    new_rel_from_abs (mem->origin);
+	  else
+	    einfo (_("%F%S: undefined MEMORY region `%s'"
+		     " referenced in expression\n"),
+		   tree, tree->name.name);
+	}
       break;
 
     case CONSTANT:
@@ -896,7 +901,7 @@ fold_name (etree_type *tree)
       else if (strcmp (tree->name.name, "COMMONPAGESIZE") == 0)
 	new_number (config.commonpagesize);
       else
-	einfo (_("%F%P:%pS: unknown constant `%s' referenced in expression\n"),
+	einfo (_("%F%S: unknown constant `%s' referenced in expression\n"),
 	       tree, tree->name.name);
       break;
 
@@ -1044,7 +1049,7 @@ exp_fold_tree_1 (etree_type *tree)
       if (tree->assign.dst[0] == '.' && tree->assign.dst[1] == 0)
 	{
 	  if (tree->type.node_class != etree_assign)
-	    einfo (_("%F%P:%pS can not PROVIDE assignment to"
+	    einfo (_("%F%S can not PROVIDE assignment to"
 		     " location counter\n"), tree);
 	  if (expld.phase != lang_first_phase_enum)
 	    {
@@ -1077,11 +1082,11 @@ exp_fold_tree_1 (etree_type *tree)
 		  || expld.section == bfd_und_section_ptr)
 		{
 		  if (expld.phase != lang_mark_phase_enum)
-		    einfo (_("%F%P:%pS invalid assignment to"
+		    einfo (_("%F%S invalid assignment to"
 			     " location counter\n"), tree);
 		}
 	      else if (expld.dotp == NULL)
-		einfo (_("%F%P:%pS assignment to location counter"
+		einfo (_("%F%S assignment to location counter"
 			 " invalid outside of SECTIONS\n"), tree);
 
 	      /* After allocation, assignment to dot should not be
@@ -1100,7 +1105,7 @@ exp_fold_tree_1 (etree_type *tree)
 		    nextdot += expld.section->vma;
 		  if (nextdot < expld.dot
 		      && expld.section != bfd_abs_section_ptr)
-		    einfo (_("%F%P:%pS cannot move location counter backwards"
+		    einfo (_("%F%S cannot move location counter backwards"
 			     " (from %V to %V)\n"),
 			   tree, expld.dot, nextdot);
 		  else
@@ -1149,8 +1154,7 @@ exp_fold_tree_1 (etree_type *tree)
 	     converted to absolute values, as is required by many
 	     expressions, until final section sizing is complete.  */
 	  if (expld.phase == lang_final_phase_enum
-	      || expld.phase == lang_fixed_phase_enum
-	      || expld.assign_name != NULL)
+              || expld.assign_name != NULL)
 	    {
 	      if (tree->type.node_class == etree_provide)
 		tree->type.node_class = etree_provided;
@@ -1160,7 +1164,7 @@ exp_fold_tree_1 (etree_type *tree)
 		  h = bfd_link_hash_lookup (link_info.hash, tree->assign.dst,
 					    TRUE, FALSE, TRUE);
 		  if (h == NULL)
-		    einfo (_("%F%P:%s: hash creation failed\n"),
+		    einfo (_("%P%F:%s: hash creation failed\n"),
 			   tree->assign.dst);
 		}
 
@@ -1191,40 +1195,24 @@ exp_fold_tree_1 (etree_type *tree)
 			(&link_info, h, link_info.output_bfd,
 			 expld.result.section, expld.result.value);
 		    }
-		  if (expld.phase == lang_fixed_phase_enum)
-		    {
-		      if (h->type == bfd_link_hash_defined)
-			{
-			  expld.result.value = h->u.def.value;
-			  expld.result.section = h->u.def.section;
-			}
-		    }
-		  else
-		    {
-		      h->type = bfd_link_hash_defined;
-		      h->u.def.value = expld.result.value;
-		      h->u.def.section = expld.result.section;
-		      h->linker_def = ! tree->assign.type.lineno;
-		      h->ldscript_def = 1;
-		      h->rel_from_abs = expld.rel_from_abs;
-		      if (tree->assign.hidden)
-			bfd_link_hide_symbol (link_info.output_bfd,
-					      &link_info, h);
+		  h->type = bfd_link_hash_defined;
+		  h->u.def.value = expld.result.value;
+		  h->u.def.section = expld.result.section;
+		  h->linker_def = ! tree->assign.type.lineno;
+		  h->ldscript_def = 1;
 
-		      /* Copy the symbol type if this is an expression only
-			 referencing a single symbol.  (If the expression
-			 contains ternary conditions, ignoring symbols on
-			 false branches.)  */
-		      if (expld.assign_src != NULL
-			  && (expld.assign_src
-			      != (struct bfd_link_hash_entry *) -1))
-			bfd_copy_link_hash_symbol_type (link_info.output_bfd,
-							h, expld.assign_src);
-		    }
+		  /* Copy the symbol type if this is an expression only
+		     referencing a single symbol.  (If the expression
+		     contains ternary conditions, ignoring symbols on
+		     false branches.)  */
+		  if (expld.assign_src != NULL
+		      && (expld.assign_src
+			  != (struct bfd_link_hash_entry *) 0 - 1))
+		    bfd_copy_link_hash_symbol_type (link_info.output_bfd, h,
+						    expld.assign_src);
 		}
 	    }
-	  if (expld.phase != lang_fixed_phase_enum)
-	    expld.assign_name = NULL;
+	  expld.assign_name = NULL;
 	}
       break;
 
@@ -1427,7 +1415,7 @@ exp_print_tree (etree_type *tree)
       return;
     case etree_rel:
       if (tree->rel.section->owner != NULL)
-	minfo ("%pB:", tree->rel.section->owner);
+	minfo ("%B:", tree->rel.section->owner);
       minfo ("%s+0x%v", tree->rel.section->name, tree->rel.value);
       return;
     case etree_assign:
@@ -1525,32 +1513,16 @@ exp_get_vma (etree_type *tree, bfd_vma def, char *name)
       if (expld.result.valid_p)
 	return expld.result.value;
       else if (name != NULL && expld.phase != lang_mark_phase_enum)
-	einfo (_("%F%P:%pS: nonconstant expression for %s\n"),
+	einfo (_("%F%S: nonconstant expression for %s\n"),
 	       tree, name);
     }
   return def;
 }
 
-/* Return the smallest non-negative integer such that two raised to
-   that power is at least as large as the vma evaluated at TREE, if
-   TREE is a non-NULL expression that can be resolved.  If TREE is
-   NULL or cannot be resolved, return -1.  */
-
 int
-exp_get_power (etree_type *tree, char *name)
+exp_get_value_int (etree_type *tree, int def, char *name)
 {
-  bfd_vma x = exp_get_vma (tree, -1, name);
-  bfd_vma p2;
-  int n;
-
-  if (x == (bfd_vma) -1)
-    return -1;
-
-  for (n = 0, p2 = 1; p2 < x; ++n, p2 <<= 1)
-    if (p2 == 0)
-      break;
-
-  return n;
+  return exp_get_vma (tree, def, name);
 }
 
 fill_type *
@@ -1567,7 +1539,7 @@ exp_get_fill (etree_type *tree, fill_type *def, char *name)
   if (!expld.result.valid_p)
     {
       if (name != NULL && expld.phase != lang_mark_phase_enum)
-	einfo (_("%F%P:%pS: nonconstant expression for %s\n"),
+	einfo (_("%F%S: nonconstant expression for %s\n"),
 	       tree, name);
       return def;
     }
@@ -1627,7 +1599,7 @@ exp_get_abs_int (etree_type *tree, int def, char *name)
 	}
       else if (name != NULL && expld.phase != lang_mark_phase_enum)
 	{
-	  einfo (_("%F%P:%pS: nonconstant expression for %s\n"),
+	  einfo (_("%F%S: nonconstant expression for %s\n"),
 		 tree, name);
 	}
     }
@@ -1653,7 +1625,7 @@ ldexp_init (void)
 			      definedness_newfunc,
 			      sizeof (struct definedness_hash_entry),
 			      13))
-    einfo (_("%F%P: can not create hash table: %E\n"));
+    einfo (_("%P%F: can not create hash table: %E\n"));
 }
 
 /* Convert absolute symbols defined by a script from "dot" (also

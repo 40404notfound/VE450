@@ -2,7 +2,7 @@
 #source: pr20513a.s
 #ld: -shared
 #readelf: -S --wide
-#target: *-*-linux* *-*-gnu* arm*-*-uclinuxfdpiceabi
+#target: *-*-linux* *-*-gnu*
 
 #failif
 #...

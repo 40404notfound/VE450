@@ -13,10 +13,11 @@ Relocation section .* contains 1 entry:
 .*
 .* R_PPC64_ADDR64 .* my_func \+ 0
 
-Symbol table '\.dynsym' contains 2 entries:
+Symbol table '\.dynsym' contains 5 entries:
 .*
      0: .*
      1: 0+00000000     0 FUNC    GLOBAL DEFAULT  UND my_func
+#...
 
 Symbol table '\.symtab' contains .* entries:
 #...

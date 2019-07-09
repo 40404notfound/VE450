@@ -1,5 +1,5 @@
 /* Memory breakpoint operations for the remote server for GDB.
-   Copyright (C) 2002-2019 Free Software Foundation, Inc.
+   Copyright (C) 2002-2018 Free Software Foundation, Inc.
 
    Contributed by MontaVista Software.
 
@@ -302,9 +302,10 @@ is_gdb_breakpoint (enum bkpt_type type)
 	  || type == gdb_breakpoint_Z4);
 }
 
-bool
-any_persistent_commands (process_info *proc)
+int
+any_persistent_commands (void)
 {
+  struct process_info *proc = current_process ();
   struct breakpoint *bp;
   struct point_command_list *cl;
 
@@ -316,11 +317,11 @@ any_persistent_commands (process_info *proc)
 
 	  for (cl = gdb_bp->command_list; cl != NULL; cl = cl->next)
 	    if (cl->persistence)
-	      return true;
+	      return 1;
 	}
     }
 
-  return false;
+  return 0;
 }
 
 /* Find low-level breakpoint of type TYPE at address ADDR that is not
@@ -430,6 +431,7 @@ set_raw_breakpoint_at (enum raw_bkpt_type type, CORE_ADDR where, int kind,
 {
   struct process_info *proc = current_process ();
   struct raw_breakpoint *bp;
+  struct cleanup *old_chain = make_cleanup (null_cleanup, NULL);
 
   if (type == raw_bkpt_type_sw || type == raw_bkpt_type_hw)
     {
@@ -448,14 +450,13 @@ set_raw_breakpoint_at (enum raw_bkpt_type type, CORE_ADDR where, int kind,
   else
     bp = find_raw_breakpoint_at (where, type, kind);
 
-  gdb::unique_xmalloc_ptr<struct raw_breakpoint> bp_holder;
   if (bp == NULL)
     {
-      bp_holder.reset (XCNEW (struct raw_breakpoint));
-      bp = bp_holder.get ();
+      bp = XCNEW (struct raw_breakpoint);
       bp->pc = where;
       bp->kind = kind;
       bp->raw_type = type;
+      make_cleanup (xfree, bp);
     }
 
   if (!bp->inserted)
@@ -467,15 +468,14 @@ set_raw_breakpoint_at (enum raw_bkpt_type type, CORE_ADDR where, int kind,
 	    debug_printf ("Failed to insert breakpoint at 0x%s (%d).\n",
 			  paddress (where), *err);
 
+	  do_cleanups (old_chain);
 	  return NULL;
 	}
 
       bp->inserted = 1;
     }
 
-  /* If the breakpoint was allocated above, we know we want to keep it
-     now.  */
-  bp_holder.release ();
+  discard_cleanups (old_chain);
 
   /* Link the breakpoint in, if this is the first reference.  */
   if (++bp->refcount == 1)
@@ -1481,7 +1481,7 @@ set_single_step_breakpoint (CORE_ADDR stop_at, ptid_t ptid)
 {
   struct single_step_breakpoint *bp;
 
-  gdb_assert (current_ptid.pid () == ptid.pid ());
+  gdb_assert (ptid_get_pid (current_ptid) == ptid_get_pid (ptid));
 
   bp = (struct single_step_breakpoint *) set_breakpoint_type_at (single_step_breakpoint,
 								stop_at, NULL);
@@ -1500,7 +1500,8 @@ delete_single_step_breakpoints (struct thread_info *thread)
   while (bp)
     {
       if (bp->type == single_step_breakpoint
-	  && ((struct single_step_breakpoint *) bp)->ptid == ptid_of (thread))
+	  && ptid_equal (((struct single_step_breakpoint *) bp)->ptid,
+			 ptid_of (thread)))
 	{
 	  struct thread_info *saved_thread = current_thread;
 
@@ -1596,7 +1597,8 @@ uninsert_single_step_breakpoints (struct thread_info *thread)
   for (bp = proc->breakpoints; bp != NULL; bp = bp->next)
     {
     if (bp->type == single_step_breakpoint
-	&& ((struct single_step_breakpoint *) bp)->ptid == ptid_of (thread))
+	&& ptid_equal (((struct single_step_breakpoint *) bp)->ptid,
+		       ptid_of (thread)))
       {
 	gdb_assert (bp->raw->inserted > 0);
 
@@ -1670,7 +1672,8 @@ has_single_step_breakpoints (struct thread_info *thread)
   while (bp)
     {
       if (bp->type == single_step_breakpoint
-	  && ((struct single_step_breakpoint *) bp)->ptid == ptid_of (thread))
+	  && ptid_equal (((struct single_step_breakpoint *) bp)->ptid,
+			 ptid_of (thread)))
 	return 1;
       else
 	{
@@ -1704,7 +1707,8 @@ reinsert_single_step_breakpoints (struct thread_info *thread)
   for (bp = proc->breakpoints; bp != NULL; bp = bp->next)
     {
       if (bp->type == single_step_breakpoint
-	  && ((struct single_step_breakpoint *) bp)->ptid == ptid_of (thread))
+	  && ptid_equal (((struct single_step_breakpoint *) bp)->ptid,
+			 ptid_of (thread)))
 	{
 	  gdb_assert (bp->raw->inserted > 0);
 

@@ -1,6 +1,6 @@
 /* Definitions for complaint handling during symbol reading in GDB.
 
-   Copyright (C) 1990-2019 Free Software Foundation, Inc.
+   Copyright (C) 1990-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -21,28 +21,47 @@
 #if !defined (COMPLAINTS_H)
 #define COMPLAINTS_H
 
+/* Opaque object used to track the number of complaints of a
+   particular category.  */
+struct complaints;
+
+/* Predefined categories.  */
+extern struct complaints *symfile_complaints;
+
 /* Helper for complaint.  */
-extern void complaint_internal (const char *fmt, ...)
-  ATTRIBUTE_PRINTF (1, 2);
+extern void complaint_internal (struct complaints **complaints,
+				const char *fmt, ...)
+  ATTRIBUTE_PRINTF (2, 3);
 
 /* Register a complaint.  This is a macro around complaint_internal to
    avoid computing complaint's arguments when complaints are disabled.
    Running FMT via gettext [i.e., _(FMT)] can be quite expensive, for
    example.  */
-#define complaint(FMT, ...)					\
+#define complaint(COMPLAINTS, FMT, ...)				\
   do								\
     {								\
       extern int stop_whining;					\
 								\
       if (stop_whining > 0)					\
-	complaint_internal (FMT, ##__VA_ARGS__);		\
+	complaint_internal (COMPLAINTS, FMT, ##__VA_ARGS__);	\
     }								\
   while (0)
 
-/* Clear out / initialize all complaint counters that have ever been
-   incremented.  */
+extern void internal_complaint (struct complaints **complaints,
+				const char *file, int line,
+				const char *fmt,
+				...) ATTRIBUTE_PRINTF (4, 5);
 
-extern void clear_complaints ();
+/* Clear out / initialize all complaint counters that have ever been
+   incremented.  If LESS_VERBOSE is 1, be less verbose about
+   successive complaints, since the messages are appearing all
+   together during a command that is reporting a contiguous block of
+   complaints (rather than being interleaved with other messages).  If
+   noisy is 1, we are in a noisy command, and our caller will print
+   enough context for the user to figure it out.  */
+
+extern void clear_complaints (struct complaints **complaints,
+			      int less_verbose, int noisy);
 
 
 #endif /* !defined (COMPLAINTS_H) */

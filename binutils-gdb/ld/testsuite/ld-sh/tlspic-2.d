@@ -72,4 +72,6 @@ Symbol table '\.dynsym' contains [0-9]+ entries:
 .* FUNC +GLOBAL +DEFAULT +7 fn1
 #...
 .* TLS +GLOBAL +DEFAULT +8 sg2
+#...
+
 #pass

@@ -1,7 +1,7 @@
 #objdump: -dr
 #name: TLS
 # This test is only valid on ELF based ports.
-#notarget: *-*-pe *-*-wince
+#not-target: *-*-*coff *-*-pe *-*-wince *-*-*aout* *-*-netbsd *-*-riscix*
 # VxWorks needs a special variant of this file.
 #skip: *-*-vxworks*
 

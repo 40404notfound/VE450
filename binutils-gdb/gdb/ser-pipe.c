@@ -1,5 +1,5 @@
 /* Serial interface for a pipe to a separate program
-   Copyright (C) 1999-2019 Free Software Foundation, Inc.
+   Copyright (C) 1999-2018 Free Software Foundation, Inc.
 
    Contributed by Cygnus Solutions.
 
@@ -27,9 +27,9 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>
-#include "common/gdb_sys_time.h"
+#include "gdb_sys_time.h"
 #include <fcntl.h>
-#include "common/filestuff.h"
+#include "filestuff.h"
 
 #include <signal.h>
 

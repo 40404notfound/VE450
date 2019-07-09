@@ -1,4 +1,4 @@
-/* Copyright (C) 2016-2019 Free Software Foundation, Inc.
+/* Copyright (C) 2016-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -72,7 +72,8 @@ save_original_signals_state (bool quiet)
 	  found_preinstalled = true;
 
 	  /* Use raw fprintf here because we're being called in early
-	     startup, before GDB's filtered streams are created.  */
+	     startup, because GDB's filtered streams are are
+	     created.  */
 	  fprintf (stderr,
 		   _("warning: Found custom handler for signal "
 		     "%d (%s) preinstalled.\n"), i,

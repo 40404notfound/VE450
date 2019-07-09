@@ -1,6 +1,6 @@
 #ld: -shared -T dynamic1.ld
 #readelf: -l --wide
-#target: *-*-linux* *-*-gnu* arm*-*-uclinuxfdpiceabi
+#target: *-*-linux* *-*-gnu*
 
 #...
  Section to Segment mapping:

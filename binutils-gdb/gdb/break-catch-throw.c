@@ -1,6 +1,6 @@
 /* Everything about catch/throw catchpoints, for GDB.
 
-   Copyright (C) 1986-2019 Free Software Foundation, Inc.
+   Copyright (C) 1986-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -154,7 +154,7 @@ check_status_exception_catchpoint (struct bpstats *bs)
   if (self->pattern == NULL)
     return;
 
-  try
+  TRY
     {
       struct value *typeinfo_arg;
       std::string canon;
@@ -166,10 +166,11 @@ check_status_exception_catchpoint (struct bpstats *bs)
       if (!canon.empty ())
 	std::swap (type_name, canon);
     }
-  catch (const gdb_exception_error &e)
+  CATCH (e, RETURN_MASK_ERROR)
     {
       exception_print (gdb_stderr, e);
     }
+  END_CATCH
 
   if (!type_name.empty ())
     {
@@ -188,17 +189,17 @@ re_set_exception_catchpoint (struct breakpoint *self)
   struct program_space *filter_pspace = current_program_space;
 
   /* We first try to use the probe interface.  */
-  try
+  TRY
     {
       event_location_up location
 	= new_probe_location (exception_functions[kind].probe);
       sals = parse_probes (location.get (), filter_pspace, NULL);
     }
-  catch (const gdb_exception_error &e)
+  CATCH (e, RETURN_MASK_ERROR)
     {
       /* Using the probe interface failed.  Let's fallback to the normal
 	 catchpoint mode.  */
-      try
+      TRY
 	{
 	  struct explicit_location explicit_loc;
 
@@ -209,14 +210,16 @@ re_set_exception_catchpoint (struct breakpoint *self)
 	  sals = self->ops->decode_location (self, location.get (),
 					     filter_pspace);
 	}
-      catch (const gdb_exception_error &ex)
+      CATCH (ex, RETURN_MASK_ERROR)
 	{
 	  /* NOT_FOUND_ERROR just means the breakpoint will be
 	     pending, so let it through.  */
 	  if (ex.error != NOT_FOUND_ERROR)
-	    throw;
+	    throw_exception (ex);
 	}
+      END_CATCH
     }
+  END_CATCH
 
   update_breakpoint_locations (self, filter_pspace, sals, {});
 }
@@ -235,7 +238,8 @@ print_it_exception_catchpoint (bpstat bs)
   bp_temp = b->disposition == disp_del;
   uiout->text (bp_temp ? "Temporary catchpoint "
 		       : "Catchpoint ");
-  uiout->field_int ("bkptno", b->number);
+  if (!uiout->is_mi_like_p ())
+    uiout->field_int ("bkptno", b->number);
   uiout->text ((kind == EX_EVENT_THROW ? " (exception thrown), "
 		: (kind == EX_EVENT_CATCH ? " (exception caught), "
 		   : " (exception rethrown), ")));
@@ -244,6 +248,7 @@ print_it_exception_catchpoint (bpstat bs)
       uiout->field_string ("reason",
 			   async_reason_lookup (EXEC_ASYNC_BREAKPOINT_HIT));
       uiout->field_string ("disp", bpdisp_text (b->disposition));
+      uiout->field_int ("bkptno", b->number);
     }
   return PRINT_SRC_AND_LOC;
 }

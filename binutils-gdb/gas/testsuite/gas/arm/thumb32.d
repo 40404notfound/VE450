@@ -1,7 +1,9 @@
 # name: 32-bit Thumb instructions
 # as: -march=armv6zkt2
 # objdump: -dr --prefix-addresses --show-raw-insn
-# warning_output: thumb32.l
+# The arm-aout and arm-pe ports do not support Thumb branch relocations.
+# not-target: *-*-*aout* *-*-pe
+# stderr: thumb32.l
 
 .*: +file format .*arm.*
 

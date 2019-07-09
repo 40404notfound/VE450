@@ -1,7 +1,7 @@
 /* *INDENT-OFF* */ /* ATTRIBUTE_PRINTF confuses indent, avoid running it
 		      for now.  */
 /* Basic, host-specific, and target-specific definitions for GDB.
-   Copyright (C) 1986-2019 Free Software Foundation, Inc.
+   Copyright (C) 1986-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -25,7 +25,7 @@
 #  error gdbserver should not include gdb/defs.h
 #endif
 
-#include "common/common-defs.h"
+#include "common-defs.h"
 
 #include <sys/types.h>
 #include <limits.h>
@@ -52,7 +52,7 @@
 
 #include "ui-file.h"
 
-#include "common/host-defs.h"
+#include "host-defs.h"
 #include "common/enum-flags.h"
 
 /* Scope types enumerator.  List the types of scopes the compiler will
@@ -309,7 +309,7 @@ typedef void initialize_file_ftype (void);
 
 extern char *gdb_readline_wrapper (const char *);
 
-extern char *command_line_input (const char *, const char *);
+extern char *command_line_input (const char *, int, const char *);
 
 extern void print_prompt (void);
 
@@ -327,8 +327,38 @@ extern int print_address_symbolic (struct gdbarch *, CORE_ADDR,
 				   struct ui_file *, int,
 				   const char *);
 
+extern int build_address_symbolic (struct gdbarch *,
+				   CORE_ADDR addr,
+				   int do_demangle, 
+				   char **name, 
+				   int *offset, 
+				   char **filename, 
+				   int *line, 	
+				   int *unmapped);
+
 extern void print_address (struct gdbarch *, CORE_ADDR, struct ui_file *);
 extern const char *pc_prefix (CORE_ADDR);
+
+/* From source.c */
+
+/* See openp function definition for their description.  */
+#define OPF_TRY_CWD_FIRST     0x01
+#define OPF_SEARCH_IN_PATH    0x02
+#define OPF_RETURN_REALPATH   0x04
+
+extern int openp (const char *, int, const char *, int, char **);
+
+extern int source_full_path_of (const char *, char **);
+
+extern void mod_path (const char *, char **);
+
+extern void add_path (const char *, char **, int);
+
+extern void directory_switch (const char *, int);
+
+extern char *source_path;
+
+extern void init_source_path (void);
 
 /* From exec.c */
 
@@ -389,12 +419,13 @@ enum info_proc_what
     /* * Display `info proc cwd'.  */
     IP_CWD,
 
-    /* * Display `info proc files'.  */
-    IP_FILES,
-
     /* * Display all of the above.  */
     IP_ALL
   };
+
+/* * String containing the current directory (what getwd would return).  */
+
+extern char *current_directory;
 
 /* * Default radixes for input and output.  Only some values supported.  */
 extern unsigned input_radix;
@@ -476,8 +507,9 @@ extern int longest_to_int (LONGEST);
    table in osabi.c.  */
 enum gdb_osabi
 {
+  GDB_OSABI_UNINITIALIZED = -1, /* For struct gdbarch_info.  */
+
   GDB_OSABI_UNKNOWN = 0,	/* keep this zero */
-  GDB_OSABI_NONE,
 
   GDB_OSABI_SVR4,
   GDB_OSABI_HURD,
@@ -498,7 +530,6 @@ enum gdb_osabi
   GDB_OSABI_LYNXOS178,
   GDB_OSABI_NEWLIB,
   GDB_OSABI_SDE,
-  GDB_OSABI_PIKEOS,
 
   GDB_OSABI_INVALID		/* keep this last */
 };
@@ -524,6 +555,11 @@ enum symbol_needs_kind
 
 /* Dynamic target-system-dependent parameters for GDB.  */
 #include "gdbarch.h"
+
+/* * Maximum size of a register.  Something small, but large enough for
+   all known ISAs.  If it turns out to be too small, make it bigger.  */
+
+enum { MAX_REGISTER_SIZE = 64 };
 
 /* In findvar.c.  */
 
@@ -578,7 +614,18 @@ extern void copy_integer_to_size (gdb_byte *dest, int dest_size,
 				  const gdb_byte *source, int source_size,
 				  bool is_signed, enum bfd_endian byte_order);
 
+/* From valops.c */
+
+extern int watchdog;
+
+/* From dwarf2read.c */
+
+ULONGEST read_unsigned_leb128 (bfd *, const gdb_byte *, unsigned int *);
+
 /* Hooks for alternate command interfaces.  */
+
+/* * The name of the interpreter if specified on the command line.  */
+extern char *interpreter_p;
 
 struct target_waitstatus;
 struct cmd_list_element;
@@ -641,7 +688,7 @@ enum block_enum
   FIRST_LOCAL_BLOCK = 2
 };
 
-/* User selection used in observable.h and multiple print functions.  */
+/* User selection used in observer.h and multiple print functions.  */
 
 enum user_selected_what_flag
   {

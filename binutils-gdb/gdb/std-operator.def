@@ -1,6 +1,6 @@
 /* Standard language operator definitions for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2019 Free Software Foundation, Inc.
+   Copyright (C) 1986-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -234,7 +234,6 @@ OP (UNOP_POSTINCREMENT)		/* ++ after an expression */
 OP (UNOP_PREDECREMENT)		/* -- before an expression */
 OP (UNOP_POSTDECREMENT)		/* -- after an expression */
 OP (UNOP_SIZEOF)		/* Unary sizeof (followed by expression) */
-OP (UNOP_ALIGNOF)		/* Unary alignof (followed by expression) */
 
 OP (UNOP_PLUS)			/* Unary plus */
 
@@ -299,7 +298,7 @@ OP (OP_SCOPE)
      p 'S:method() const'::var
 
    then the C-specific handling directly in the parser takes over (see
-   block/variable productions).
+   "block/variable productions).
 
    Also, if the whole function+var is quoted like this:
 

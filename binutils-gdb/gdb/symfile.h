@@ -1,6 +1,6 @@
 /* Definitions for reading symbol files into GDB.
 
-   Copyright (C) 1990-2019 Free Software Foundation, Inc.
+   Copyright (C) 1990-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -47,23 +47,10 @@ typedef int (symbol_compare_ftype) (const char *string1,
 
 struct other_sections
 {
-  other_sections (CORE_ADDR addr_, std::string &&name_, int sectindex_)
-    : addr (addr_),
-      name (std::move (name_)),
-      sectindex (sectindex_)
-  {
-  }
-
-  other_sections (other_sections &&other) = default;
-
-  DISABLE_COPY_AND_ASSIGN (other_sections);
-
   CORE_ADDR addr;
-  std::string name;
+  char *name;
 
-  /* SECTINDEX must be valid for associated BFD or set to -1.
-     See syms_from_objfile_1 for an exception to this rule.
-   */
+  /* SECTINDEX must be valid for associated BFD or set to -1.  */
   int sectindex;
 };
 
@@ -74,7 +61,15 @@ struct other_sections
    to communicate the section addresses in shared objects to
    symbol_file_add ().  */
 
-typedef std::vector<other_sections> section_addr_info;
+struct section_addr_info
+{
+  /* The number of sections for which address information is
+     available.  */
+  size_t num_sections;
+  /* Sections whose names are file format dependent.  */
+  struct other_sections other[1];
+};
+
 
 /* A table listing the load segments in a symfile, and which segment
    each BFD section belongs to.  */
@@ -191,6 +186,12 @@ struct quick_symbol_functions
      gdb_stdout.  This is used for "maint print objfiles".  */
   void (*dump) (struct objfile *objfile);
 
+  /* This is called by objfile_relocate to relocate any indices loaded
+     for OBJFILE.  */
+  void (*relocate) (struct objfile *objfile,
+		    const struct section_offsets *new_offsets,
+		    const struct section_offsets *delta);
+
   /* Find all the symbols in OBJFILE named FUNC_NAME, and ensure that
      the corresponding symbol tables are loaded.  */
   void (*expand_symtabs_for_function) (struct objfile *objfile,
@@ -227,7 +228,7 @@ struct quick_symbol_functions
   void (*map_matching_symbols) (struct objfile *,
 				const char *name, domain_enum domain,
 				int global,
-				int (*callback) (const struct block *,
+				int (*callback) (struct block *,
 						 struct symbol *, void *),
 				void *data,
 				symbol_name_match_type match,
@@ -292,8 +293,7 @@ struct quick_symbol_functions
 struct sym_probe_fns
 {
   /* If non-NULL, return a reference to vector of probe objects.  */
-  const std::vector<std::unique_ptr<probe>> &(*sym_get_probes)
-    (struct objfile *);
+  const std::vector<probe *> &(*sym_get_probes) (struct objfile *);
 };
 
 /* Structure to keep track of symbol reading functions for various
@@ -340,7 +340,7 @@ struct sym_fns
      The section_addr_info structure contains the offset of loadable and
      allocated sections, relative to the absolute offsets found in the BFD.  */
 
-  void (*sym_offsets) (struct objfile *, const section_addr_info &);
+  void (*sym_offsets) (struct objfile *, const struct section_addr_info *);
 
   /* This function produces a format-independent description of
      the segments of ABFD.  Each segment is a unit of the file
@@ -369,21 +369,21 @@ struct sym_fns
   const struct quick_symbol_functions *qf;
 };
 
-extern section_addr_info
+extern struct section_addr_info *
   build_section_addr_info_from_objfile (const struct objfile *objfile);
 
 extern void relative_addr_info_to_section_offsets
   (struct section_offsets *section_offsets, int num_sections,
-   const section_addr_info &addrs);
+   const struct section_addr_info *addrs);
 
-extern void addr_info_make_relative (section_addr_info *addrs,
+extern void addr_info_make_relative (struct section_addr_info *addrs,
 				     bfd *abfd);
 
 /* The default version of sym_fns.sym_offsets for readers that don't
    do anything special.  */
 
 extern void default_symfile_offsets (struct objfile *objfile,
-				     const section_addr_info &);
+				     const struct section_addr_info *);
 
 /* The default version of sym_fns.sym_segments for readers that don't
    do anything special.  */
@@ -417,25 +417,36 @@ extern enum language deduce_language_from_filename (const char *);
 extern void add_filename_language (const char *ext, enum language lang);
 
 extern struct objfile *symbol_file_add (const char *, symfile_add_flags,
-					section_addr_info *, objfile_flags);
+					struct section_addr_info *, objfile_flags);
 
 extern struct objfile *symbol_file_add_from_bfd (bfd *, const char *, symfile_add_flags,
-						 section_addr_info *,
+                                                 struct section_addr_info *,
                                                  objfile_flags, struct objfile *parent);
 
 extern void symbol_file_add_separate (bfd *, const char *, symfile_add_flags,
 				      struct objfile *);
 
-extern std::string find_separate_debug_file_by_debuglink (struct objfile *);
+extern char *find_separate_debug_file_by_debuglink (struct objfile *);
+
+/* Create a new section_addr_info, with room for NUM_SECTIONS.  */
+
+extern struct section_addr_info *alloc_section_addr_info (size_t
+							  num_sections);
 
 /* Build (allocate and populate) a section_addr_info struct from an
    existing section table.  */
 
-extern section_addr_info
-   build_section_addr_info_from_section_table (const struct target_section
+extern struct section_addr_info
+  *build_section_addr_info_from_section_table (const struct target_section
 					       *start,
 					       const struct target_section
 					       *end);
+
+/* Free all memory allocated by
+   build_section_addr_info_from_section_table.  */
+
+extern void free_section_addr_info (struct section_addr_info *);
+
 
 			/*   Variables   */
 
@@ -612,6 +623,17 @@ extern void dwarf2_build_psymtabs (struct objfile *);
 extern void dwarf2_build_frame_info (struct objfile *);
 
 void dwarf2_free_objfile (struct objfile *);
+
+/* From mdebugread.c */
+
+extern void mdebug_build_psymtabs (minimal_symbol_reader &,
+				   struct objfile *,
+				   const struct ecoff_debug_swap *,
+				   struct ecoff_debug_info *);
+
+extern void elfmdebug_build_psymtabs (struct objfile *,
+				      const struct ecoff_debug_swap *,
+				      asection *);
 
 /* From minidebug.c.  */
 

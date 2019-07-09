@@ -1,5 +1,5 @@
 /* Darwin support for GDB, the GNU debugger.
-   Copyright (C) 1997-2019 Free Software Foundation, Inc.
+   Copyright (C) 1997-2018 Free Software Foundation, Inc.
 
    Contributed by Apple Computer, Inc.
 
@@ -28,7 +28,7 @@
 #include "objfiles.h"
 
 #include "i387-tdep.h"
-#include "common/x86-xstate.h"
+#include "x86-xstate.h"
 #include "amd64-tdep.h"
 #include "osabi.h"
 #include "ui-out.h"
@@ -100,7 +100,7 @@ x86_darwin_init_abi_64 (struct gdbarch_info info, struct gdbarch *gdbarch)
   struct gdbarch_tdep *tdep = gdbarch_tdep (gdbarch);
 
   amd64_init_abi (info, gdbarch,
-		  amd64_target_description (X86_XSTATE_SSE_MASK, true));
+		  amd64_target_description (X86_XSTATE_SSE_MASK));
 
   tdep->struct_return = reg_struct_return;
 

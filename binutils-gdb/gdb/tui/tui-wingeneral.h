@@ -1,6 +1,6 @@
 /* General window behavior.
 
-   Copyright (C) 1998-2019 Free Software Foundation, Inc.
+   Copyright (C) 1998-2018 Free Software Foundation, Inc.
 
    Contributed by Hewlett-Packard Company.
 
@@ -19,10 +19,8 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
-#ifndef TUI_TUI_WINGENERAL_H
-#define TUI_TUI_WINGENERAL_H
-
-#include "gdb_curses.h"
+#ifndef TUI_WINGENERAL_H
+#define TUI_WINGENERAL_H
 
 struct tui_win_info;
 struct tui_gen_win_info;
@@ -41,4 +39,4 @@ extern void tui_refresh_all (struct tui_win_info **);
 extern void tui_delete_win (WINDOW *window);
 extern void tui_refresh_win (struct tui_gen_win_info *);
 
-#endif /* TUI_TUI_WINGENERAL_H */
+#endif

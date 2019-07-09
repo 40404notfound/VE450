@@ -1,6 +1,6 @@
 /* Native-dependent code for modern i386 BSD's.
 
-   Copyright (C) 2000-2019 Free Software Foundation, Inc.
+   Copyright (C) 2000-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -97,7 +97,7 @@ i386bsd_supply_gregset (struct regcache *regcache, const void *gregs)
       int offset = i386bsd_r_reg_offset[regnum];
 
       if (offset != -1)
-	regcache->raw_supply (regnum, regs + offset);
+	regcache_raw_supply (regcache, regnum, regs + offset);
     }
 }
 
@@ -119,7 +119,7 @@ i386bsd_collect_gregset (const struct regcache *regcache,
 	  int offset = i386bsd_r_reg_offset[i];
 
 	  if (offset != -1)
-	    regcache->raw_collect (i, regs + offset);
+	    regcache_raw_collect (regcache, i, regs + offset);
 	}
     }
 }
@@ -127,10 +127,11 @@ i386bsd_collect_gregset (const struct regcache *regcache,
 /* Fetch register REGNUM from the inferior.  If REGNUM is -1, do this
    for all registers (including the floating point registers).  */
 
-void
-i386bsd_fetch_inferior_registers (struct regcache *regcache, int regnum)
+static void
+i386bsd_fetch_inferior_registers (struct target_ops *ops,
+				  struct regcache *regcache, int regnum)
 {
-  pid_t pid = get_ptrace_pid (regcache->ptid ());
+  pid_t pid = get_ptrace_pid (regcache_get_ptid (regcache));
 
   if (regnum == -1 || GETREGS_SUPPLIES (regnum))
     {
@@ -143,33 +144,6 @@ i386bsd_fetch_inferior_registers (struct regcache *regcache, int regnum)
       if (regnum != -1)
 	return;
     }
-
-#ifdef PT_GETFSBASE
-  if (regnum == -1 || regnum == I386_FSBASE_REGNUM)
-    {
-      register_t base;
-
-      if (ptrace (PT_GETFSBASE, pid, (PTRACE_TYPE_ARG3) &base, 0) == -1)
-	perror_with_name (_("Couldn't get segment register fs_base"));
-
-      regcache->raw_supply (I386_FSBASE_REGNUM, &base);
-      if (regnum != -1)
-	return;
-    }
-#endif
-#ifdef PT_GETGSBASE
-  if (regnum == -1 || regnum == I386_GSBASE_REGNUM)
-    {
-      register_t base;
-
-      if (ptrace (PT_GETGSBASE, pid, (PTRACE_TYPE_ARG3) &base, 0) == -1)
-	perror_with_name (_("Couldn't get segment register gs_base"));
-
-      regcache->raw_supply (I386_GSBASE_REGNUM, &base);
-      if (regnum != -1)
-	return;
-    }
-#endif
 
   if (regnum == -1 || regnum >= I386_ST0_REGNUM)
     {
@@ -217,10 +191,11 @@ i386bsd_fetch_inferior_registers (struct regcache *regcache, int regnum)
 /* Store register REGNUM back into the inferior.  If REGNUM is -1, do
    this for all registers (including the floating point registers).  */
 
-void
-i386bsd_store_inferior_registers (struct regcache *regcache, int regnum)
+static void
+i386bsd_store_inferior_registers (struct target_ops *ops,
+				  struct regcache *regcache, int regnum)
 {
-  pid_t pid = get_ptrace_pid (regcache->ptid ());
+  pid_t pid = get_ptrace_pid (regcache_get_ptid (regcache));
 
   if (regnum == -1 || GETREGS_SUPPLIES (regnum))
     {
@@ -237,33 +212,6 @@ i386bsd_store_inferior_registers (struct regcache *regcache, int regnum)
       if (regnum != -1)
 	return;
     }
-
-#ifdef PT_SETFSBASE
-  if (regnum == -1 || regnum == I386_FSBASE_REGNUM)
-    {
-      register_t base;
-
-      regcache->raw_collect (I386_FSBASE_REGNUM, &base);
-
-      if (ptrace (PT_SETFSBASE, pid, (PTRACE_TYPE_ARG3) &base, 0) == -1)
-	perror_with_name (_("Couldn't write segment register fs_base"));
-      if (regnum != -1)
-	return;
-    }
-#endif
-#ifdef PT_SETGSBASE
-  if (regnum == -1 || regnum == I386_GSBASE_REGNUM)
-    {
-      register_t base;
-
-      regcache->raw_collect (I386_GSBASE_REGNUM, &base);
-
-      if (ptrace (PT_SETGSBASE, pid, (PTRACE_TYPE_ARG3) &base, 0) == -1)
-	perror_with_name (_("Couldn't write segment register gs_base"));
-      if (regnum != -1)
-	return;
-    }
-#endif
 
   if (regnum == -1 || regnum >= I386_ST0_REGNUM)
     {
@@ -317,6 +265,20 @@ i386bsd_store_inferior_registers (struct regcache *regcache, int regnum)
         }
 #endif
     }
+}
+
+/* Create a prototype *BSD/i386 target.  The client can override it
+   with local methods.  */
+
+struct target_ops *
+i386bsd_target (void)
+{
+  struct target_ops *t;
+
+  t = x86bsd_target ();
+  t->to_fetch_registers = i386bsd_fetch_inferior_registers;
+  t->to_store_registers = i386bsd_store_inferior_registers;
+  return t;
 }
 
 void

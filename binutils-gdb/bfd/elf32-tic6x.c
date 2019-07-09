@@ -1,5 +1,5 @@
 /* 32-bit ELF support for TI C6X
-   Copyright (C) 2010-2019 Free Software Foundation, Inc.
+   Copyright (C) 2010-2018 Free Software Foundation, Inc.
    Contributed by Joseph Myers <joseph@codesourcery.com>
 		  Bernd Schmidt  <bernds@codesourcery.com>
 
@@ -1495,7 +1495,7 @@ elf32_tic6x_reloc_name_lookup (bfd *abfd, const char *r_name)
   return NULL;
 }
 
-static bfd_boolean
+static void
 elf32_tic6x_info_to_howto (bfd *abfd ATTRIBUTE_UNUSED, arelent *bfd_reloc,
 			   Elf_Internal_Rela *elf_reloc)
 {
@@ -1503,28 +1503,12 @@ elf32_tic6x_info_to_howto (bfd *abfd ATTRIBUTE_UNUSED, arelent *bfd_reloc,
 
   r_type = ELF32_R_TYPE (elf_reloc->r_info);
   if (r_type >= ARRAY_SIZE (elf32_tic6x_howto_table))
-    {
-      /* xgettext:c-format */
-      _bfd_error_handler (_("%pB: unsupported relocation type %#x"),
-			  abfd, r_type);
-      bfd_set_error (bfd_error_bad_value);
-      return FALSE;
-    }
-
-  bfd_reloc->howto = &elf32_tic6x_howto_table[r_type];
-  if (bfd_reloc->howto == NULL || bfd_reloc->howto->name == NULL)
-    {
-      /* xgettext:c-format */
-      _bfd_error_handler (_("%pB: unsupported relocation type %#x"),
-			  abfd, r_type);
-      bfd_set_error (bfd_error_bad_value);
-      return FALSE;
-    }
-
-  return TRUE;
+    bfd_reloc->howto = NULL;
+  else
+    bfd_reloc->howto = &elf32_tic6x_howto_table[r_type];
 }
 
-static bfd_boolean
+static void
 elf32_tic6x_info_to_howto_rel (bfd *abfd ATTRIBUTE_UNUSED, arelent *bfd_reloc,
 			       Elf_Internal_Rela *elf_reloc)
 {
@@ -1532,25 +1516,9 @@ elf32_tic6x_info_to_howto_rel (bfd *abfd ATTRIBUTE_UNUSED, arelent *bfd_reloc,
 
   r_type = ELF32_R_TYPE (elf_reloc->r_info);
   if (r_type >= ARRAY_SIZE (elf32_tic6x_howto_table_rel))
-    {
-      /* xgettext:c-format */
-      _bfd_error_handler (_("%pB: unsupported relocation type %#x"),
-			  abfd, r_type);
-      bfd_set_error (bfd_error_bad_value);
-      return FALSE;
-    }
-
-  bfd_reloc->howto = &elf32_tic6x_howto_table_rel[r_type];
-  if (bfd_reloc->howto == NULL || bfd_reloc->howto->name == NULL)
-    {
-      /* xgettext:c-format */
-      _bfd_error_handler (_("%pB: unsupported relocation type %#x"),
-			  abfd, r_type);
-      bfd_set_error (bfd_error_bad_value);
-      return FALSE;
-    }
-
-  return TRUE;
+    bfd_reloc->howto = NULL;
+  else
+    bfd_reloc->howto = &elf32_tic6x_howto_table_rel[r_type];
 }
 
 void
@@ -2245,7 +2213,6 @@ elf32_tic6x_relocate_section (bfd *output_bfd,
       bfd_reloc_status_type r;
       struct bfd_link_hash_entry *sbh;
       bfd_boolean is_rel;
-      bfd_boolean res;
 
       r_type = ELF32_R_TYPE (rel->r_info);
       r_symndx = ELF32_R_SYM (rel->r_info);
@@ -2254,11 +2221,11 @@ elf32_tic6x_relocate_section (bfd *output_bfd,
 					     relocs, rel);
 
       if (is_rel)
-	res = elf32_tic6x_info_to_howto_rel (input_bfd, &bfd_reloc, rel);
+	elf32_tic6x_info_to_howto_rel (input_bfd, &bfd_reloc, rel);
       else
-	res = elf32_tic6x_info_to_howto (input_bfd, &bfd_reloc, rel);
-
-      if (!res || (howto = bfd_reloc.howto) == NULL)
+	elf32_tic6x_info_to_howto (input_bfd, &bfd_reloc, rel);
+      howto = bfd_reloc.howto;
+      if (howto == NULL)
 	{
 	  bfd_set_error (bfd_error_bad_value);
 	  return FALSE;
@@ -2490,7 +2457,7 @@ elf32_tic6x_relocate_section (bfd *output_bfd,
 	    }
 	  else
 	    {
-	      _bfd_error_handler (_("%pB: SB-relative relocation but "
+	      _bfd_error_handler (_("%B: SB-relative relocation but "
 				    "__c6xabi_DSBT_BASE not defined"),
 				  input_bfd);
 	      ok = FALSE;
@@ -2600,21 +2567,21 @@ elf32_tic6x_relocate_section (bfd *output_bfd,
 	      if (h == NULL)
 		_bfd_error_handler
 		  /* xgettext:c-format */
-		  (_("%pB, section %pA: relocation %s with non-zero addend %"
-		     PRId64 " against local symbol"),
+		  (_("%B, section %A: relocation %s with non-zero addend %Ld"
+		     " against local symbol"),
 		   input_bfd,
 		   input_section,
 		   elf32_tic6x_howto_table[r_type].name,
-		   (int64_t) rel->r_addend);
+		   rel->r_addend);
 	      else
 		_bfd_error_handler
 		  /* xgettext:c-format */
-		  (_("%pB, section %pA: relocation %s with non-zero addend %"
-		     PRId64 " against symbol `%s'"),
+		  (_("%B, section %A: relocation %s with non-zero addend %Ld"
+		     " against symbol `%s'"),
 		   input_bfd,
 		   input_section,
 		   elf32_tic6x_howto_table[r_type].name,
-		   (int64_t) rel->r_addend,
+		   rel->r_addend,
 		   h->root.root.string[0] != '\0' ? h->root.root.string
 		   : _("[whose name is lost]"));
 
@@ -2639,9 +2606,8 @@ elf32_tic6x_relocate_section (bfd *output_bfd,
 	default:
 	  /* Unknown relocation.  */
 	  /* xgettext:c-format */
-	  _bfd_error_handler (_("%pB: unsupported relocation type %#x"),
+	  _bfd_error_handler (_("%B: invalid relocation type %d"),
 			      input_bfd, r_type);
-	  bfd_set_error (bfd_error_bad_value);
 	  ok = FALSE;
 	  continue;
 	}
@@ -2780,7 +2746,7 @@ elf32_tic6x_check_relocs (bfd *abfd, struct bfd_link_info *info,
       if (r_symndx >= NUM_SHDR_ENTRIES (symtab_hdr))
 	{
 	  /* xgettext:c-format */
-	  _bfd_error_handler (_("%pB: bad symbol index: %d"),
+	  _bfd_error_handler (_("%B: bad symbol index: %d"),
 			      abfd, r_symndx);
 	  return FALSE;
 	}
@@ -2972,19 +2938,6 @@ elf32_tic6x_check_relocs (bfd *abfd, struct bfd_link_info *info,
 	case R_C6000_SBR_H16_B:
 	case R_C6000_SBR_H16_H:
 	case R_C6000_SBR_H16_W:
-	  {
-	    /* These relocations implicitly reference __c6xabi_DSBT_BASE.
-	       Add an explicit reference so that the symbol will be
-	       provided by a linker script.  */
-	    struct bfd_link_hash_entry *bh = NULL;
-	    if (!_bfd_generic_link_add_one_symbol (info, abfd,
-						   "__c6xabi_DSBT_BASE",
-						   BSF_GLOBAL,
-						   bfd_und_section_ptr, 0,
-						   NULL, FALSE, FALSE, &bh))
-	      return FALSE;
-	    ((struct elf_link_hash_entry *) bh)->non_elf = 0;
-	  }
 	  if (h != NULL && bfd_link_executable (info))
 	    {
 	      /* For B14-relative addresses, we might need a copy
@@ -3249,7 +3202,7 @@ maybe_set_textrel (struct elf_link_hash_entry *h, void *info_p)
 
       info->flags |= DF_TEXTREL;
       info->callbacks->minfo
-	(_("%pB: dynamic relocation against `%pT' in read-only section `%pA'\n"),
+	(_("%B: dynamic relocation against `%T' in read-only section `%A'\n"),
 	 sec->owner, h->root.root.string, sec);
 
       /* Not an error, just cut short the traversal.  */
@@ -3626,7 +3579,7 @@ elf32_tic6x_obj_attrs_handle_unknown (bfd *abfd, int tag)
     {
       _bfd_error_handler
 	/* xgettext:c-format */
-	(_("%pB: error: unknown mandatory EABI object attribute %d"),
+	(_("%B: error: unknown mandatory EABI object attribute %d"),
 	 abfd, tag);
       bfd_set_error (bfd_error_bad_value);
       return FALSE;
@@ -3635,7 +3588,7 @@ elf32_tic6x_obj_attrs_handle_unknown (bfd *abfd, int tag)
     {
       _bfd_error_handler
 	/* xgettext:c-format */
-	(_("%pB: warning: unknown EABI object attribute %d"),
+	(_("%B: warning: unknown EABI object attribute %d"),
 	 abfd, tag);
       return TRUE;
     }
@@ -3749,7 +3702,7 @@ elf32_tic6x_merge_attributes (bfd *ibfd, struct bfd_link_info *info)
     {
       _bfd_error_handler
 	/* xgettext:c-format */
-	(_("error: %pB requires more stack alignment than %pB preserves"),
+	(_("error: %B requires more stack alignment than %B preserves"),
 	 ibfd, obfd);
       result = FALSE;
     }
@@ -3758,7 +3711,7 @@ elf32_tic6x_merge_attributes (bfd *ibfd, struct bfd_link_info *info)
     {
       _bfd_error_handler
 	/* xgettext:c-format */
-	(_("error: %pB requires more stack alignment than %pB preserves"),
+	(_("error: %B requires more stack alignment than %B preserves"),
 	 obfd, ibfd);
       result = FALSE;
     }
@@ -3768,7 +3721,7 @@ elf32_tic6x_merge_attributes (bfd *ibfd, struct bfd_link_info *info)
   if (array_align_in == -1)
     {
       _bfd_error_handler
-	(_("error: unknown Tag_ABI_array_object_alignment value in %pB"),
+	(_("error: unknown Tag_ABI_array_object_alignment value in %B"),
 	 ibfd);
       result = FALSE;
     }
@@ -3777,7 +3730,7 @@ elf32_tic6x_merge_attributes (bfd *ibfd, struct bfd_link_info *info)
   if (array_align_out == -1)
     {
       _bfd_error_handler
-	(_("error: unknown Tag_ABI_array_object_alignment value in %pB"),
+	(_("error: unknown Tag_ABI_array_object_alignment value in %B"),
 	 obfd);
       result = FALSE;
     }
@@ -3786,7 +3739,7 @@ elf32_tic6x_merge_attributes (bfd *ibfd, struct bfd_link_info *info)
   if (array_expect_in == -1)
     {
       _bfd_error_handler
-	(_("error: unknown Tag_ABI_array_object_align_expected value in %pB"),
+	(_("error: unknown Tag_ABI_array_object_align_expected value in %B"),
 	 ibfd);
       result = FALSE;
     }
@@ -3795,7 +3748,7 @@ elf32_tic6x_merge_attributes (bfd *ibfd, struct bfd_link_info *info)
   if (array_expect_out == -1)
     {
       _bfd_error_handler
-	(_("error: unknown Tag_ABI_array_object_align_expected value in %pB"),
+	(_("error: unknown Tag_ABI_array_object_align_expected value in %B"),
 	 obfd);
       result = FALSE;
     }
@@ -3804,7 +3757,7 @@ elf32_tic6x_merge_attributes (bfd *ibfd, struct bfd_link_info *info)
     {
       _bfd_error_handler
 	/* xgettext:c-format */
-	(_("error: %pB requires more array alignment than %pB preserves"),
+	(_("error: %B requires more array alignment than %B preserves"),
 	 ibfd, obfd);
       result = FALSE;
     }
@@ -3812,7 +3765,7 @@ elf32_tic6x_merge_attributes (bfd *ibfd, struct bfd_link_info *info)
     {
       _bfd_error_handler
 	/* xgettext:c-format */
-	(_("error: %pB requires more array alignment than %pB preserves"),
+	(_("error: %B requires more array alignment than %B preserves"),
 	 obfd, ibfd);
       result = FALSE;
     }
@@ -3835,7 +3788,7 @@ elf32_tic6x_merge_attributes (bfd *ibfd, struct bfd_link_info *info)
 	    {
 	      _bfd_error_handler
 		/* xgettext:c-format */
-		(_("warning: %pB and %pB differ in wchar_t size"), obfd, ibfd);
+		(_("warning: %B and %B differ in wchar_t size"), obfd, ibfd);
 	    }
 	  break;
 
@@ -3854,7 +3807,7 @@ elf32_tic6x_merge_attributes (bfd *ibfd, struct bfd_link_info *info)
 	    {
 	      _bfd_error_handler
 		/* xgettext:c-format */
-		(_("warning: %pB and %pB differ in whether code is "
+		(_("warning: %B and %B differ in whether code is "
 		   "compiled for DSBT"),
 		 obfd, ibfd);
 	    }

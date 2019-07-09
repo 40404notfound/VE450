@@ -1,5 +1,5 @@
 /* X86-64 specific support for ELF
-   Copyright (C) 2000-2019 Free Software Foundation, Inc.
+   Copyright (C) 2000-2018 Free Software Foundation, Inc.
    Contributed by Jan Hubicka <jh@suse.cz>.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -26,6 +26,9 @@
 
 #include "opcode/i386.h"
 #include "elf/x86-64.h"
+
+static bfd_boolean elf64_x86_64_copy_solaris_special_section_fields
+  (const bfd *, bfd *, const Elf_Internal_Shdr *, Elf_Internal_Shdr *);
 
 #ifdef CORE_HEADER
 #include <stdarg.h>
@@ -282,10 +285,9 @@ elf_x86_64_rtype_to_howto (bfd *abfd, unsigned r_type)
       if (r_type >= (unsigned int) R_X86_64_standard)
 	{
 	  /* xgettext:c-format */
-	  _bfd_error_handler (_("%pB: unsupported relocation type %#x"),
-			      abfd, r_type);
-	  bfd_set_error (bfd_error_bad_value);
-	  return NULL;
+	  _bfd_error_handler (_("%B: invalid relocation type %d"),
+			      abfd, (int) r_type);
+	  r_type = R_X86_64_NONE;
 	}
       i = r_type;
     }
@@ -337,18 +339,19 @@ elf_x86_64_reloc_name_lookup (bfd *abfd,
 
 /* Given an x86_64 ELF reloc type, fill in an arelent structure.  */
 
-static bfd_boolean
-elf_x86_64_info_to_howto (bfd *abfd, arelent *cache_ptr,
+static void
+elf_x86_64_info_to_howto (bfd *abfd ATTRIBUTE_UNUSED, arelent *cache_ptr,
 			  Elf_Internal_Rela *dst)
 {
   unsigned r_type;
 
   r_type = ELF32_R_TYPE (dst->r_info);
+  if (r_type != (unsigned int) R_X86_64_GNU_VTINHERIT
+      && r_type != (unsigned int) R_X86_64_GNU_VTENTRY)
+    r_type &= ~R_X86_64_converted_reloc_bit;
   cache_ptr->howto = elf_x86_64_rtype_to_howto (abfd, r_type);
-  if (cache_ptr->howto == NULL)
-    return FALSE;
+
   BFD_ASSERT (r_type == cache_ptr->howto->type || cache_ptr->howto->type == R_X86_64_NONE);
-  return TRUE;
 }
 
 /* Support for core dump NOTE sections.  */
@@ -439,10 +442,6 @@ elf_x86_64_grok_psinfo (bfd *abfd, Elf_Internal_Note *note)
 }
 
 #ifdef CORE_HEADER
-# if GCC_VERSION >= 8000
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wstringop-truncation"
-# endif
 static char *
 elf_x86_64_write_core_note (bfd *abfd, char *buf, int *bufsiz,
 			    int note_type, ...)
@@ -528,9 +527,6 @@ elf_x86_64_write_core_note (bfd *abfd, char *buf, int *bufsiz,
     }
   /* NOTREACHED */
 }
-# if GCC_VERSION >= 8000
-#  pragma GCC diagnostic pop
-# endif
 #endif
 
 /* Functions for the x86-64 ELF linker.	 */
@@ -1350,9 +1346,6 @@ elf_x86_64_tls_transition (struct bfd_link_info *info, bfd *abfd,
       from = elf_x86_64_rtype_to_howto (abfd, from_type);
       to = elf_x86_64_rtype_to_howto (abfd, to_type);
 
-      if (from == NULL || to == NULL)
-	return FALSE;
-
       if (h)
 	name = h->root.root.string;
       else
@@ -1374,9 +1367,9 @@ elf_x86_64_tls_transition (struct bfd_link_info *info, bfd *abfd,
 
       _bfd_error_handler
 	/* xgettext:c-format */
-	(_("%pB: TLS transition from %s to %s against `%s' at %#" PRIx64
-	   " in section `%pA' failed"),
-	 abfd, from->name, to->name, name, (uint64_t) rel->r_offset, sec);
+	(_("%B: TLS transition from %s to %s against `%s' at %#Lx "
+	   "in section `%A' failed"),
+	 abfd, from->name, to->name, name, rel->r_offset, sec);
       bfd_set_error (bfd_error_bad_value);
       return FALSE;
     }
@@ -1422,37 +1415,28 @@ elf_x86_64_need_pic (struct bfd_link_info *info,
 	    v = _("protected symbol ");
 	  else
 	    v = _("symbol ");
-	  pic = NULL;
+	  pic = _("; recompile with -fPIC");
 	  break;
 	}
 
-      if (!SYMBOL_DEFINED_NON_SHARED_P (h) && !h->def_dynamic)
+      if (!h->def_regular && !h->def_dynamic)
 	und = _("undefined ");
     }
   else
     {
       name = bfd_elf_sym_name (input_bfd, symtab_hdr, isym, NULL);
-      pic = NULL;
+      pic = _("; recompile with -fPIC");
     }
 
   if (bfd_link_dll (info))
-    {
-      object = _("a shared object");
-      if (!pic)
-	pic = _("; recompile with -fPIC");
-    }
+    object = _("a shared object");
+  else if (bfd_link_pie (info))
+    object = _("a PIE object");
   else
-    {
-      if (bfd_link_pie (info))
-	object = _("a PIE object");
-      else
-	object = _("a PDE object");
-      if (!pic)
-	pic = _("; recompile with -fPIE");
-    }
+    object = _("a PDE object");
 
   /* xgettext:c-format */
-  _bfd_error_handler (_("%pB: relocation %s against %s%s`%s' can "
+  _bfd_error_handler (_("%B: relocation %s against %s%s`%s' can "
 			"not be used when making %s%s"),
 		      input_bfd, howto->name, und, v, name,
 		      object, pic);
@@ -1685,8 +1669,8 @@ convert:
 	    }
 	  else
 	    {
-	      nop = htab->params->call_nop_byte;
-	      if (htab->params->call_nop_as_suffix)
+	      nop = link_info->call_nop_byte;
+	      if (link_info->call_nop_as_suffix)
 		{
 		  nop_offset = irel->r_offset + 3;
 		  disp = bfd_get_32 (abfd, contents + irel->r_offset);
@@ -1864,7 +1848,6 @@ elf_x86_64_check_relocs (bfd *abfd, struct bfd_link_info *info,
       const char *name;
       bfd_boolean size_reloc;
       bfd_boolean converted_reloc;
-      bfd_boolean do_check_pic;
 
       r_symndx = htab->r_sym (rel->r_info);
       r_type = ELF32_R_TYPE (rel->r_info);
@@ -1872,7 +1855,7 @@ elf_x86_64_check_relocs (bfd *abfd, struct bfd_link_info *info,
       if (r_symndx >= NUM_SHDR_ENTRIES (symtab_hdr))
 	{
 	  /* xgettext:c-format */
-	  _bfd_error_handler (_("%pB: bad symbol index: %d"),
+	  _bfd_error_handler (_("%B: bad symbol index: %d"),
 			      abfd, r_symndx);
 	  goto error_return;
 	}
@@ -1938,7 +1921,7 @@ elf_x86_64_check_relocs (bfd *abfd, struct bfd_link_info *info,
 					   NULL);
 		_bfd_error_handler
 		  /* xgettext:c-format */
-		  (_("%pB: relocation %s against symbol `%s' isn't "
+		  (_("%B: relocation %s against symbol `%s' isn't "
 		     "supported in x32 mode"), abfd,
 		   x86_64_elf_howto_table[r_type].name, name);
 		bfd_set_error (bfd_error_bad_value);
@@ -2080,7 +2063,7 @@ elf_x86_64_check_relocs (bfd *abfd, struct bfd_link_info *info,
 					       isym, NULL);
 		    _bfd_error_handler
 		      /* xgettext:c-format */
-		      (_("%pB: '%s' accessed both as normal and"
+		      (_("%B: '%s' accessed both as normal and"
 			 " thread local symbol"),
 		       abfd, name);
 		    bfd_set_error (bfd_error_bad_value);
@@ -2140,13 +2123,6 @@ elf_x86_64_check_relocs (bfd *abfd, struct bfd_link_info *info,
 	  size_reloc = TRUE;
 	  goto do_size;
 
-	case R_X86_64_PC8:
-	case R_X86_64_PC16:
-	case R_X86_64_PC32:
-	case R_X86_64_PC32_BND:
-	  do_check_pic = TRUE;
-	  goto check_pic;
-
 	case R_X86_64_32:
 	  if (!ABI_64_P (abfd))
 	    goto pointer;
@@ -2158,7 +2134,7 @@ elf_x86_64_check_relocs (bfd *abfd, struct bfd_link_info *info,
 	     run-time relocation overflow.  Don't error out for
 	     sections we don't care about, such as debug sections or
 	     when relocation overflow check is disabled.  */
-	  if (!htab->params->no_reloc_overflow_check
+	  if (!info->no_reloc_overflow_check
 	      && !converted_reloc
 	      && (bfd_link_pic (info)
 		  || (bfd_link_executable (info)
@@ -2170,11 +2146,13 @@ elf_x86_64_check_relocs (bfd *abfd, struct bfd_link_info *info,
 					&x86_64_elf_howto_table[r_type]);
 	  /* Fall through.  */
 
+	case R_X86_64_PC8:
+	case R_X86_64_PC16:
+	case R_X86_64_PC32:
+	case R_X86_64_PC32_BND:
 	case R_X86_64_PC64:
 	case R_X86_64_64:
 pointer:
-	  do_check_pic = FALSE;
-check_pic:
 	  if (eh != NULL && (sec->flags & SEC_CODE) != 0)
 	    eh->zero_undefweak |= 0x2;
 	  /* We are called after all symbols have been resolved.  Only
@@ -2192,17 +2170,7 @@ check_pic:
 		     as pointer, make sure that PLT is used if foo is
 		     a function defined in a shared library.  */
 		  if ((sec->flags & SEC_CODE) == 0)
-		    {
-		      h->pointer_equality_needed = 1;
-		      if (bfd_link_pie (info)
-			  && h->type == STT_FUNC
-			  && !h->def_regular
-			  && h->def_dynamic)
-			{
-			  h->needs_plt = 1;
-			  h->plt.refcount = 1;
-			}
-		    }
+		    h->pointer_equality_needed = 1;
 		}
 	      else if (r_type != R_X86_64_PC32_BND
 		       && r_type != R_X86_64_PC64)
@@ -2238,72 +2206,9 @@ check_pic:
 		}
 	    }
 
-	  if (do_check_pic)
-	    {
-	      /* Don't complain about -fPIC if the symbol is undefined
-	         when building executable unless it is unresolved weak
-		 symbol, references a dynamic definition in PIE or
-		 -z nocopyreloc is used.  */
-	      bfd_boolean no_copyreloc_p
-		= (info->nocopyreloc
-		   || (h != NULL
-		       && !h->root.linker_def
-		       && !h->root.ldscript_def
-		       && eh->def_protected
-		       && elf_has_no_copy_on_protected (h->root.u.def.section->owner)));
-	      if ((sec->flags & SEC_ALLOC) != 0
-		  && (sec->flags & SEC_READONLY) != 0
-		  && h != NULL
-		  && ((bfd_link_executable (info)
-		       && ((h->root.type == bfd_link_hash_undefweak
-			    && (eh == NULL
-				|| !UNDEFINED_WEAK_RESOLVED_TO_ZERO (info,
-								     eh)))
-			   || (bfd_link_pie (info)
-			       && !SYMBOL_DEFINED_NON_SHARED_P (h)
-			       && h->def_dynamic)
-			   || (no_copyreloc_p
-			       && h->def_dynamic
-			       && !(h->root.u.def.section->flags & SEC_CODE))))
-		      || bfd_link_dll (info)))
-		{
-		  bfd_boolean fail = FALSE;
-		  if (SYMBOL_REFERENCES_LOCAL_P (info, h))
-		    {
-		      /* Symbol is referenced locally.  Make sure it is
-			 defined locally.  */
-		      fail = !SYMBOL_DEFINED_NON_SHARED_P (h);
-		    }
-		  else if (bfd_link_pie (info))
-		    {
-		      /* We can only use PC-relative relocations in PIE
-			 from non-code sections.  */
-		      if (h->type == STT_FUNC
-			  && (sec->flags & SEC_CODE) != 0)
-			fail = TRUE;
-		    }
-		  else if (no_copyreloc_p || bfd_link_dll (info))
-		    {
-		      /* Symbol doesn't need copy reloc and isn't
-			 referenced locally.  Don't allow PC-relative
-			 relocations against default and protected
-			 symbols since address of protected function
-			 and location of protected data may not be in
-			 the shared object.   */
-		      fail = (ELF_ST_VISIBILITY (h->other) == STV_DEFAULT
-			      || ELF_ST_VISIBILITY (h->other) == STV_PROTECTED);
-		    }
-
-		  if (fail)
-		    return elf_x86_64_need_pic (info, abfd, sec, h,
-						symtab_hdr, isym,
-						&x86_64_elf_howto_table[r_type]);
-		}
-	    }
-
 	  size_reloc = FALSE;
 do_size:
-	  if (NEED_DYNAMIC_RELOCATION_P (info, TRUE, h, sec, r_type,
+	  if (NEED_DYNAMIC_RELOCATION_P (info, h, sec, r_type,
 					 htab->pointer_r_type))
 	    {
 	      struct elf_dyn_relocs *p;
@@ -2382,7 +2287,9 @@ do_size:
 	  /* This relocation describes which C++ vtable entries are actually
 	     used.  Record for later use during GC.  */
 	case R_X86_64_GNU_VTENTRY:
-	  if (!bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
+	  BFD_ASSERT (h != NULL);
+	  if (h != NULL
+	      && !bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
 	    goto error_return;
 	  break;
 
@@ -2435,6 +2342,24 @@ elf_x86_64_tpoff (struct bfd_link_info *info, bfd_vma address)
   return address - static_tls_size - htab->tls_sec->vma;
 }
 
+/* Is the instruction before OFFSET in CONTENTS a 32bit relative
+   branch?  */
+
+static bfd_boolean
+is_32bit_relative_branch (bfd_byte *contents, bfd_vma offset)
+{
+  /* Opcode		Instruction
+     0xe8		call
+     0xe9		jump
+     0x0f 0x8x		conditional jump */
+  return ((offset > 0
+	   && (contents [offset - 1] == 0xe8
+	       || contents [offset - 1] == 0xe9))
+	  || (offset > 1
+	      && contents [offset - 2] == 0x0f
+	      && (contents [offset - 1] & 0xf0) == 0x80));
+}
+
 /* Relocate an x86_64 ELF section.  */
 
 static bfd_boolean
@@ -2465,11 +2390,7 @@ elf_x86_64_relocate_section (bfd *output_bfd,
   if (htab == NULL)
     return FALSE;
 
-  if (!is_x86_elf (input_bfd, htab))
-    {
-      bfd_set_error (bfd_error_wrong_format);
-      return FALSE;
-    }
+  BFD_ASSERT (is_x86_elf (input_bfd, htab));
 
   plt_entry_size = htab->plt.plt_entry_size;
   symtab_hdr = &elf_symtab_hdr (input_bfd);
@@ -2519,10 +2440,15 @@ elf_x86_64_relocate_section (bfd *output_bfd,
 	  rel->r_info = htab->r_info (r_symndx, r_type);
 	}
 
-      howto = elf_x86_64_rtype_to_howto (input_bfd, r_type);
-      if (howto == NULL)
+      if (r_type >= (int) R_X86_64_standard)
 	return _bfd_unrecognized_reloc (input_bfd, input_section, r_type);
 
+      if (r_type != (int) R_X86_64_32
+	  || ABI_64_P (output_bfd))
+	howto = x86_64_elf_howto_table + r_type;
+      else
+	howto = (x86_64_elf_howto_table
+		 + ARRAY_SIZE (x86_64_elf_howto_table) - 1);
       h = NULL;
       sym = NULL;
       sec = NULL;
@@ -2565,7 +2491,7 @@ elf_x86_64_relocate_section (bfd *output_bfd,
       if (sec != NULL && discarded_section (sec))
 	{
 	  _bfd_clear_contents (howto, input_bfd, input_section,
-			       contents, rel->r_offset);
+			       contents + rel->r_offset);
 	  wrel->r_offset = rel->r_offset;
 	  wrel->r_info = 0;
 	  wrel->r_addend = 0;
@@ -2618,10 +2544,6 @@ elf_x86_64_relocate_section (bfd *output_bfd,
 
 	  if ((input_section->flags & SEC_ALLOC) == 0)
 	    {
-	      /* If this is a SHT_NOTE section without SHF_ALLOC, treat
-	         STT_GNU_IFUNC symbol as STT_FUNC.  */
-	      if (elf_section_type (input_section) == SHT_NOTE)
-		goto skip_ifunc;
 	      /* Dynamic relocs are not propagated for SEC_DEBUGGING
 		 sections because such sections are not SEC_ALLOC and
 		 thus ld.so will not process them.  */
@@ -2743,7 +2665,7 @@ bad_ifunc_reloc:
 					 NULL);
 	      _bfd_error_handler
 		/* xgettext:c-format */
-		(_("%pB: relocation %s against STT_GNU_IFUNC "
+		(_("%B: relocation %s against STT_GNU_IFUNC "
 		   "symbol `%s' isn't supported"), input_bfd,
 		 howto->name, name);
 	      bfd_set_error (bfd_error_bad_value);
@@ -2769,9 +2691,9 @@ do_ifunc_pointer:
 					     sym, NULL);
 		  _bfd_error_handler
 		    /* xgettext:c-format */
-		    (_("%pB: relocation %s against STT_GNU_IFUNC "
-		       "symbol `%s' has non-zero addend: %" PRId64),
-		     input_bfd, howto->name, name, (int64_t) rel->r_addend);
+		    (_("%B: relocation %s against STT_GNU_IFUNC "
+		       "symbol `%s' has non-zero addend: %Ld"),
+		     input_bfd, howto->name, name, rel->r_addend);
 		  bfd_set_error (bfd_error_bad_value);
 		  return FALSE;
 		}
@@ -2800,7 +2722,7 @@ do_ifunc_pointer:
 
 		  if (POINTER_LOCAL_IFUNC_P (info, h))
 		    {
-		      info->callbacks->minfo (_("Local IFUNC function `%s' in %pB\n"),
+		      info->callbacks->minfo (_("Local IFUNC function `%s' in %B\n"),
 					      h->root.root.string,
 					      h->root.u.def.section->owner);
 
@@ -2845,7 +2767,6 @@ do_ifunc_pointer:
 	    }
 	}
 
-skip_ifunc:
       resolved_to_zero = (eh != NULL
 			  && UNDEFINED_WEAK_RESOLVED_TO_ZERO (info, eh));
 
@@ -3007,7 +2928,7 @@ skip_ifunc:
 
 		  _bfd_error_handler
 		    /* xgettext:c-format */
-		    (_("%pB: relocation R_X86_64_GOTOFF64 against undefined %s"
+		    (_("%B: relocation R_X86_64_GOTOFF64 against undefined %s"
 		       " `%s' can not be used when making a shared object"),
 		     input_bfd, v, h->root.root.string);
 		  bfd_set_error (bfd_error_bad_value);
@@ -3020,14 +2941,14 @@ skip_ifunc:
 		       && ELF_ST_VISIBILITY (h->other) == STV_PROTECTED)
 		{
 		  _bfd_error_handler
-		    /* xgettext:c-format */
-		    (_("%pB: relocation R_X86_64_GOTOFF64 against protected %s"
+	      /* xgettext:c-format */
+		    (_("%B: relocation R_X86_64_GOTOFF64 against protected %s"
 		       " `%s' can not be used when making a shared object"),
 		     input_bfd,
 		     h->type == STT_FUNC ? "function" : "data",
 		     h->root.root.string);
 		  bfd_set_error (bfd_error_bad_value);
-		  return FALSE;
+	      return FALSE;
 		}
 	    }
 
@@ -3104,7 +3025,6 @@ skip_ifunc:
 	      break;
 	    }
 
-use_plt:
 	  if (h->plt.offset != (bfd_vma) -1)
 	    {
 	      if (htab->plt_second != NULL)
@@ -3141,15 +3061,49 @@ use_plt:
 	case R_X86_64_PC16:
 	case R_X86_64_PC32:
 	case R_X86_64_PC32_BND:
-	  /* Since x86-64 has PC-relative PLT, we can use PLT in PIE
-	     as function address.  */
-	  if (h != NULL
-	      && (input_section->flags & SEC_CODE) == 0
-	      && bfd_link_pie (info)
-	      && h->type == STT_FUNC
-	      && !h->def_regular
-	      && h->def_dynamic)
-	    goto use_plt;
+	  /* Don't complain about -fPIC if the symbol is undefined when
+	     building executable unless it is unresolved weak symbol or
+	     -z nocopyreloc is used.  */
+	  if ((input_section->flags & SEC_ALLOC) != 0
+	      && (input_section->flags & SEC_READONLY) != 0
+	      && h != NULL
+	      && ((bfd_link_executable (info)
+		   && ((h->root.type == bfd_link_hash_undefweak
+			&& !resolved_to_zero)
+		       || ((info->nocopyreloc
+			    || (eh->def_protected
+				&& elf_has_no_copy_on_protected (h->root.u.def.section->owner)))
+			   && h->def_dynamic
+			   && !(h->root.u.def.section->flags & SEC_CODE))))
+		  || bfd_link_dll (info)))
+	    {
+	      bfd_boolean fail = FALSE;
+	      bfd_boolean branch
+		= ((r_type == R_X86_64_PC32
+		    || r_type == R_X86_64_PC32_BND)
+		   && is_32bit_relative_branch (contents, rel->r_offset));
+
+	      if (SYMBOL_REFERENCES_LOCAL_P (info, h))
+		{
+		  /* Symbol is referenced locally.  Make sure it is
+		     defined locally or for a branch.  */
+		  fail = (!(h->def_regular || ELF_COMMON_DEF_P (h))
+			  && !branch);
+		}
+	      else if (!(bfd_link_pie (info)
+			 && (h->needs_copy || eh->needs_copy)))
+		{
+		  /* Symbol doesn't need copy reloc and isn't referenced
+		     locally.  We only allow branch to symbol with
+		     non-default visibility. */
+		  fail = (!branch
+			  || ELF_ST_VISIBILITY (h->other) == STV_DEFAULT);
+		}
+
+	      if (fail)
+		return elf_x86_64_need_pic (info, input_bfd, input_section,
+					    h, NULL, NULL, howto);
+	    }
 	  /* Fall through.  */
 
 	case R_X86_64_8:
@@ -3213,7 +3167,7 @@ direct:
 		     convert R_X86_64_32 to dynamic R_X86_64_RELATIVE.  */
 		  if (r_type == htab->pointer_r_type
 		      || (r_type == R_X86_64_32
-			  && htab->params->no_reloc_overflow_check))
+			  && info->no_reloc_overflow_check))
 		    {
 		      relocate = TRUE;
 		      outrel.r_info = htab->r_info (0, R_X86_64_RELATIVE);
@@ -3239,12 +3193,11 @@ direct:
 						     sym, NULL);
 			  _bfd_error_handler
 			    /* xgettext:c-format */
-			    (_("%pB: addend %s%#x in relocation %s against "
-			       "symbol `%s' at %#" PRIx64
-			       " in section `%pA' is out of range"),
+			    (_("%B: addend %s%#x in relocation %s against "
+			       "symbol `%s' at %#Lx in section `%A' is "
+			       "out of range"),
 			     input_bfd, addend < 0 ? "-" : "", addend,
-			     howto->name, name, (uint64_t) rel->r_offset,
-			     input_section);
+			     howto->name, name, rel->r_offset, input_section);
 			  bfd_set_error (bfd_error_bad_value);
 			  return FALSE;
 			}
@@ -3368,39 +3321,20 @@ direct:
 		    {
 		      if (contents[roff + 5] == 0xb8)
 			{
-			  if (roff < 3
-			      || (roff - 3 + 22) > input_section->size)
-			    {
-corrupt_input:
-			      info->callbacks->einfo
-				(_("%F%P: corrupt input: %pB\n"),
-				 input_bfd);
-			      return FALSE;
-			    }
 			  memcpy (contents + roff - 3,
 				  "\x64\x48\x8b\x04\x25\0\0\0\0\x48\x8d\x80"
 				  "\0\0\0\0\x66\x0f\x1f\x44\0", 22);
 			  largepic = 1;
 			}
 		      else
-			{
-			  if (roff < 4
-			      || (roff - 4 + 16) > input_section->size)
-			    goto corrupt_input;
-			  memcpy (contents + roff - 4,
-				  "\x64\x48\x8b\x04\x25\0\0\0\0\x48\x8d\x80\0\0\0",
-				  16);
-			}
+			memcpy (contents + roff - 4,
+				"\x64\x48\x8b\x04\x25\0\0\0\0\x48\x8d\x80\0\0\0",
+				16);
 		    }
 		  else
-		    {
-		      if (roff < 3
-			  || (roff - 3 + 15) > input_section->size)
-			goto corrupt_input;
-		      memcpy (contents + roff - 3,
-			      "\x64\x8b\x04\x25\0\0\0\0\x48\x8d\x80\0\0\0",
-			      15);
-		    }
+		    memcpy (contents + roff - 3,
+			    "\x64\x8b\x04\x25\0\0\0\0\x48\x8d\x80\0\0\0",
+			    15);
 		  bfd_put_32 (output_bfd,
 			      elf_x86_64_tpoff (info, relocation),
 			      contents + roff + 8 + largepic);
@@ -3421,8 +3355,6 @@ corrupt_input:
 
 		  unsigned int val, type;
 
-		  if (roff < 3)
-		    goto corrupt_input;
 		  type = bfd_get_8 (input_bfd, contents + roff - 3);
 		  val = bfd_get_8 (input_bfd, contents + roff - 1);
 		  bfd_put_8 (output_bfd, 0x48 | ((type >> 2) & 1),
@@ -3469,11 +3401,7 @@ corrupt_input:
 		  if (roff >= 3)
 		    val = bfd_get_8 (input_bfd, contents + roff - 3);
 		  else
-		    {
-		      if (roff < 2)
-			goto corrupt_input;
-		      val = 0;
-		    }
+		    val = 0;
 		  type = bfd_get_8 (input_bfd, contents + roff - 2);
 		  reg = bfd_get_8 (input_bfd, contents + roff - 1);
 		  reg >>= 3;
@@ -3481,19 +3409,11 @@ corrupt_input:
 		    {
 		      /* movq */
 		      if (val == 0x4c)
-			{
-			  if (roff < 3)
-			    goto corrupt_input;
-			  bfd_put_8 (output_bfd, 0x49,
-				     contents + roff - 3);
-			}
+			bfd_put_8 (output_bfd, 0x49,
+				   contents + roff - 3);
 		      else if (!ABI_64_P (output_bfd) && val == 0x44)
-			{
-			  if (roff < 3)
-			    goto corrupt_input;
-			  bfd_put_8 (output_bfd, 0x41,
-				     contents + roff - 3);
-			}
+			bfd_put_8 (output_bfd, 0x41,
+				   contents + roff - 3);
 		      bfd_put_8 (output_bfd, 0xc7,
 				 contents + roff - 2);
 		      bfd_put_8 (output_bfd, 0xc0 | reg,
@@ -3504,19 +3424,11 @@ corrupt_input:
 		      /* addq/addl -> addq/addl - addressing with %rsp/%r12
 			 is special  */
 		      if (val == 0x4c)
-			{
-			  if (roff < 3)
-			    goto corrupt_input;
-			  bfd_put_8 (output_bfd, 0x49,
-				     contents + roff - 3);
-			}
+			bfd_put_8 (output_bfd, 0x49,
+				   contents + roff - 3);
 		      else if (!ABI_64_P (output_bfd) && val == 0x44)
-			{
-			  if (roff < 3)
-			    goto corrupt_input;
-			  bfd_put_8 (output_bfd, 0x41,
-				     contents + roff - 3);
-			}
+			bfd_put_8 (output_bfd, 0x41,
+				   contents + roff - 3);
 		      bfd_put_8 (output_bfd, 0x81,
 				 contents + roff - 2);
 		      bfd_put_8 (output_bfd, 0xc0 | reg,
@@ -3526,19 +3438,11 @@ corrupt_input:
 		    {
 		      /* addq/addl -> leaq/leal */
 		      if (val == 0x4c)
-			{
-			  if (roff < 3)
-			    goto corrupt_input;
-			  bfd_put_8 (output_bfd, 0x4d,
-				     contents + roff - 3);
-			}
+			bfd_put_8 (output_bfd, 0x4d,
+				   contents + roff - 3);
 		      else if (!ABI_64_P (output_bfd) && val == 0x44)
-			{
-			  if (roff < 3)
-			    goto corrupt_input;
-			  bfd_put_8 (output_bfd, 0x45,
-				     contents + roff - 3);
-			}
+			bfd_put_8 (output_bfd, 0x45,
+				   contents + roff - 3);
 		      bfd_put_8 (output_bfd, 0x8d,
 				 contents + roff - 2);
 		      bfd_put_8 (output_bfd, 0x80 | reg | (reg << 3),
@@ -3708,33 +3612,20 @@ corrupt_input:
 		    {
 		      if (contents[roff + 5] == 0xb8)
 			{
-			  if (roff < 3
-			      || (roff - 3 + 22) > input_section->size)
-			    goto corrupt_input;
 			  memcpy (contents + roff - 3,
 				  "\x64\x48\x8b\x04\x25\0\0\0\0\x48\x03\x05"
 				  "\0\0\0\0\x66\x0f\x1f\x44\0", 22);
 			  largepic = 1;
 			}
 		      else
-			{
-			  if (roff < 4
-			      || (roff - 4 + 16) > input_section->size)
-			    goto corrupt_input;
-			  memcpy (contents + roff - 4,
-				  "\x64\x48\x8b\x04\x25\0\0\0\0\x48\x03\x05\0\0\0",
-				  16);
-			}
+			memcpy (contents + roff - 4,
+				"\x64\x48\x8b\x04\x25\0\0\0\0\x48\x03\x05\0\0\0",
+				16);
 		    }
 		  else
-		    {
-		      if (roff < 3
-			  || (roff - 3 + 15) > input_section->size)
-			goto corrupt_input;
-		      memcpy (contents + roff - 3,
-			      "\x64\x8b\x04\x25\0\0\0\0\x48\x03\x05\0\0\0",
-			      15);
-		    }
+		    memcpy (contents + roff - 3,
+			    "\x64\x8b\x04\x25\0\0\0\0\x48\x03\x05\0\0\0",
+			    15);
 
 		  relocation = (htab->elf.sgot->output_section->vma
 				+ htab->elf.sgot->output_offset + off
@@ -3763,8 +3654,6 @@ corrupt_input:
 		     turn a leaq into a movq in the form we use it, it
 		     suffices to change the second byte from 0x8d to
 		     0x8b.  */
-		  if (roff < 2)
-		    goto corrupt_input;
 		  bfd_put_8 (output_bfd, 0x8b, contents + roff - 2);
 
 		  bfd_put_32 (output_bfd,
@@ -3833,58 +3722,28 @@ corrupt_input:
 	      BFD_ASSERT (r_type == R_X86_64_TPOFF32);
 	      if (ABI_64_P (output_bfd))
 		{
-		  if ((rel->r_offset + 5) >= input_section->size)
-		    goto corrupt_input;
 		  if (contents[rel->r_offset + 5] == 0xb8)
-		    {
-		      if (rel->r_offset < 3
-			  || (rel->r_offset - 3 + 22) > input_section->size)
-			goto corrupt_input;
-		      memcpy (contents + rel->r_offset - 3,
-			      "\x66\x66\x66\x66\x2e\x0f\x1f\x84\0\0\0\0\0"
-			      "\x64\x48\x8b\x04\x25\0\0\0", 22);
-		    }
+		    memcpy (contents + rel->r_offset - 3,
+			    "\x66\x66\x66\x66\x2e\x0f\x1f\x84\0\0\0\0\0"
+			    "\x64\x48\x8b\x04\x25\0\0\0", 22);
 		  else if (contents[rel->r_offset + 4] == 0xff
 			   || contents[rel->r_offset + 4] == 0x67)
-		    {
-		      if (rel->r_offset < 3
-			  || (rel->r_offset - 3 + 13) > input_section->size)
-			goto corrupt_input;
-		      memcpy (contents + rel->r_offset - 3,
-			      "\x66\x66\x66\x66\x64\x48\x8b\x04\x25\0\0\0",
-			      13);
-
-		    }
+		    memcpy (contents + rel->r_offset - 3,
+			    "\x66\x66\x66\x66\x64\x48\x8b\x04\x25\0\0\0",
+			    13);
 		  else
-		    {
-		      if (rel->r_offset < 3
-			  || (rel->r_offset - 3 + 12) > input_section->size)
-			goto corrupt_input;
-		      memcpy (contents + rel->r_offset - 3,
-			      "\x66\x66\x66\x64\x48\x8b\x04\x25\0\0\0", 12);
-		    }
+		    memcpy (contents + rel->r_offset - 3,
+			    "\x66\x66\x66\x64\x48\x8b\x04\x25\0\0\0", 12);
 		}
 	      else
 		{
-		  if ((rel->r_offset + 4) >= input_section->size)
-		    goto corrupt_input;
 		  if (contents[rel->r_offset + 4] == 0xff)
-		    {
-		      if (rel->r_offset < 3
-			  || (rel->r_offset - 3 + 13) > input_section->size)
-			goto corrupt_input;
-		      memcpy (contents + rel->r_offset - 3,
-			      "\x66\x0f\x1f\x40\x00\x64\x8b\x04\x25\0\0\0",
-			      13);
-		    }
+		    memcpy (contents + rel->r_offset - 3,
+			    "\x66\x0f\x1f\x40\x00\x64\x8b\x04\x25\0\0\0",
+			    13);
 		  else
-		    {
-		      if (rel->r_offset < 3
-			  || (rel->r_offset - 3 + 12) > input_section->size)
-			goto corrupt_input;
-		      memcpy (contents + rel->r_offset - 3,
-			      "\x0f\x1f\x40\x00\x64\x8b\x04\x25\0\0\0", 12);
-		    }
+		    memcpy (contents + rel->r_offset - 3,
+			    "\x0f\x1f\x40\x00\x64\x8b\x04\x25\0\0\0", 12);
 		}
 	      /* Skip R_X86_64_PC32, R_X86_64_PLT32, R_X86_64_GOTPCRELX
 		 and R_X86_64_PLTOFF64.  */
@@ -3971,11 +3830,10 @@ corrupt_input:
 	    default:
 	      _bfd_error_handler
 		/* xgettext:c-format */
-		(_("%pB(%pA+%#" PRIx64 "): "
-		   "unresolvable %s relocation against symbol `%s'"),
+		(_("%B(%A+%#Lx): unresolvable %s relocation against symbol `%s'"),
 		 input_bfd,
 		 input_section,
-		 (uint64_t) rel->r_offset,
+		 rel->r_offset,
 		 howto->name,
 		 h->root.root.string);
 	      return FALSE;
@@ -4021,9 +3879,9 @@ check_relocation_error:
 	    {
 	      _bfd_error_handler
 		/* xgettext:c-format */
-		(_("%pB(%pA+%#" PRIx64 "): reloc against `%s': error %d"),
+		(_("%B(%A+%#Lx): reloc against `%s': error %d"),
 		 input_bfd, input_section,
-		 (uint64_t) rel->r_offset, name, (int) r);
+		 rel->r_offset, name, (int) r);
 	      return FALSE;
 	    }
 	}
@@ -4168,7 +4026,7 @@ elf_x86_64_finish_dynamic_symbol (bfd *output_bfd,
       /* Check PC-relative offset overflow in PLT entry.  */
       if ((plt_got_pcrel_offset + 0x80000000) > 0xffffffff)
 	/* xgettext:c-format */
-	info->callbacks->einfo (_("%F%pB: PC-relative offset overflow in PLT entry for `%s'\n"),
+	info->callbacks->einfo (_("%F%B: PC-relative offset overflow in PLT entry for `%s'\n"),
 				output_bfd, h->root.root.string);
 
       bfd_put_32 (output_bfd, plt_got_pcrel_offset,
@@ -4194,7 +4052,7 @@ elf_x86_64_finish_dynamic_symbol (bfd *output_bfd,
 			   + got_offset);
 	  if (PLT_LOCAL_IFUNC_P (info, h))
 	    {
-	      info->callbacks->minfo (_("Local IFUNC function `%s' in %pB\n"),
+	      info->callbacks->minfo (_("Local IFUNC function `%s' in %B\n"),
 				      h->root.root.string,
 				      h->root.u.def.section->owner);
 
@@ -4231,7 +4089,7 @@ elf_x86_64_finish_dynamic_symbol (bfd *output_bfd,
 		 will overflow first.  */
 	      if (plt0_offset > 0x80000000)
 		/* xgettext:c-format */
-		info->callbacks->einfo (_("%F%pB: branch displacement overflow in PLT entry for `%s'\n"),
+		info->callbacks->einfo (_("%F%B: branch displacement overflow in PLT entry for `%s'\n"),
 					output_bfd, h->root.root.string);
 	      bfd_put_32 (output_bfd, - plt0_offset,
 			  (plt->contents + h->plt.offset
@@ -4284,7 +4142,7 @@ elf_x86_64_finish_dynamic_symbol (bfd *output_bfd,
       if ((got_after_plt && got_pcrel_offset < 0)
 	  || (!got_after_plt && got_pcrel_offset > 0))
 	/* xgettext:c-format */
-	info->callbacks->einfo (_("%F%pB: PC-relative offset overflow in GOT PLT entry for `%s'\n"),
+	info->callbacks->einfo (_("%F%B: PC-relative offset overflow in GOT PLT entry for `%s'\n"),
 				output_bfd, h->root.root.string);
 
       bfd_put_32 (output_bfd, got_pcrel_offset,
@@ -4309,8 +4167,6 @@ elf_x86_64_finish_dynamic_symbol (bfd *output_bfd,
       if (!h->pointer_equality_needed)
 	sym->st_value = 0;
     }
-
-  _bfd_x86_elf_link_fixup_ifunc_symbol (info, htab, h, sym);
 
   /* Don't generate dynamic GOT relocation against undefined weak
      symbol in executable.  */
@@ -4350,7 +4206,7 @@ elf_x86_64_finish_dynamic_symbol (bfd *output_bfd,
 		}
 	      if (SYMBOL_REFERENCES_LOCAL_P (info, h))
 		{
-		  info->callbacks->minfo (_("Local IFUNC function `%s' in %pB\n"),
+		  info->callbacks->minfo (_("Local IFUNC function `%s' in %B\n"),
 					  h->root.root.string,
 					  h->root.u.def.section->owner);
 
@@ -4399,7 +4255,7 @@ elf_x86_64_finish_dynamic_symbol (bfd *output_bfd,
       else if (bfd_link_pic (info)
 	       && SYMBOL_REFERENCES_LOCAL_P (info, h))
 	{
-	  if (!SYMBOL_DEFINED_NON_SHARED_P (h))
+	  if (!(h->def_regular || ELF_COMMON_DEF_P (h)))
 	    return FALSE;
 	  BFD_ASSERT((h->got.offset & 1) != 0);
 	  rela.r_info = htab->r_info (0, R_X86_64_RELATIVE);
@@ -5055,13 +4911,7 @@ elf_x86_64_link_setup_gnu_properties (struct bfd_link_info *info)
 
   if (get_elf_x86_backend_data (info->output_bfd)->target_os != is_nacl)
     {
-      const struct elf_backend_data *bed
-	= get_elf_backend_data (info->output_bfd);
-      struct elf_x86_link_hash_table *htab
-	= elf_x86_hash_table (info, bed->target_id);
-      if (!htab)
-	abort ();
-      if (htab->params->bndplt)
+      if (info->bndplt)
 	{
 	  init_table.lazy_plt = &elf_x86_64_lazy_bnd_plt;
 	  init_table.non_lazy_plt = &elf_x86_64_non_lazy_bnd_plt;
@@ -5122,11 +4972,7 @@ elf_x86_64_special_sections[]=
 #define ELF_ARCH			    bfd_arch_i386
 #define ELF_TARGET_ID			    X86_64_ELF_DATA
 #define ELF_MACHINE_CODE		    EM_X86_64
-#if DEFAULT_LD_Z_SEPARATE_CODE
-# define ELF_MAXPAGESIZE		    0x1000
-#else
-# define ELF_MAXPAGESIZE		    0x200000
-#endif
+#define ELF_MAXPAGESIZE			    0x200000
 #define ELF_MINPAGESIZE			    0x1000
 #define ELF_COMMONPAGESIZE		    0x1000
 
@@ -5191,9 +5037,6 @@ elf_x86_64_special_sections[]=
   elf_x86_64_link_setup_gnu_properties
 #define elf_backend_hide_symbol \
   _bfd_x86_elf_hide_symbol
-
-#undef	elf64_bed
-#define elf64_bed elf64_x86_64_bed
 
 #include "elf64-target.h"
 
@@ -5485,9 +5328,6 @@ elf32_x86_64_nacl_elf_object_p (bfd *abfd)
 #define elf_backend_size_info \
   _bfd_elf32_size_info
 
-#undef	elf32_bed
-#define	elf32_bed			elf32_x86_64_bed
-
 #include "elf32-target.h"
 
 /* Restore defaults.  */
@@ -5531,11 +5371,7 @@ elf64_l1om_elf_object_p (bfd *abfd)
 #undef	ELF_MAXPAGESIZE
 #undef	ELF_MINPAGESIZE
 #undef	ELF_COMMONPAGESIZE
-#if DEFAULT_LD_Z_SEPARATE_CODE
-# define ELF_MAXPAGESIZE		0x1000
-#else
-# define ELF_MAXPAGESIZE		0x200000
-#endif
+#define ELF_MAXPAGESIZE			0x200000
 #define ELF_MINPAGESIZE			0x1000
 #define ELF_COMMONPAGESIZE		0x1000
 #undef	elf_backend_plt_alignment

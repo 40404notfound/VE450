@@ -1,7 +1,7 @@
 /* Private implementation details of interface between gdb and its
    extension languages.
 
-   Copyright (C) 2014-2019 Free Software Foundation, Inc.
+   Copyright (C) 2014-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -183,8 +183,7 @@ struct extension_language_ops
      or SCR_BT_COMPLETED on success.  */
   enum ext_lang_bt_status (*apply_frame_filter)
     (const struct extension_language_defn *,
-     struct frame_info *frame, frame_filter_flags flags,
-     enum ext_lang_frame_args args_type,
+     struct frame_info *frame, int flags, enum ext_lang_frame_args args_type,
      struct ui_out *out, int frame_low, int frame_high);
 
   /* Update values held by the extension language when OBJFILE is discarded.

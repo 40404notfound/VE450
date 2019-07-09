@@ -1,5 +1,5 @@
 /* Ubicom IP2xxx specific support for 32-bit ELF
-   Copyright (C) 2000-2019 Free Software Foundation, Inc.
+   Copyright (C) 2000-2018 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -1231,8 +1231,8 @@ ip2k_elf_relax_section (bfd *abfd,
 
 /* Set the howto pointer for a IP2K ELF reloc.  */
 
-static bfd_boolean
-ip2k_info_to_howto_rela (bfd * abfd,
+static void
+ip2k_info_to_howto_rela (bfd * abfd ATTRIBUTE_UNUSED,
 			 arelent * cache_ptr,
 			 Elf_Internal_Rela * dst)
 {
@@ -1242,13 +1242,10 @@ ip2k_info_to_howto_rela (bfd * abfd,
   if (r_type >= (unsigned int) R_IP2K_max)
     {
       /* xgettext:c-format */
-      _bfd_error_handler (_("%pB: unsupported relocation type %#x"),
-			  abfd, r_type);
-      bfd_set_error (bfd_error_bad_value);
-      return FALSE;
+      _bfd_error_handler (_("%B: invalid IP2K reloc number: %d"), abfd, r_type);
+      r_type = 0;
     }
   cache_ptr->howto = & ip2k_elf_howto_table [r_type];
-  return TRUE;
 }
 
 /* Perform a single relocation.
@@ -1298,11 +1295,9 @@ ip2k_final_link_relocate (reloc_howto_type *  howto,
 	      ip2k_nominal_page_bits (input_bfd, input_section,
 				      rel->r_offset, contents))
 	    /* xgettext:c-format */
-	    _bfd_error_handler
-	      (_("ip2k linker: missing page instruction "
-		 "at %#" PRIx64 " (dest = %#" PRIx64 ")"),
-	       (uint64_t) (BASEADDR (input_section) + rel->r_offset),
-	       (uint64_t) (relocation + rel->r_addend));
+	    _bfd_error_handler (_("ip2k linker: missing page instruction at %#Lx (dest = %#Lx)"),
+				BASEADDR (input_section) + rel->r_offset,
+				relocation + rel->r_addend);
 	}
       else if (ip2k_relaxed)
 	{
@@ -1317,11 +1312,9 @@ ip2k_final_link_relocate (reloc_howto_type *  howto,
 		  ip2k_nominal_page_bits (input_bfd, input_section,
 					  rel->r_offset - 2, contents)))
 	    /* xgettext:c-format */
-	    _bfd_error_handler
-	      (_("ip2k linker: redundant page instruction "
-		 "at %#" PRIx64 " (dest = %#" PRIx64 ")"),
-	       (uint64_t) page_addr,
-	       (uint64_t) (relocation + rel->r_addend));
+	    _bfd_error_handler (_("ip2k linker: redundant page instruction at %#Lx (dest = %#Lx)"),
+				page_addr,
+				relocation + rel->r_addend);
 	}
       if ((relocation & IP2K_INSN_MASK) == IP2K_INSN_VALUE)
 	relocation &= ~IP2K_INSN_MASK;

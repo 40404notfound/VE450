@@ -1,4 +1,5 @@
 dnl Process this file with autoconf to produce a configure script.
+AC_PREREQ(2.64)dnl
 AC_INIT(Makefile.in)
 
 AC_PROG_CC

@@ -1,6 +1,6 @@
 /* GDB parameters implemented in Python
 
-   Copyright (C) 2008-2019 Free Software Foundation, Inc.
+   Copyright (C) 2008-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -27,6 +27,7 @@
 #include "completer.h"
 #include "language.h"
 #include "arch-utils.h"
+#include "py-ref.h"
 
 /* Parameter constants and their values.  */
 struct parm_constant
@@ -46,8 +47,6 @@ struct parm_constant parm_constants[] =
   { "PARAM_OPTIONAL_FILENAME", var_optional_filename },
   { "PARAM_FILENAME", var_filename },
   { "PARAM_ZINTEGER", var_zinteger },
-  { "PARAM_ZUINTEGER", var_zuinteger },
-  { "PARAM_ZUINTEGER_UNLIMITED", var_zuinteger_unlimited },
   { "PARAM_ENUM", var_enum },
   { NULL, 0 }
 };
@@ -226,8 +225,6 @@ set_parameter_value (parmpy_object *self, PyObject *value)
     case var_integer:
     case var_zinteger:
     case var_uinteger:
-    case var_zuinteger:
-    case var_zuinteger_unlimited:
       {
 	long l;
 	int ok;
@@ -242,33 +239,20 @@ set_parameter_value (parmpy_object *self, PyObject *value)
 	if (! gdb_py_int_as_long (value, &l))
 	  return -1;
 
-	switch (self->type)
+	if (self->type == var_uinteger)
 	  {
-	  case var_uinteger:
+	    ok = (l >= 0 && l <= UINT_MAX);
 	    if (l == 0)
 	      l = UINT_MAX;
-	    /* Fall through.  */
-	  case var_zuinteger:
-	    ok = (l >= 0 && l <= UINT_MAX);
-	    break;
-
-	  case var_zuinteger_unlimited:
-	    ok = (l >= -1 && l <= INT_MAX);
-	    break;
-
-	  case var_integer:
+	  }
+	else if (self->type == var_integer)
+	  {
 	    ok = (l >= INT_MIN && l <= INT_MAX);
 	    if (l == 0)
 	      l = INT_MAX;
-	    break;
-
-	  case var_zinteger:
-	    ok = (l >= INT_MIN && l <= INT_MAX);
-	    break;
-
-	  default:
-	    gdb_assert_not_reached ("unknown var_ constant");
 	  }
+	else
+	  ok = (l >= INT_MIN && l <= INT_MAX);
 
 	if (! ok)
 	  {
@@ -277,10 +261,7 @@ set_parameter_value (parmpy_object *self, PyObject *value)
 	    return -1;
 	  }
 
-	if (self->type == var_uinteger || self->type == var_zuinteger)
-	  self->value.uintval = (unsigned) l;
-	else
-	  self->value.intval = (int) l;
+	self->value.intval = (int) l;
 	break;
       }
 
@@ -395,12 +376,20 @@ get_set_value (const char *args, int from_tty,
     {
       set_doc_string = call_doc_function (obj, set_doc_func.get (), NULL);
       if (! set_doc_string)
-	gdbpy_handle_exception ();
+	{
+	  gdbpy_print_stack ();
+	  return;
+	}
+    }
+  else
+    {
+      /* We have to preserve the existing < GDB 7.3 API.  If a
+	 callback function does not exist, then attempt to read the
+	 set_doc attribute.  */
+      set_doc_string  = get_doc_string (obj, set_doc_cst);
     }
 
-  const char *str = set_doc_string.get ();
-  if (str != nullptr && str[0] != '\0')
-    fprintf_filtered (gdb_stdout, "%s\n", str);
+  fprintf_filtered (gdb_stdout, "%s\n", set_doc_string.get ());
 }
 
 /* A callback function that is registered against the respective
@@ -461,9 +450,8 @@ get_show_value (struct ui_file *file, int from_tty,
    function.  */
 static void
 add_setshow_generic (int parmclass, enum command_class cmdclass,
-		     const char *cmd_name, parmpy_object *self,
-		     const char *set_doc, const char *show_doc,
-		     const char *help_doc,
+		     char *cmd_name, parmpy_object *self,
+		     char *set_doc, char *show_doc, char *help_doc,
 		     struct cmd_list_element **set_list,
 		     struct cmd_list_element **show_list)
 {
@@ -536,21 +524,6 @@ add_setshow_generic (int parmclass, enum command_class cmdclass,
 				&self->value.intval, set_doc, show_doc,
 				help_doc, get_set_value, get_show_value,
 				set_list, show_list);
-      break;
-
-    case var_zuinteger:
-      add_setshow_zuinteger_cmd (cmd_name, cmdclass,
-				&self->value.uintval, set_doc, show_doc,
-				help_doc, get_set_value, get_show_value,
-				set_list, show_list);
-      break;
-
-    case var_zuinteger_unlimited:
-      add_setshow_zuinteger_unlimited_cmd (cmd_name, cmdclass,
-					   &self->value.intval, set_doc,
-					   show_doc, help_doc, get_set_value,
-					   get_show_value,
-					   set_list, show_list);
       break;
 
     case var_enum:
@@ -659,7 +632,7 @@ parmpy_init (PyObject *self, PyObject *args, PyObject *kwds)
 {
   parmpy_object *obj = (parmpy_object *) self;
   const char *name;
-  gdb::unique_xmalloc_ptr<char> set_doc, show_doc, doc;
+  char *set_doc, *show_doc, *doc;
   char *cmd_name;
   int parmclass, cmdtype;
   PyObject *enum_values = NULL;
@@ -685,8 +658,7 @@ parmpy_init (PyObject *self, PyObject *args, PyObject *kwds)
       && parmclass != var_uinteger && parmclass != var_integer
       && parmclass != var_string && parmclass != var_string_noescape
       && parmclass != var_optional_filename && parmclass != var_filename
-      && parmclass != var_zinteger && parmclass != var_zuinteger
-      && parmclass != var_zuinteger_unlimited && parmclass != var_enum)
+      && parmclass != var_zinteger && parmclass != var_enum)
     {
       PyErr_SetString (PyExc_RuntimeError,
 		       _("Invalid parameter class argument."));
@@ -720,26 +692,32 @@ parmpy_init (PyObject *self, PyObject *args, PyObject *kwds)
   if (! cmd_name)
     return -1;
 
-  set_doc = get_doc_string (self, set_doc_cst);
-  show_doc = get_doc_string (self, show_doc_cst);
-  doc = get_doc_string (self, gdbpy_doc_cst);
+  set_doc = get_doc_string (self, set_doc_cst).release ();
+  show_doc = get_doc_string (self, show_doc_cst).release ();
+  doc = get_doc_string (self, gdbpy_doc_cst).release ();
 
   Py_INCREF (self);
 
-  try
+  TRY
     {
       add_setshow_generic (parmclass, (enum command_class) cmdtype,
 			   cmd_name, obj,
-			   set_doc.get (), show_doc.get (),
-			   doc.get (), set_list, show_list);
+			   set_doc, show_doc,
+			   doc, set_list, show_list);
     }
-  catch (const gdb_exception &except)
+  CATCH (except, RETURN_MASK_ALL)
     {
       xfree (cmd_name);
+      xfree (set_doc);
+      xfree (show_doc);
+      xfree (doc);
       Py_DECREF (self);
-      gdbpy_convert_exception (except);
+      PyErr_Format (except.reason == RETURN_QUIT
+		    ? PyExc_KeyboardInterrupt : PyExc_RuntimeError,
+		    "%s", except.message);
       return -1;
     }
+  END_CATCH
 
   return 0;
 }

@@ -1,5 +1,5 @@
 /* TILEPro-specific support for 32-bit ELF.
-   Copyright (C) 2011-2019 Free Software Foundation, Inc.
+   Copyright (C) 2011-2018 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -783,7 +783,7 @@ tilepro_reloc_name_lookup (bfd *abfd ATTRIBUTE_UNUSED,
 
 /* Set the howto pointer for an TILEPro ELF reloc.  */
 
-static bfd_boolean
+static void
 tilepro_info_to_howto_rela (bfd * abfd ATTRIBUTE_UNUSED,
 			    arelent * cache_ptr,
 			    Elf_Internal_Rela * dst)
@@ -793,19 +793,11 @@ tilepro_info_to_howto_rela (bfd * abfd ATTRIBUTE_UNUSED,
   if (r_type <= (unsigned int) R_TILEPRO_IMM16_X1_TLS_LE_HA)
     cache_ptr->howto = &tilepro_elf_howto_table [r_type];
   else if (r_type - R_TILEPRO_GNU_VTINHERIT
-	   <= ((unsigned int) R_TILEPRO_GNU_VTENTRY
-	       - (unsigned int) R_TILEPRO_GNU_VTINHERIT))
+	   <= (unsigned int) R_TILEPRO_GNU_VTENTRY)
     cache_ptr->howto
       = &tilepro_elf_howto_table2 [r_type - R_TILEPRO_GNU_VTINHERIT];
   else
-    {
-      /* xgettext:c-format */
-      _bfd_error_handler (_("%pB: unsupported relocation type %#x"),
-			  abfd, r_type);
-      bfd_set_error (bfd_error_bad_value);
-      return FALSE;
-    }
-  return TRUE;
+    abort ();
 }
 
 typedef tilepro_bundle_bits (*tilepro_create_func)(int);
@@ -1476,7 +1468,7 @@ tilepro_elf_check_relocs (bfd *abfd, struct bfd_link_info *info,
       if (r_symndx >= NUM_SHDR_ENTRIES (symtab_hdr))
 	{
 	  /* xgettext:c-format */
-	  _bfd_error_handler (_("%pB: bad symbol index: %d"),
+	  _bfd_error_handler (_("%B: bad symbol index: %d"),
 			      abfd, r_symndx);
 	  return FALSE;
 	}
@@ -1589,7 +1581,7 @@ tilepro_elf_check_relocs (bfd *abfd, struct bfd_link_info *info,
 		  {
 		    _bfd_error_handler
 		      /* xgettext:c-format */
-		      (_("%pB: `%s' accessed both as normal and thread local symbol"),
+		      (_("%B: `%s' accessed both as normal and thread local symbol"),
 		       abfd, h ? h->root.root.string : "<local>");
 		    return FALSE;
 		  }
@@ -2242,7 +2234,7 @@ maybe_set_textrel (struct elf_link_hash_entry *h, void *info_p)
 
       info->flags |= DF_TEXTREL;
       info->callbacks->minfo
-	(_("%pB: dynamic relocation against `%pT' in read-only section `%pA'\n"),
+	(_("%B: dynamic relocation against `%T' in read-only section `%A'\n"),
 	 sec->owner, h->root.root.string, sec);
 
       /* Not an error, just cut short the traversal.  */
@@ -2265,7 +2257,7 @@ tilepro_elf_omit_section_dynsym (bfd *output_bfd,
   if (strcmp (p->name, ".got") == 0)
     return FALSE;
 
-  return _bfd_elf_omit_section_dynsym_default (output_bfd, info, p);
+  return _bfd_elf_link_omit_section_dynsym (output_bfd, info, p);
 }
 
 /* Set the sizes of the dynamic sections.  */
@@ -2336,7 +2328,7 @@ tilepro_elf_size_dynamic_sections (bfd *output_bfd,
 		    {
 		      info->flags |= DF_TEXTREL;
 
-		      info->callbacks->minfo (_("%pB: dynamic relocation in read-only section `%pA'\n"),
+		      info->callbacks->minfo (_("%B: dynamic relocation in read-only section `%A'\n"),
 					      p->sec->owner, p->sec);
 		    }
 		}
@@ -3152,7 +3144,7 @@ tilepro_elf_relocate_section (bfd *output_bfd, struct bfd_link_info *info,
 			    {
 			      BFD_FAIL ();
 			      _bfd_error_handler
-				(_("%pB: probably compiled without -fPIC?"),
+				(_("%B: probably compiled without -fPIC?"),
 				 input_bfd);
 			      bfd_set_error (bfd_error_bad_value);
 			      return FALSE;
@@ -3406,11 +3398,10 @@ tilepro_elf_relocate_section (bfd *output_bfd, struct bfd_link_info *info,
 				      rel->r_offset) != (bfd_vma) -1)
 	_bfd_error_handler
 	  /* xgettext:c-format */
-	  (_("%pB(%pA+%#" PRIx64 "): "
-	     "unresolvable %s relocation against symbol `%s'"),
+	  (_("%B(%A+%#Lx): unresolvable %s relocation against symbol `%s'"),
 	   input_bfd,
 	   input_section,
-	   (uint64_t) rel->r_offset,
+	   rel->r_offset,
 	   howto->name,
 	   h->root.root.string);
 
@@ -3758,7 +3749,7 @@ tilepro_elf_finish_dynamic_sections (bfd *output_bfd,
       if (bfd_is_abs_section (htab->elf.sgotplt->output_section))
 	{
 	  _bfd_error_handler
-	    (_("discarded output section: `%pA'"), htab->elf.sgotplt);
+	    (_("discarded output section: `%A'"), htab->elf.sgotplt);
 	  return FALSE;
 	}
 

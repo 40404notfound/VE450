@@ -1,6 +1,6 @@
 /* Handle Darwin shared libraries for GDB, the GNU Debugger.
 
-   Copyright (C) 2009-2019 Free Software Foundation, Inc.
+   Copyright (C) 2009-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -261,8 +261,10 @@ darwin_current_sos (void)
       CORE_ADDR path_addr;
       struct mach_o_header_external hdr;
       unsigned long hdr_val;
-      gdb::unique_xmalloc_ptr<char> file_path;
+      char *file_path;
       int errcode;
+      struct so_list *newobj;
+      struct cleanup *old_chain;
 
       /* Read image info from inferior.  */
       if (target_read_memory (iinfo, buf, image_info_size))
@@ -291,21 +293,25 @@ darwin_current_sos (void)
 	break;
 
       /* Create and fill the new so_list element.  */
-      gdb::unique_xmalloc_ptr<struct so_list> newobj (XCNEW (struct so_list));
+      newobj = XCNEW (struct so_list);
+      old_chain = make_cleanup (xfree, newobj);
 
       lm_info_darwin *li = new lm_info_darwin;
       newobj->lm_info = li;
 
-      strncpy (newobj->so_name, file_path.get (), SO_NAME_MAX_PATH_SIZE - 1);
+      strncpy (newobj->so_name, file_path, SO_NAME_MAX_PATH_SIZE - 1);
       newobj->so_name[SO_NAME_MAX_PATH_SIZE - 1] = '\0';
       strcpy (newobj->so_original_name, newobj->so_name);
+      xfree (file_path);
       li->lm_addr = load_addr;
 
       if (head == NULL)
-	head = newobj.get ();
+	head = newobj;
       else
-	tail->next = newobj.get ();
-      tail = newobj.release ();
+	tail->next = newobj;
+      tail = newobj;
+
+      discard_cleanups (old_chain);
     }
 
   return head;
@@ -429,21 +435,23 @@ gdb_bfd_mach_o_fat_extract (bfd *abfd, bfd_format format,
   return gdb_bfd_ref_ptr (result);
 }
 
-/* Return the BFD for the program interpreter.  */
+/* Extract dyld_all_image_addr when the process was just created, assuming the
+   current PC is at the entry of the dynamic linker.  */
 
-static gdb_bfd_ref_ptr
-darwin_get_dyld_bfd ()
+static void
+darwin_solib_get_all_image_info_addr_at_init (struct darwin_info *info)
 {
   char *interp_name;
+  CORE_ADDR load_addr = 0;
 
   /* This method doesn't work with an attached process.  */
   if (current_inferior ()->attach_flag)
-    return NULL;
+    return;
 
   /* Find the program interpreter.  */
   interp_name = find_program_interpreter ();
   if (!interp_name)
-    return NULL;
+    return;
 
   /* Create a bfd for the interpreter.  */
   gdb_bfd_ref_ptr dyld_bfd (gdb_bfd_open (interp_name, gnutarget, -1));
@@ -452,20 +460,11 @@ darwin_get_dyld_bfd ()
       gdb_bfd_ref_ptr sub
 	(gdb_bfd_mach_o_fat_extract (dyld_bfd.get (), bfd_object,
 				     gdbarch_bfd_arch_info (target_gdbarch ())));
-      dyld_bfd = sub;
+      if (sub != NULL)
+	dyld_bfd = sub;
+      else
+	dyld_bfd.release ();
     }
-  return dyld_bfd;
-}
-
-/* Extract dyld_all_image_addr when the process was just created, assuming the
-   current PC is at the entry of the dynamic linker.  */
-
-static void
-darwin_solib_get_all_image_info_addr_at_init (struct darwin_info *info)
-{
-  CORE_ADDR load_addr = 0;
-  gdb_bfd_ref_ptr dyld_bfd = darwin_get_dyld_bfd ();
-
   if (dyld_bfd == NULL)
     return;
 
@@ -499,8 +498,8 @@ darwin_solib_read_all_image_info_addr (struct darwin_info *info)
   if (TYPE_LENGTH (ptr_type) > sizeof (buf))
     return;
 
-  len = target_read (current_top_target (), TARGET_OBJECT_DARWIN_DYLD_INFO,
-		     NULL, buf, 0, TYPE_LENGTH (ptr_type));
+  len = target_read (&current_target, TARGET_OBJECT_DARWIN_DYLD_INFO, NULL,
+		     buf, 0, TYPE_LENGTH (ptr_type));
   if (len <= 0)
     return;
 
@@ -535,6 +534,10 @@ darwin_solib_create_inferior_hook (int from_tty)
       return;
     }
 
+  /* Add the breakpoint which is hit by dyld when the list of solib is
+     modified.  */
+  create_solib_event_breakpoint (target_gdbarch (), info->all_image.notifier);
+
   if (info->all_image.count != 0)
     {
       /* Possible relocate the main executable (PIE).  */
@@ -561,49 +564,6 @@ darwin_solib_create_inferior_hook (int from_tty)
       if (vmaddr != load_addr)
 	objfile_rebase (symfile_objfile, load_addr - vmaddr);
     }
-
-  /* Set solib notifier (to reload list of shared libraries).  */
-  CORE_ADDR notifier = info->all_image.notifier;
-
-  if (info->all_image.count == 0)
-    {
-      /* Dyld hasn't yet relocated itself, so the notifier address may
-	 be incorrect (as it has to be relocated).  */
-      CORE_ADDR start = bfd_get_start_address (exec_bfd);
-      if (start == 0)
-	notifier = 0;
-      else
-        {
-          gdb_bfd_ref_ptr dyld_bfd = darwin_get_dyld_bfd ();
-          if (dyld_bfd != NULL)
-            {
-              CORE_ADDR dyld_bfd_start_address;
-              CORE_ADDR dyld_relocated_base_address;
-              CORE_ADDR pc;
-
-              dyld_bfd_start_address = bfd_get_start_address (dyld_bfd.get());
-
-              /* We find the dynamic linker's base address by examining
-                 the current pc (which should point at the entry point
-                 for the dynamic linker) and subtracting the offset of
-                 the entry point.  */
-
-              pc = regcache_read_pc (get_current_regcache ());
-              dyld_relocated_base_address = pc - dyld_bfd_start_address;
-
-              /* We get the proper notifier relocated address by
-                 adding the dyld relocated base address to the current
-                 notifier offset value.  */
-
-              notifier += dyld_relocated_base_address;
-            }
-        }
-    }
-
-  /* Add the breakpoint which is hit by dyld when the list of solib is
-     modified.  */
-  if (notifier != 0)
-    create_solib_event_breakpoint (target_gdbarch (), notifier);
 }
 
 static void
@@ -653,22 +613,22 @@ darwin_lookup_lib_symbol (struct objfile *objfile,
 			  const char *name,
 			  const domain_enum domain)
 {
-  return {};
+  return (struct block_symbol) {NULL, NULL};
 }
 
 static gdb_bfd_ref_ptr
-darwin_bfd_open (const char *pathname)
+darwin_bfd_open (char *pathname)
 {
+  char *found_pathname;
   int found_file;
 
   /* Search for shared library file.  */
-  gdb::unique_xmalloc_ptr<char> found_pathname
-    = solib_find (pathname, &found_file);
+  found_pathname = solib_find (pathname, &found_file);
   if (found_pathname == NULL)
     perror_with_name (pathname);
 
   /* Open bfd for shared library.  */
-  gdb_bfd_ref_ptr abfd (solib_bfd_fopen (found_pathname.get (), found_file));
+  gdb_bfd_ref_ptr abfd (solib_bfd_fopen (found_pathname, found_file));
 
   gdb_bfd_ref_ptr res
     (gdb_bfd_mach_o_fat_extract (abfd.get (), bfd_object,

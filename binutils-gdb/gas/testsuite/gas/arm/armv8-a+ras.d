@@ -2,7 +2,7 @@
 #as: -march=armv8-a+ras
 #source: armv8_2-a.s
 #objdump: -dr
-#skip: *-*-pe *-wince-*
+#skip: *-*-pe *-wince-* *-*-coff
 
 
 .*: +file format .*arm.*

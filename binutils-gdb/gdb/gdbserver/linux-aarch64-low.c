@@ -1,7 +1,7 @@
 /* GNU/Linux/AArch64 specific low level interface, for the remote server for
    GDB.
 
-   Copyright (C) 2009-2019 Free Software Foundation, Inc.
+   Copyright (C) 2009-2018 Free Software Foundation, Inc.
    Contributed by ARM Ltd.
 
    This file is part of GDB.
@@ -40,8 +40,6 @@
 #include "gdb_proc_service.h"
 #include "arch/aarch64.h"
 #include "linux-aarch64-tdesc.h"
-#include "nat/aarch64-sve-linux-ptrace.h"
-#include "tdesc.h"
 
 #ifdef HAVE_SYS_REG_H
 #include <sys/reg.h>
@@ -74,14 +72,20 @@ is_64bit_tdesc (void)
   return register_size (regcache->tdesc, 0) == 8;
 }
 
-/* Return true if the regcache contains the number of SVE registers.  */
+/* Implementation of linux_target_ops method "cannot_store_register".  */
 
-static bool
-is_sve_tdesc (void)
+static int
+aarch64_cannot_store_register (int regno)
 {
-  struct regcache *regcache = get_thread_regcache (current_thread, 0);
+  return regno >= AARCH64_NUM_REGS;
+}
 
-  return regcache->tdesc->reg_defs.size () == AARCH64_SVE_NUM_REGS;
+/* Implementation of linux_target_ops method "cannot_fetch_register".  */
+
+static int
+aarch64_cannot_fetch_register (int regno)
+{
+  return regno >= AARCH64_NUM_REGS;
 }
 
 static void
@@ -133,23 +137,6 @@ aarch64_store_fpregset (struct regcache *regcache, const void *buf)
     supply_register (regcache, AARCH64_V0_REGNUM + i, &regset->vregs[i]);
   supply_register (regcache, AARCH64_FPSR_REGNUM, &regset->fpsr);
   supply_register (regcache, AARCH64_FPCR_REGNUM, &regset->fpcr);
-}
-
-/* Store the pauth registers to regcache.  */
-
-static void
-aarch64_store_pauthregset (struct regcache *regcache, const void *buf)
-{
-  uint64_t *pauth_regset = (uint64_t *) buf;
-  int pauth_base = find_regno (regcache->tdesc, "pauth_dmask");
-
-  if (pauth_base == 0)
-    return;
-
-  supply_register (regcache, AARCH64_PAUTH_DMASK_REGNUM (pauth_base),
-		   &pauth_regset[0]);
-  supply_register (regcache, AARCH64_PAUTH_CMASK_REGNUM (pauth_base),
-		   &pauth_regset[1]);
 }
 
 /* Enable miscellaneous debugging output.  The name is historical - it
@@ -373,39 +360,14 @@ aarch64_stopped_data_address (void)
   state = aarch64_get_debug_reg_state (pid_of (current_thread));
   for (i = aarch64_num_wp_regs - 1; i >= 0; --i)
     {
-      const unsigned int offset
-	= aarch64_watchpoint_offset (state->dr_ctrl_wp[i]);
       const unsigned int len = aarch64_watchpoint_length (state->dr_ctrl_wp[i]);
       const CORE_ADDR addr_trap = (CORE_ADDR) siginfo.si_addr;
-      const CORE_ADDR addr_watch = state->dr_addr_wp[i] + offset;
-      const CORE_ADDR addr_watch_aligned = align_down (state->dr_addr_wp[i], 8);
-      const CORE_ADDR addr_orig = state->dr_addr_orig_wp[i];
-
+      const CORE_ADDR addr_watch = state->dr_addr_wp[i];
       if (state->dr_ref_count_wp[i]
 	  && DR_CONTROL_ENABLED (state->dr_ctrl_wp[i])
-	  && addr_trap >= addr_watch_aligned
+	  && addr_trap >= addr_watch
 	  && addr_trap < addr_watch + len)
-	{
-	  /* ADDR_TRAP reports the first address of the memory range
-	     accessed by the CPU, regardless of what was the memory
-	     range watched.  Thus, a large CPU access that straddles
-	     the ADDR_WATCH..ADDR_WATCH+LEN range may result in an
-	     ADDR_TRAP that is lower than the
-	     ADDR_WATCH..ADDR_WATCH+LEN range.  E.g.:
-
-	     addr: |   4   |   5   |   6   |   7   |   8   |
-				   |---- range watched ----|
-		   |----------- range accessed ------------|
-
-	     In this case, ADDR_TRAP will be 4.
-
-	     To match a watchpoint known to GDB core, we must never
-	     report *ADDR_P outside of any ADDR_WATCH..ADDR_WATCH+LEN
-	     range.  ADDR_WATCH <= ADDR_TRAP < ADDR_ORIG is a false
-	     positive on kernels older than 4.10.  See PR
-	     external/20207.  */
-	  return addr_orig;
-	}
+	return addr_trap;
     }
 
   return (CORE_ADDR) 0;
@@ -502,9 +464,6 @@ aarch64_linux_new_fork (struct process_info *parent,
   *child->priv->arch_private = *parent->priv->arch_private;
 }
 
-/* Matches HWCAP_PACA in kernel header arch/arm64/include/uapi/asm/hwcap.h.  */
-#define AARCH64_HWCAP_PACA (1 << 30)
-
 /* Implementation of linux_target_ops method "arch_setup".  */
 
 static void
@@ -519,33 +478,11 @@ aarch64_arch_setup (void)
   is_elf64 = linux_pid_exe_is_elf_64_file (tid, &machine);
 
   if (is_elf64)
-    {
-      uint64_t vq = aarch64_sve_get_vq (tid);
-      unsigned long hwcap = linux_get_hwcap (8);
-      bool pauth_p = hwcap & AARCH64_HWCAP_PACA;
-
-      current_process ()->tdesc = aarch64_linux_read_description (vq, pauth_p);
-    }
+    current_process ()->tdesc = aarch64_linux_read_description ();
   else
     current_process ()->tdesc = tdesc_arm_with_neon;
 
   aarch64_linux_get_debug_reg_capacity (lwpid_of (current_thread));
-}
-
-/* Wrapper for aarch64_sve_regs_copy_to_reg_buf.  */
-
-static void
-aarch64_sve_regs_copy_to_regcache (struct regcache *regcache, const void *buf)
-{
-  return aarch64_sve_regs_copy_to_reg_buf (regcache, buf);
-}
-
-/* Wrapper for aarch64_sve_regs_copy_from_reg_buf.  */
-
-static void
-aarch64_sve_regs_copy_from_regcache (struct regcache *regcache, void *buf)
-{
-  return aarch64_sve_regs_copy_from_reg_buf (regcache, buf);
 }
 
 static struct regset_info aarch64_regsets[] =
@@ -557,9 +494,6 @@ static struct regset_info aarch64_regsets[] =
     sizeof (struct user_fpsimd_state), FP_REGS,
     aarch64_fill_fpregset, aarch64_store_fpregset
   },
-  { PTRACE_GETREGSET, PTRACE_SETREGSET, NT_ARM_PAC_MASK,
-    AARCH64_PAUTH_REGS_SIZE, OPTIONAL_REGS,
-    NULL, aarch64_store_pauthregset },
   NULL_REGSET
 };
 
@@ -577,47 +511,15 @@ static struct regs_info regs_info_aarch64 =
     &aarch64_regsets_info,
   };
 
-static struct regset_info aarch64_sve_regsets[] =
-{
-  { PTRACE_GETREGSET, PTRACE_SETREGSET, NT_PRSTATUS,
-    sizeof (struct user_pt_regs), GENERAL_REGS,
-    aarch64_fill_gregset, aarch64_store_gregset },
-  { PTRACE_GETREGSET, PTRACE_SETREGSET, NT_ARM_SVE,
-    SVE_PT_SIZE (AARCH64_MAX_SVE_VQ, SVE_PT_REGS_SVE), EXTENDED_REGS,
-    aarch64_sve_regs_copy_from_regcache, aarch64_sve_regs_copy_to_regcache
-  },
-  { PTRACE_GETREGSET, PTRACE_SETREGSET, NT_ARM_PAC_MASK,
-    AARCH64_PAUTH_REGS_SIZE, OPTIONAL_REGS,
-    NULL, aarch64_store_pauthregset },
-  NULL_REGSET
-};
-
-static struct regsets_info aarch64_sve_regsets_info =
-  {
-    aarch64_sve_regsets, /* regsets.  */
-    0, /* num_regsets.  */
-    NULL, /* disabled_regsets.  */
-  };
-
-static struct regs_info regs_info_aarch64_sve =
-  {
-    NULL, /* regset_bitmap.  */
-    NULL, /* usrregs.  */
-    &aarch64_sve_regsets_info,
-  };
-
 /* Implementation of linux_target_ops method "regs_info".  */
 
 static const struct regs_info *
 aarch64_regs_info (void)
 {
-  if (!is_64bit_tdesc ())
+  if (is_64bit_tdesc ())
+    return &regs_info_aarch64;
+  else
     return &regs_info_aarch32;
-
-  if (is_sve_tdesc ())
-    return &regs_info_aarch64_sve;
-
-  return &regs_info_aarch64;
 }
 
 /* Implementation of linux_target_ops method "supports_tracepoints".  */
@@ -3054,8 +2956,8 @@ struct linux_target_ops the_low_target =
 {
   aarch64_arch_setup,
   aarch64_regs_info,
-  NULL, /* cannot_fetch_register */
-  NULL, /* cannot_store_register */
+  aarch64_cannot_fetch_register,
+  aarch64_cannot_store_register,
   NULL, /* fetch_register */
   aarch64_get_pc,
   aarch64_set_pc,
@@ -3096,7 +2998,6 @@ initialize_low_arch (void)
   initialize_low_arch_aarch32 ();
 
   initialize_regsets_info (&aarch64_regsets_info);
-  initialize_regsets_info (&aarch64_sve_regsets_info);
 
 #if GDB_SELF_TEST
   initialize_low_tdesc ();

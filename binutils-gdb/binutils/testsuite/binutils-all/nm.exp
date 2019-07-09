@@ -1,4 +1,4 @@
-#   Copyright (C) 1993-2019 Free Software Foundation, Inc.
+#   Copyright (C) 1993-2018 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -44,9 +44,9 @@ if {![binutils_assemble $srcdir/$subdir/bintest.s tmpdir/bintest.o]} then {
 
     # This test does not work correctly on ECOFF targets, because ECOFF
     # stores most symbols twice, which messes up the nm output.
-    setup_xfail "alpha*-*-osf*"
+    setup_xfail "alpha*-*-osf*" "alpha*-*-netware*"
     setup_xfail "mips*-*-ultrix*" "mips*-*-ecoff*" "mips*-*-irix4*"
-    setup_xfail "mips*-*-riscos*" "mips*-*-sysv3*"
+    setup_xfail "mips*-*-riscos*" "mips*-*-sysv3*" "mips*-sony-bsd*"
 
     # This test does not work correctly on XCOFF targets, because XCOFF
     # does not enter static symbols in the symbol table.
@@ -102,9 +102,9 @@ if {![binutils_assemble $srcdir/$subdir/bintest.s tmpdir/bintest.o]} then {
 
     # This test does not work correctly on ECOFF targets, because ECOFF
     # stores most symbols twice, which messes up the nm output.
-    setup_xfail "alpha*-*-osf*"
+    setup_xfail "alpha*-*-osf*" "alpha*-*-netware*"
     setup_xfail "mips*-*-ultrix*" "mips*-*-ecoff*" "mips*-*-irix4*"
-    setup_xfail "mips*-*-riscos*" "mips*-*-sysv3*"
+    setup_xfail "mips*-*-riscos*" "mips*-*-sysv3*" "mips*-sony-bsd*"
 
     # This test does not work correctly on XCOFF targets, because XCOFF
     # does not enter static symbols in the symbol table.
@@ -118,24 +118,6 @@ if {![binutils_assemble $srcdir/$subdir/bintest.s tmpdir/bintest.o]} then {
 	pass "nm -P"
     } else {
 	fail "nm -P"
-    }
-
-    # Test nm -t d
-    # Look for leading zeroes and only the digits 0..9 in the actual value.
-    set got [binutils_run $NM "$NMFLAGS -t d $tempfile"]
-    if [regexp "0+\[1-9\]\[0-9\]* T text_symbol3" $got] then {
-	pass "nm -t d"
-    } else {
-	fail "nm -t d"
-    }
-
-    # Test nm --format=posix
-    # ref: PR 24507 - no leading zeros.
-    set got [binutils_run $NM "$NMFLAGS --format=posix $tempfile"]
-    if [regexp "text_symbol3 T \[1-9a-f\]\[0-9a-f\]*" $got] then {
-	pass "nm --format posix"
-    } else {
-	fail "nm --format posix"
     }
 }
 
@@ -152,16 +134,15 @@ if {   [is_elf_format]
     || [istarget *-*-*elf]
     || [istarget *-*-freebsd*]
     || [istarget *-*-lynxos*]
-    || [istarget *-*-moss*]
     || [istarget "mmix-knuth-mmixware"]
+    || [istarget *-*-netware*]
     || [istarget *-*-nto*]
     || [istarget *-*-rdos*]
     || [istarget *-*-tpf*]
     || [istarget *-*-uclinux*]
     || [istarget ia64-*-*vms*]
     || [istarget *-*-vxworks*]
-    || [istarget wasm32-*-*]
-    || [istarget bpf-*-*]} {
+    || [istarget wasm32-*-*] } {
     set nm_1_src "nm-elf-1.s"
 } else {
     set nm_1_src "nm-1.s"
@@ -179,9 +160,9 @@ if {![binutils_assemble $srcdir/$subdir/$nm_1_src tmpdir/nm-1.o]} then {
 
     # This test does not work correctly on ECOFF targets, because ECOFF
     # stores most symbols twice, which messes up the nm output.
-    setup_xfail "alpha*-*-osf*"
+    setup_xfail "alpha*-*-osf*" "alpha*-*-netware*"
     setup_xfail "mips*-*-ultrix*" "mips*-*-ecoff*" "mips*-*-irix4*"
-    setup_xfail "mips*-*-riscos*" "mips*-*-sysv3*"
+    setup_xfail "mips*-*-riscos*" "mips*-*-sysv3*" "mips*-sony-bsd*"
 
     set got [binutils_run $NM "$NMFLAGS --size-sort $tempfile"]
 

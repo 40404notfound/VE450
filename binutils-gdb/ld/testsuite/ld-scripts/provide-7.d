@@ -1,6 +1,6 @@
 #source: provide-5.s
 #ld: -T provide-7.t
-#nm: -B
+#PROG: nm
 
 #...
 0+10 A foo

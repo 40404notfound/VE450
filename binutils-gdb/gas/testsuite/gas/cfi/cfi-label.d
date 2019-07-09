@@ -1,4 +1,3 @@
-#as: -mx86-used-note=no
 #objdump: -tWf
 #name: .cfi_label directive
 

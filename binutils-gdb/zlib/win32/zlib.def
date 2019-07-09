@@ -91,3 +91,4 @@ EXPORTS
     inflateCodesUsed
     inflateResetKeep
     deflateResetKeep
+    gzopen_w

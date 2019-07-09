@@ -1,5 +1,5 @@
 /* BFD back-end for mmo objects (MMIX-specific object-format).
-   Copyright (C) 2001-2019 Free Software Foundation, Inc.
+   Copyright (C) 2001-2018 Free Software Foundation, Inc.
    Written by Hans-Peter Nilsson (hp@bitrange.com).
    Infrastructure and other bits originally copied from srec.c and
    binary.c.
@@ -431,30 +431,22 @@ static bfd_boolean mmo_write_section_description (bfd *, asection *);
 static bfd_boolean mmo_has_leading_or_trailing_zero_tetra_p (bfd *,
 							     asection *);
 
-static const char
-valid_mmo_symbol_character_set[] =
-{
-  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
-  'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
-  'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
-  'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
-  '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-  ':', '_', 126, 127, 128, 129,
-  130, 131, 132, 133, 134, 135, 136, 137, 138, 139,
-  140, 141, 142, 143, 144, 145, 146, 147, 148, 149,
-  150, 151, 152, 153, 154, 155, 156, 157, 158, 159,
-  160, 161, 162, 163, 164, 165, 166, 167, 168, 169,
-  170, 171, 172, 173, 174, 175, 176, 177, 178, 179,
-  180, 181, 182, 183, 184, 185, 186, 187, 188, 189,
-  190, 191, 192, 193, 194, 195, 196, 197, 198, 199,
-  200, 201, 202, 203, 204, 205, 206, 207, 208, 209,
-  210, 211, 212, 213, 214, 215, 216, 217, 218, 219,
-  220, 221, 222, 223, 224, 225, 226, 227, 228, 229,
-  230, 231, 232, 233, 234, 235, 236, 237, 238, 239,
-  240, 241, 242, 243, 244, 245, 246, 247, 248, 249,
-  250, 251, 252, 253, 254, 255,
-  0
-};
+/* Global "const" variables initialized once.  Must not depend on
+   particular input or caller; put such things into the bfd or elsewhere.
+   Look ma, no static per-invocation data!  */
+
+static
+char valid_mmo_symbol_character_set[/* A-Z a-z (we assume consecutive
+				       codes; sorry EBCDIC:ers!).  */
+				    + 'Z' - 'A' + 1 + 'z' - 'a' + 1
+				    /* Digits.  */
+				    + 10
+				    /* ':' and '_'.  */
+				    + 1 + 1
+				    /* Codes higher than 126.  */
+				    + 256 - 126
+				    /* Ending zero.  */
+				    + 1];
 
 
 /* Get section SECNAME or create one if it doesn't exist.  When creating
@@ -473,7 +465,7 @@ mmo_make_section (bfd *abfd, const char *secname)
 	{
 	  _bfd_error_handler
 	    /* xgettext:c-format */
-	    (_("%pB: no core to allocate section name %s"),
+	    (_("%B: No core to allocate section name %s\n"),
 	     abfd, secname);
 	  bfd_set_error (bfd_error_system_call);
 	  return NULL;
@@ -492,10 +484,21 @@ static void
 mmo_init (void)
 {
   static bfd_boolean inited = FALSE;
+  int i = 0;
+  int j = 0;
+  static const char letters[]
+    = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789:_";
 
   if (inited)
     return;
   inited = TRUE;
+
+  /* Fill in the set of valid symbol characters.  */
+  strcpy (valid_mmo_symbol_character_set, letters);
+  i = strlen (letters);
+
+  for (j = 126; j < 256; j++)
+    valid_mmo_symbol_character_set[i++] = j;
 }
 
 /* Check whether an existing file is an mmo file.  */
@@ -538,7 +541,7 @@ mmo_object_p (bfd *abfd)
     {
       _bfd_error_handler
 	/* xgettext:c-format */
-	(_("%pB: no core to allocate a symbol %d bytes long"),
+	(_("%B: No core to allocate a symbol %d bytes long\n"),
 	 abfd, abfd->tdata.mmo_data->max_symbol_length);
       goto bad_final;
     }
@@ -952,9 +955,9 @@ mmo_write_loc_chunk (bfd *abfd, bfd_vma vma, const bfd_byte *loc,
 	{
 	  _bfd_error_handler
 	    /* xgettext:c-format */
-	    (_("%pB: attempt to emit contents at non-multiple-of-4"
-	       " address %#" PRIx64 ""),
-	     abfd, (uint64_t) vma);
+	    (_("%B: attempt to emit contents at non-multiple-of-4"
+	       " address %#Lx"),
+	     abfd, vma);
 	  bfd_set_error (bfd_error_bad_value);
 	  return FALSE;
 	}
@@ -1249,7 +1252,7 @@ mmo_create_symbol (bfd *abfd, const char *symname, bfd_vma addr, enum
       && !mmo_ignore_symbol_consistency (abfd))
     {
       _bfd_error_handler
-	(_("%pB: invalid mmo file: initialization value for $255"
+	(_("%B: invalid mmo file: initialization value for $255"
 	   " is not `Main'\n"),
 	 abfd);
       bfd_set_error (bfd_error_bad_value);
@@ -1396,7 +1399,7 @@ SUBSECTION
 
 	      _bfd_error_handler
 		/* xgettext:c-format */
-		(_("%pB: unsupported wide character sequence"
+		(_("%B: unsupported wide character sequence"
 		   " 0x%02X 0x%02X after symbol name starting with `%s'\n"),
 		 abfd, c, c2, abfd->tdata.mmo_data->lop_stab_symbol);
 	      bfd_set_error (bfd_error_bad_value);
@@ -1630,7 +1633,7 @@ mmo_scan (bfd *abfd)
 	    default:
 	      _bfd_error_handler
 		/* xgettext:c-format */
-		(_("%pB: invalid mmo file: unsupported lopcode `%d'\n"),
+		(_("%B: invalid mmo file: unsupported lopcode `%d'\n"),
 		 abfd, buf[1]);
 	      bfd_set_error (bfd_error_bad_value);
 	      goto error_return;
@@ -1641,7 +1644,7 @@ mmo_scan (bfd *abfd)
 		{
 		  _bfd_error_handler
 		    /* xgettext:c-format */
-		    (_("%pB: invalid mmo file: expected YZ = 1"
+		    (_("%B: invalid mmo file: expected YZ = 1"
 		       " got YZ = %d for lop_quote\n"),
 		     abfd, y*256+z);
 		  bfd_set_error (bfd_error_bad_value);
@@ -1679,7 +1682,7 @@ mmo_scan (bfd *abfd)
 		{
 		  _bfd_error_handler
 		    /* xgettext:c-format */
-		    (_("%pB: invalid mmo file: expected z = 1 or z = 2,"
+		    (_("%B: invalid mmo file: expected z = 1 or z = 2,"
 		       " got z = %d for lop_loc\n"),
 		     abfd, z);
 		  bfd_set_error (bfd_error_bad_value);
@@ -1730,7 +1733,7 @@ mmo_scan (bfd *abfd)
 		  {
 		    _bfd_error_handler
 		      /* xgettext:c-format */
-		      (_("%pB: invalid mmo file: expected z = 1 or z = 2,"
+		      (_("%B: invalid mmo file: expected z = 1 or z = 2,"
 			 " got z = %d for lop_fixo\n"),
 		       abfd, z);
 		    bfd_set_error (bfd_error_bad_value);
@@ -1771,7 +1774,7 @@ mmo_scan (bfd *abfd)
 		  {
 		    _bfd_error_handler
 		      /* xgettext:c-format */
-		      (_("%pB: invalid mmo file: expected y = 0,"
+		      (_("%B: invalid mmo file: expected y = 0,"
 			 " got y = %d for lop_fixrx\n"),
 		       abfd, y);
 		    bfd_set_error (bfd_error_bad_value);
@@ -1782,7 +1785,7 @@ mmo_scan (bfd *abfd)
 		  {
 		    _bfd_error_handler
 		      /* xgettext:c-format */
-		      (_("%pB: invalid mmo file: expected z = 16 or z = 24,"
+		      (_("%B: invalid mmo file: expected z = 16 or z = 24,"
 			 " got z = %d for lop_fixrx\n"),
 		       abfd, z);
 		    bfd_set_error (bfd_error_bad_value);
@@ -1807,7 +1810,7 @@ mmo_scan (bfd *abfd)
 		  {
 		    _bfd_error_handler
 		      /* xgettext:c-format */
-		      (_("%pB: invalid mmo file: leading byte of operand word"
+		      (_("%B: invalid mmo file: leading byte of operand word"
 			 " must be 0 or 1, got %d for lop_fixrx\n"),
 		       abfd, buf[0]);
 		    bfd_set_error (bfd_error_bad_value);
@@ -1832,7 +1835,7 @@ mmo_scan (bfd *abfd)
 		    {
 		      _bfd_error_handler
 			/* xgettext:c-format */
-			(_("%pB: cannot allocate file name for file number %d,"
+			(_("%B: cannot allocate file name for file number %d,"
 			   " %d bytes\n"),
 			 abfd, y, z * 4 + 1);
 		      bfd_set_error (bfd_error_system_call);
@@ -1854,7 +1857,7 @@ mmo_scan (bfd *abfd)
 		    {
 		      _bfd_error_handler
 			/* xgettext:c-format */
-			(_("%pB: invalid mmo file: file number %d `%s',"
+			(_("%B: invalid mmo file: file number %d `%s',"
 			   " was already entered as `%s'\n"),
 			 abfd, y, fname, file_names[y]);
 		      bfd_set_error (bfd_error_bad_value);
@@ -1868,7 +1871,7 @@ mmo_scan (bfd *abfd)
 		{
 		  _bfd_error_handler
 		    /* xgettext:c-format */
-		    (_("%pB: invalid mmo file: file name for number %d"
+		    (_("%B: invalid mmo file: file name for number %d"
 		       " was not specified before use\n"),
 		     abfd, y);
 		  bfd_set_error (bfd_error_bad_value);
@@ -1975,7 +1978,7 @@ mmo_scan (bfd *abfd)
 		{
 		  _bfd_error_handler
 		    /* xgettext:c-format */
-		    (_("%pB: invalid mmo file: fields y and z of lop_stab"
+		    (_("%B: invalid mmo file: fields y and z of lop_stab"
 		       " non-zero, y: %d, z: %d\n"),
 		     abfd, y, z);
 		  bfd_set_error (bfd_error_bad_value);
@@ -2012,7 +2015,7 @@ mmo_scan (bfd *abfd)
 		  {
 		    _bfd_error_handler
 		      /* xgettext:c-format */
-		      (_("%pB: invalid mmo file: lop_end not last item in"
+		      (_("%B: invalid mmo file: lop_end not last item in"
 			 " file\n"),
 		       abfd);
 		    bfd_set_error (bfd_error_bad_value);
@@ -2026,7 +2029,7 @@ mmo_scan (bfd *abfd)
 		  {
 		    _bfd_error_handler
 		      /* xgettext:c-format */
-		      (_("%pB: invalid mmo file: YZ of lop_end (%ld)"
+		      (_("%B: invalid mmo file: YZ of lop_end (%ld)"
 			 " not equal to the number of tetras to the preceding"
 			 " lop_stab (%ld)\n"),
 		       abfd, (long) (y * 256 + z),
@@ -2737,7 +2740,7 @@ mmo_internal_add_3_sym (bfd *abfd, struct mmo_symbol_trie *rootp,
     {
       _bfd_error_handler
 	/* xgettext:c-format */
-	(_("%pB: invalid symbol table: duplicate symbol `%s'\n"),
+	(_("%B: invalid symbol table: duplicate symbol `%s'\n"),
 	 abfd, trie->sym.name);
       bfd_set_error (bfd_error_bad_value);
       return FALSE;
@@ -2980,7 +2983,7 @@ mmo_write_symbols_and_terminator (bfd *abfd)
 
 	    _bfd_error_handler
 	      /* xgettext:c-format */
-	      (_("%pB: bad symbol definition: `Main' set to %s rather"
+	      (_("%B: Bad symbol definition: `Main' set to %s rather"
 		 " than the start address %s\n"),
 	       abfd, vmas_main, vmas_start);
 	    bfd_set_error (bfd_error_bad_value);
@@ -3079,7 +3082,7 @@ mmo_write_symbols_and_terminator (bfd *abfd)
 
       _bfd_error_handler
 	/* xgettext:c-format */
-	(_("%pB: warning: symbol table too large for mmo, larger than 65535"
+	(_("%B: warning: symbol table too large for mmo, larger than 65535"
 	   " 32-bit words: %d.  Only `Main' will be emitted.\n"),
 	 abfd, trie_len);
 
@@ -3125,7 +3128,7 @@ mmo_write_symbols_and_terminator (bfd *abfd)
 	 diagnostic and fail "normally".  */
       _bfd_error_handler
 	/* xgettext:c-format */
-	(_("%pB: internal error, symbol table changed size from %d to %d"
+	(_("%B: internal error, symbol table changed size from %d to %d"
 	   " words\n"),
 	 abfd, trie_len,
 	 (abfd->tdata.mmo_data->byte_no + 3)/4);
@@ -3178,7 +3181,7 @@ mmo_write_section_unless_reg_contents (bfd *abfd, asection *sec, void *p)
 	     this.  */
 	  _bfd_error_handler
 	    /* xgettext:c-format */
-	    (_("%pB: internal error, internal register section %pA had"
+	    (_("%B: internal error, internal register section %A had"
 	       " contents\n"),
 	     abfd, sec);
 	  bfd_set_error (bfd_error_bad_value);
@@ -3229,21 +3232,21 @@ mmo_write_object_contents (bfd *abfd)
 	  if (sec->size == 0)
 	    /* There must always be at least one such register.  */
 	    _bfd_error_handler
-	      (_("%pB: no initialized registers; section length 0\n"),
+	      (_("%B: no initialized registers; section length 0\n"),
 	       abfd);
 	  else if (sec->vma > (256 - 32) * 8)
 	    /* Provide better error message for the case of too many
 	       global registers.  */
 	    _bfd_error_handler
 	      /* xgettext:c-format */
-	      (_("%pB: too many initialized registers; section length %" PRId64),
-	       abfd, (int64_t) sec->size);
+	      (_("%B: too many initialized registers; section length %Ld"),
+	       abfd, sec->size);
 	  else
 	    _bfd_error_handler
 	      /* xgettext:c-format */
-	      (_("%pB: invalid start address for initialized registers of"
-		 " length %" PRId64 ": %#" PRIx64),
-	       abfd, (int64_t) sec->size, (uint64_t) sec->vma);
+	      (_("%B: invalid start address for initialized registers of"
+		 " length %Ld: %#Lx"),
+	       abfd, sec->size, sec->vma);
 
 	  return FALSE;
 	}
@@ -3272,7 +3275,8 @@ mmo_write_object_contents (bfd *abfd)
 /* Perhaps we need to adjust this one; mmo labels (originally) without a
    leading ':' might more appropriately be called local.  */
 #define mmo_bfd_is_local_label_name bfd_generic_is_local_label_name
-#define mmo_bfd_is_target_special_symbol _bfd_bool_bfd_asymbol_false
+#define mmo_bfd_is_target_special_symbol  \
+  ((bfd_boolean (*) (bfd *, asymbol *)) bfd_false)
 
 #define mmo_get_symbol_version_string \
   _bfd_nosymbols_get_symbol_version_string
@@ -3315,7 +3319,6 @@ mmo_write_object_contents (bfd *abfd)
 #define mmo_section_already_linked \
   _bfd_generic_section_already_linked
 #define mmo_bfd_define_common_symbol bfd_generic_define_common_symbol
-#define mmo_bfd_link_hide_symbol _bfd_generic_link_hide_symbol
 #define mmo_bfd_define_start_stop bfd_generic_define_start_stop
 
 /* We want to copy time of creation, otherwise we'd use
@@ -3361,16 +3364,16 @@ const bfd_target mmix_mmo_vec =
     _bfd_dummy_target,
   },
   {
-    _bfd_bool_bfd_false_error,
+    bfd_false,
     mmo_mkobject,
-    _bfd_bool_bfd_false_error,
-    _bfd_bool_bfd_false_error,
+    bfd_false,
+    bfd_false,
   },
   {				/* bfd_write_contents */
-    _bfd_bool_bfd_false_error,
+    bfd_false,
     mmo_write_object_contents,
-    _bfd_bool_bfd_false_error,
-    _bfd_bool_bfd_false_error,
+    bfd_false,
+    bfd_false,
   },
 
   BFD_JUMP_TABLE_GENERIC (mmo),

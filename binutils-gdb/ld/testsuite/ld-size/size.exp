@@ -1,6 +1,6 @@
 # Expect script for linker support of size relocations.
 #
-#   Copyright (C) 2013-2019 Free Software Foundation, Inc.
+#   Copyright (C) 2013-2018 Free Software Foundation, Inc.
 #
 # This file is part of the GNU Binutils.
 #
@@ -21,14 +21,16 @@
 #
 
 
-# Size relocations have only been implemented for the ix86 and x86_64,
+# Size relications have only been implemented for the ix86 and x86_64,
 # so far.
 if {!(([istarget "i?86-*-*"]
        || [istarget "x86_64-*-*"])
       && ([istarget "*-*-elf*"]
 	  || [istarget "*-*-nacl*"]
-	  || [istarget "*-*-linux*"]
-	  || [istarget "*-*-gnu*"])) } {
+	  || (([istarget "*-*-linux*"]
+	       || [istarget "*-*-gnu*"])
+	      && ![istarget "*-*-*aout*"]
+	      && ![istarget "*-*-*oldld*"]))) } {
     verbose "Size relocations tests not run - no target support"
     return
 }
@@ -48,7 +50,7 @@ foreach t $test_list {
 }
 
 # We need a working compiler.
-if { ![check_compiler_available] } {
+if { [which $CC] == 0 } {
     verbose "Native size relocation tests not run - no compiler available"
     return
 }
@@ -226,9 +228,9 @@ run_ld_link_exec_tests [list \
 	"size-3.out" \
     ] \
     [list \
-    {"Run size-3e" \
-     "-Wl,--no-as-needed tmpdir/libsize-3c.so" "" \
-     {size-3.c} "size-3e" "size-3.out"} \
+    {"Run size-3e"
+     "-Wl,--no-as-needed tmpdir/libsize-3c.so" ""
+     {size-3.c} "size-3e" "size-3.out"}
     ] \
     [list \
 	"Run size-4a" \

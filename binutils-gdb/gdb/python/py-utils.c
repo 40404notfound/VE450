@@ -1,6 +1,6 @@
 /* General utility routines for GDB/Python.
 
-   Copyright (C) 2008-2019 Free Software Foundation, Inc.
+   Copyright (C) 2008-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -21,6 +21,7 @@
 #include "charset.h"
 #include "value.h"
 #include "python-internal.h"
+#include "py-ref.h"
 
 /* Converts a Python 8-bit string to a unicode string object.  Assumes the
    8-bit string is in the host charset.  If an error occurs during conversion,
@@ -33,7 +34,7 @@
 
    If the given object is not one of the mentioned string types, NULL is
    returned, with the TypeError python exception set.  */
-gdbpy_ref<>
+PyObject *
 python_string_to_unicode (PyObject *obj)
 {
   PyObject *unicode_str;
@@ -56,34 +57,42 @@ python_string_to_unicode (PyObject *obj)
       unicode_str = NULL;
     }
 
-  return gdbpy_ref<> (unicode_str);
+  return unicode_str;
 }
 
 /* Returns a newly allocated string with the contents of the given unicode
    string object converted to CHARSET.  If an error occurs during the
-   conversion, NULL will be returned and a python exception will be
-   set.  */
+   conversion, NULL will be returned and a python exception will be set.
+
+   The caller is responsible for xfree'ing the string.  */
 static gdb::unique_xmalloc_ptr<char>
 unicode_to_encoded_string (PyObject *unicode_str, const char *charset)
 {
+  gdb::unique_xmalloc_ptr<char> result;
+
   /* Translate string to named charset.  */
   gdbpy_ref<> string (PyUnicode_AsEncodedString (unicode_str, charset, NULL));
   if (string == NULL)
     return NULL;
 
-  return gdb::unique_xmalloc_ptr<char>
-    (xstrdup (PyBytes_AsString (string.get ())));
+#ifdef IS_PY3K
+  result.reset (xstrdup (PyBytes_AsString (string.get ())));
+#else
+  result.reset (xstrdup (PyString_AsString (string.get ())));
+#endif
+
+  return result;
 }
 
 /* Returns a PyObject with the contents of the given unicode string
    object converted to a named charset.  If an error occurs during
    the conversion, NULL will be returned and a python exception will
    be set.  */
-static gdbpy_ref<>
+static PyObject *
 unicode_to_encoded_python_string (PyObject *unicode_str, const char *charset)
 {
   /* Translate string to named charset.  */
-  return gdbpy_ref<> (PyUnicode_AsEncodedString (unicode_str, charset, NULL));
+  return PyUnicode_AsEncodedString (unicode_str, charset, NULL);
 }
 
 /* Returns a newly allocated string with the contents of the given
@@ -101,7 +110,7 @@ unicode_to_target_string (PyObject *unicode_str)
    object converted to the target's charset.  If an error occurs
    during the conversion, NULL will be returned and a python exception
    will be set.  */
-static gdbpy_ref<>
+static PyObject *
 unicode_to_target_python_string (PyObject *unicode_str)
 {
   return unicode_to_encoded_python_string (unicode_str,
@@ -114,7 +123,7 @@ unicode_to_target_python_string (PyObject *unicode_str)
 gdb::unique_xmalloc_ptr<char>
 python_string_to_target_string (PyObject *obj)
 {
-  gdbpy_ref<> str = python_string_to_unicode (obj);
+  gdbpy_ref<> str (python_string_to_unicode (obj));
   if (str == NULL)
     return NULL;
 
@@ -126,12 +135,12 @@ python_string_to_target_string (PyObject *obj)
    set.
 
    In Python 3, the returned object is a "bytes" object (not a string).  */
-gdbpy_ref<>
+PyObject *
 python_string_to_target_python_string (PyObject *obj)
 {
-  gdbpy_ref<> str = python_string_to_unicode (obj);
+  gdbpy_ref<> str (python_string_to_unicode (obj));
   if (str == NULL)
-    return str;
+    return NULL;
 
   return unicode_to_target_python_string (str.get ());
 }
@@ -142,7 +151,7 @@ python_string_to_target_python_string (PyObject *obj)
 gdb::unique_xmalloc_ptr<char>
 python_string_to_host_string (PyObject *obj)
 {
-  gdbpy_ref<> str = python_string_to_unicode (obj);
+  gdbpy_ref<> str (python_string_to_unicode (obj));
   if (str == NULL)
     return NULL;
 
@@ -151,11 +160,10 @@ python_string_to_host_string (PyObject *obj)
 
 /* Convert a host string to a python string.  */
 
-gdbpy_ref<>
+PyObject *
 host_string_to_python_string (const char *str)
 {
-  return gdbpy_ref<> (PyString_Decode (str, strlen (str), host_charset (),
-				       NULL));
+  return PyString_Decode (str, strlen (str), host_charset (), NULL);
 }
 
 /* Return true if OBJ is a Python string or unicode object, false
@@ -195,33 +203,28 @@ gdbpy_obj_to_string (PyObject *obj)
   return NULL;
 }
 
-/* See python-internal.h.  */
+/* Return the string representation of the exception represented by
+   TYPE, VALUE which is assumed to have been obtained with PyErr_Fetch,
+   i.e., the error indicator is currently clear.
+   If the result is NULL a python error occurred, the caller must clear it.  */
 
 gdb::unique_xmalloc_ptr<char>
-gdbpy_err_fetch::to_string () const
+gdbpy_exception_to_string (PyObject *ptype, PyObject *pvalue)
 {
   /* There are a few cases to consider.
      For example:
-     value is a string when PyErr_SetString is used.
-     value is not a string when raise "foo" is used, instead it is None
-     and type is "foo".
-     So the algorithm we use is to print `str (value)' if it's not
-     None, otherwise we print `str (type)'.
+     pvalue is a string when PyErr_SetString is used.
+     pvalue is not a string when raise "foo" is used, instead it is None
+     and ptype is "foo".
+     So the algorithm we use is to print `str (pvalue)' if it's not
+     None, otherwise we print `str (ptype)'.
      Using str (aka PyObject_Str) will fetch the error message from
      gdb.GdbError ("message").  */
 
-  if (m_error_value && m_error_value != Py_None)
-    return gdbpy_obj_to_string (m_error_value);
+  if (pvalue && pvalue != Py_None)
+    return gdbpy_obj_to_string (pvalue);
   else
-    return gdbpy_obj_to_string (m_error_type);
-}
-
-/* See python-internal.h.  */
-
-gdb::unique_xmalloc_ptr<char>
-gdbpy_err_fetch::type_to_string () const
-{
-  return gdbpy_obj_to_string (m_error_type);
+    return gdbpy_obj_to_string (ptype);
 }
 
 /* Convert a GDB exception to the appropriate Python exception.
@@ -229,7 +232,7 @@ gdbpy_err_fetch::type_to_string () const
    This sets the Python error indicator.  */
 
 void
-gdbpy_convert_exception (const struct gdb_exception &exception)
+gdbpy_convert_exception (struct gdb_exception exception)
 {
   PyObject *exc_class;
 
@@ -240,7 +243,7 @@ gdbpy_convert_exception (const struct gdb_exception &exception)
   else
     exc_class = gdbpy_gdb_error;
 
-  PyErr_Format (exc_class, "%s", exception.what ());
+  PyErr_Format (exc_class, "%s", exception.message);
 }
 
 /* Converts OBJ to a CORE_ADDR value.
@@ -254,14 +257,15 @@ get_addr_from_python (PyObject *obj, CORE_ADDR *addr)
   if (gdbpy_is_value_object (obj))
     {
 
-      try
+      TRY
 	{
 	  *addr = value_as_address (value_object_to_value (obj));
 	}
-      catch (const gdb_exception &except)
+      CATCH (except, RETURN_MASK_ALL)
 	{
 	  GDB_PY_SET_HANDLE_EXCEPTION (except);
 	}
+      END_CATCH
     }
   else
     {
@@ -291,47 +295,47 @@ get_addr_from_python (PyObject *obj, CORE_ADDR *addr)
 /* Convert a LONGEST to the appropriate Python object -- either an
    integer object or a long object, depending on its value.  */
 
-gdbpy_ref<>
+PyObject *
 gdb_py_object_from_longest (LONGEST l)
 {
 #ifdef IS_PY3K
   if (sizeof (l) > sizeof (long))
-    return gdbpy_ref<> (PyLong_FromLongLong (l));
-  return gdbpy_ref<> (PyLong_FromLong (l));
+    return PyLong_FromLongLong (l);
+  return PyLong_FromLong (l);
 #else
 #ifdef HAVE_LONG_LONG		/* Defined by Python.  */
   /* If we have 'long long', and the value overflows a 'long', use a
      Python Long; otherwise use a Python Int.  */
   if (sizeof (l) > sizeof (long)
       && (l > PyInt_GetMax () || l < (- (LONGEST) PyInt_GetMax ()) - 1))
-    return gdbpy_ref<> (PyLong_FromLongLong (l));
+    return PyLong_FromLongLong (l);
 #endif
-  return gdbpy_ref<> (PyInt_FromLong (l));
+  return PyInt_FromLong (l);
 #endif
 }
 
 /* Convert a ULONGEST to the appropriate Python object -- either an
    integer object or a long object, depending on its value.  */
 
-gdbpy_ref<>
+PyObject *
 gdb_py_object_from_ulongest (ULONGEST l)
 {
 #ifdef IS_PY3K
   if (sizeof (l) > sizeof (unsigned long))
-    return gdbpy_ref<> (PyLong_FromUnsignedLongLong (l));
-  return gdbpy_ref<> (PyLong_FromUnsignedLong (l));
+    return PyLong_FromUnsignedLongLong (l);
+  return PyLong_FromUnsignedLong (l);
 #else
 #ifdef HAVE_LONG_LONG		/* Defined by Python.  */
   /* If we have 'long long', and the value overflows a 'long', use a
      Python Long; otherwise use a Python Int.  */
   if (sizeof (l) > sizeof (unsigned long) && l > PyInt_GetMax ())
-    return gdbpy_ref<> (PyLong_FromUnsignedLongLong (l));
+    return PyLong_FromUnsignedLongLong (l);
 #endif
 
   if (l > PyInt_GetMax ())
-    return gdbpy_ref<> (PyLong_FromUnsignedLong (l));
+    return PyLong_FromUnsignedLong (l);
 
-  return gdbpy_ref<> (PyInt_FromLong (l));
+  return PyInt_FromLong (l);
 #endif
 }
 
@@ -374,53 +378,9 @@ gdb_pymodule_addobject (PyObject *module, const char *name, PyObject *object)
   int result;
 
   Py_INCREF (object);
-  result = PyModule_AddObject (module, name, object);
+  /* Python 2.4 did not have a 'const' here.  */
+  result = PyModule_AddObject (module, (char *) name, object);
   if (result < 0)
     Py_DECREF (object);
   return result;
-}
-
-/* Handle a Python exception when the special gdb.GdbError treatment
-   is desired.  This should only be called when an exception is set.
-   If the exception is a gdb.GdbError, throw a gdb exception with the
-   exception text.  For other exceptions, print the Python stack and
-   then throw a gdb exception.  */
-
-void
-gdbpy_handle_exception ()
-{
-  gdbpy_err_fetch fetched_error;
-  gdb::unique_xmalloc_ptr<char> msg = fetched_error.to_string ();
-
-  if (msg == NULL)
-    {
-      /* An error occurred computing the string representation of the
-	 error message.  This is rare, but we should inform the user.  */
-      printf_filtered (_("An error occurred in Python "
-			 "and then another occurred computing the "
-			 "error message.\n"));
-      gdbpy_print_stack ();
-    }
-
-  /* Don't print the stack for gdb.GdbError exceptions.
-     It is generally used to flag user errors.
-
-     We also don't want to print "Error occurred in Python command"
-     for user errors.  However, a missing message for gdb.GdbError
-     exceptions is arguably a bug, so we flag it as such.  */
-
-  if (fetched_error.type_matches (PyExc_KeyboardInterrupt))
-    throw_quit ("Quit");
-  else if (! fetched_error.type_matches (gdbpy_gdberror_exc)
-	   || msg == NULL || *msg == '\0')
-    {
-      fetched_error.restore ();
-      gdbpy_print_stack ();
-      if (msg != NULL && *msg != '\0')
-	error (_("Error occurred in Python: %s"), msg.get ());
-      else
-	error (_("Error occurred in Python."));
-    }
-  else
-    error ("%s", msg.get ());
 }

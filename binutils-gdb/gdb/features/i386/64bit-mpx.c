@@ -1,14 +1,14 @@
 /* THIS FILE IS GENERATED.  -*- buffer-read-only: t -*- vi:set ro:
   Original: 64bit-mpx.xml */
 
-#include "common/tdesc.h"
+#include "arch/tdesc.h"
 
 static int
 create_feature_i386_64bit_mpx (struct target_desc *result, long regnum)
 {
   struct tdesc_feature *feature;
 
-  feature = tdesc_create_feature (result, "org.gnu.gdb.i386.mpx");
+  feature = tdesc_create_feature (result, "org.gnu.gdb.i386.mpx", "64bit-mpx.xml");
   tdesc_type_with_fields *type_with_fields;
   type_with_fields = tdesc_create_struct (feature, "br128");
   tdesc_type *field_type;

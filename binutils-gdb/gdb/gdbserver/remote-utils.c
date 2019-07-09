@@ -1,5 +1,5 @@
 /* Remote utility routines for the remote server for GDB.
-   Copyright (C) 1986-2019 Free Software Foundation, Inc.
+   Copyright (C) 1986-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -24,9 +24,8 @@
 #include "gdbthread.h"
 #include "tdesc.h"
 #include "dll.h"
-#include "common/rsp-low.h"
-#include "common/netstuff.h"
-#include "common/filestuff.h"
+#include "rsp-low.h"
+#include "gdbthread.h"
 #include <ctype.h>
 #if HAVE_SYS_IOCTL_H
 #include <sys/ioctl.h>
@@ -55,7 +54,7 @@
 #if HAVE_FCNTL_H
 #include <fcntl.h>
 #endif
-#include "common/gdb_sys_time.h"
+#include "gdb_sys_time.h"
 #include <unistd.h>
 #if HAVE_ARPA_INET_H
 #include <arpa/inet.h>
@@ -63,7 +62,7 @@
 #include <sys/stat.h>
 
 #if USE_WIN32API
-#include <ws2tcpip.h>
+#include <winsock2.h>
 #endif
 
 #if __QNX__
@@ -104,6 +103,9 @@ struct sym_cache
   struct sym_cache *next;
 };
 
+int remote_debug = 0;
+struct ui_file *gdb_stdlog;
+
 static int remote_is_stdio = 0;
 
 static gdb_fildes_t remote_desc = INVALID_DESCRIPTOR;
@@ -112,6 +114,11 @@ static gdb_fildes_t listen_desc = INVALID_DESCRIPTOR;
 /* FIXME headerize? */
 extern int using_threads;
 extern int debug_threads;
+
+/* If true, then GDB has requested noack mode.  */
+int noack_mode = 0;
+/* If true, then we tell GDB to use noack mode by default.  */
+int transport_is_reliable = 0;
 
 #ifdef USE_WIN32API
 # define read(fd, buf, len) recv (fd, (char *) buf, len, 0)
@@ -149,18 +156,19 @@ enable_async_notification (int fd)
 static int
 handle_accept_event (int err, gdb_client_data client_data)
 {
-  struct sockaddr_storage sockaddr;
-  socklen_t len = sizeof (sockaddr);
+  struct sockaddr_in sockaddr;
+  socklen_t tmp;
 
   if (debug_threads)
     debug_printf ("handling possible accept event\n");
 
-  remote_desc = accept (listen_desc, (struct sockaddr *) &sockaddr, &len);
+  tmp = sizeof (sockaddr);
+  remote_desc = accept (listen_desc, (struct sockaddr *) &sockaddr, &tmp);
   if (remote_desc == -1)
     perror_with_name ("Accept failed");
 
   /* Enable TCP keep alive process. */
-  socklen_t tmp = 1;
+  tmp = 1;
   setsockopt (remote_desc, SOL_SOCKET, SO_KEEPALIVE,
 	      (char *) &tmp, sizeof (tmp));
 
@@ -189,19 +197,8 @@ handle_accept_event (int err, gdb_client_data client_data)
   delete_file_handler (listen_desc);
 
   /* Convert IP address to string.  */
-  char orig_host[GDB_NI_MAX_ADDR], orig_port[GDB_NI_MAX_PORT];
-
-  int r = getnameinfo ((struct sockaddr *) &sockaddr, len,
-		       orig_host, sizeof (orig_host),
-		       orig_port, sizeof (orig_port),
-		       NI_NUMERICHOST | NI_NUMERICSERV);
-
-  if (r != 0)
-    fprintf (stderr, _("Could not obtain remote address: %s\n"),
-	     gai_strerror (r));
-  else
-    fprintf (stderr, _("Remote debugging from host %s, port %s\n"),
-	     orig_host, orig_port);
+  fprintf (stderr, "Remote debugging from host %s\n",
+	   inet_ntoa (sockaddr.sin_addr));
 
   enable_async_notification (remote_desc);
 
@@ -225,11 +222,14 @@ handle_accept_event (int err, gdb_client_data client_data)
 void
 remote_prepare (const char *name)
 {
-  client_state &cs = get_client_state ();
+  const char *port_str;
 #ifdef USE_WIN32API
   static int winsock_initialized;
 #endif
+  int port;
+  struct sockaddr_in sockaddr;
   socklen_t tmp;
+  char *port_end;
 
   remote_is_stdio = 0;
   if (strcmp (name, STDIO_CONNECTION_NAME) == 0)
@@ -238,28 +238,20 @@ remote_prepare (const char *name)
 	 call to remote_open so start_inferior knows the connection is
 	 via stdio.  */
       remote_is_stdio = 1;
-      cs.transport_is_reliable = 1;
+      transport_is_reliable = 1;
       return;
     }
 
-  struct addrinfo hint;
-  struct addrinfo *ainfo;
-
-  memset (&hint, 0, sizeof (hint));
-  /* Assume no prefix will be passed, therefore we should use
-     AF_UNSPEC.  */
-  hint.ai_family = AF_UNSPEC;
-  hint.ai_socktype = SOCK_STREAM;
-  hint.ai_protocol = IPPROTO_TCP;
-
-  parsed_connection_spec parsed
-    = parse_connection_spec_without_prefix (name, &hint);
-
-  if (parsed.port_str.empty ())
+  port_str = strchr (name, ':');
+  if (port_str == NULL)
     {
-      cs.transport_is_reliable = 0;
+      transport_is_reliable = 0;
       return;
     }
+
+  port = strtoul (port_str + 1, &port_end, 10);
+  if (port_str[1] == '\0' || *port_end != '\0')
+    error ("Bad port argument: %s", name);
 
 #ifdef USE_WIN32API
   if (!winsock_initialized)
@@ -271,26 +263,8 @@ remote_prepare (const char *name)
     }
 #endif
 
-  int r = getaddrinfo (parsed.host_str.c_str (), parsed.port_str.c_str (),
-		       &hint, &ainfo);
-
-  if (r != 0)
-    error (_("%s: cannot resolve name: %s"), name, gai_strerror (r));
-
-  scoped_free_addrinfo freeaddrinfo (ainfo);
-
-  struct addrinfo *iter;
-
-  for (iter = ainfo; iter != NULL; iter = iter->ai_next)
-    {
-      listen_desc = gdb_socket_cloexec (iter->ai_family, iter->ai_socktype,
-					iter->ai_protocol);
-
-      if (listen_desc >= 0)
-	break;
-    }
-
-  if (iter == NULL)
+  listen_desc = socket (PF_INET, SOCK_STREAM, IPPROTO_TCP);
+  if (listen_desc == -1)
     perror_with_name ("Can't open socket");
 
   /* Allow rapid reuse of this port. */
@@ -298,26 +272,15 @@ remote_prepare (const char *name)
   setsockopt (listen_desc, SOL_SOCKET, SO_REUSEADDR, (char *) &tmp,
 	      sizeof (tmp));
 
-  switch (iter->ai_family)
-    {
-    case AF_INET:
-      ((struct sockaddr_in *) iter->ai_addr)->sin_addr.s_addr = INADDR_ANY;
-      break;
-    case AF_INET6:
-      ((struct sockaddr_in6 *) iter->ai_addr)->sin6_addr = in6addr_any;
-      break;
-    default:
-      internal_error (__FILE__, __LINE__,
-		      _("Invalid 'ai_family' %d\n"), iter->ai_family);
-    }
+  sockaddr.sin_family = PF_INET;
+  sockaddr.sin_port = htons (port);
+  sockaddr.sin_addr.s_addr = INADDR_ANY;
 
-  if (bind (listen_desc, iter->ai_addr, iter->ai_addrlen) != 0)
+  if (bind (listen_desc, (struct sockaddr *) &sockaddr, sizeof (sockaddr))
+      || listen (listen_desc, 1))
     perror_with_name ("Can't bind address");
 
-  if (listen (listen_desc, 1) != 0)
-    perror_with_name ("Can't listen on socket");
-
-  cs.transport_is_reliable = 1;
+  transport_is_reliable = 1;
 }
 
 /* Open a connection to a remote debugger.
@@ -331,7 +294,7 @@ remote_open (const char *name)
   port_str = strchr (name, ':');
 #ifdef USE_WIN32API
   if (port_str == NULL)
-    error ("Only HOST:PORT is supported on this platform.");
+    error ("Only <host>:<port> is supported on this platform.");
 #endif
 
   if (strcmp (name, STDIO_CONNECTION_NAME) == 0)
@@ -391,24 +354,18 @@ remote_open (const char *name)
 #endif /* USE_WIN32API */
   else
     {
-      char listen_port[GDB_NI_MAX_PORT];
-      struct sockaddr_storage sockaddr;
-      socklen_t len = sizeof (sockaddr);
+      int port;
+      socklen_t len;
+      struct sockaddr_in sockaddr;
 
-      if (getsockname (listen_desc, (struct sockaddr *) &sockaddr, &len) < 0)
+      len = sizeof (sockaddr);
+      if (getsockname (listen_desc,
+		       (struct sockaddr *) &sockaddr, &len) < 0
+	  || len < sizeof (sockaddr))
 	perror_with_name ("Can't determine port");
+      port = ntohs (sockaddr.sin_port);
 
-      int r = getnameinfo ((struct sockaddr *) &sockaddr, len,
-			   NULL, 0,
-			   listen_port, sizeof (listen_port),
-			   NI_NUMERICSERV);
-
-      if (r != 0)
-	fprintf (stderr, _("Can't obtain port where we are listening: %s"),
-		 gai_strerror (r));
-      else
-	fprintf (stderr, _("Listening on port %s\n"), listen_port);
-
+      fprintf (stderr, "Listening on port %d\n", port);
       fflush (stderr);
 
       /* Register the event loop handler.  */
@@ -528,18 +485,17 @@ try_rle (char *buf, int remaining, unsigned char *csum, char **p)
 char *
 write_ptid (char *buf, ptid_t ptid)
 {
-  client_state &cs = get_client_state ();
   int pid, tid;
 
-  if (cs.multi_process)
+  if (multi_process)
     {
-      pid = ptid.pid ();
+      pid = ptid_get_pid (ptid);
       if (pid < 0)
 	buf += sprintf (buf, "p-%x.", -pid);
       else
 	buf += sprintf (buf, "p%x.", pid);
     }
-  tid = ptid.lwp ();
+  tid = ptid_get_lwp (ptid);
   if (tid < 0)
     buf += sprintf (buf, "-%x", -tid);
   else
@@ -589,7 +545,7 @@ read_ptid (const char *buf, const char **obuf)
 
       if (obuf)
 	*obuf = pp;
-      return ptid_t (pid, tid, 0);
+      return ptid_build (pid, tid, 0);
     }
 
   /* No multi-process.  Just a tid.  */
@@ -602,7 +558,7 @@ read_ptid (const char *buf, const char **obuf)
 
   if (obuf)
     *obuf = pp;
-  return ptid_t (pid, tid, 0);
+  return ptid_build (pid, tid, 0);
 }
 
 /* Write COUNT bytes in BUF to the client.
@@ -638,7 +594,6 @@ read_prim (void *buf, int count)
 static int
 putpkt_binary_1 (char *buf, int cnt, int is_notif)
 {
-  client_state &cs = get_client_state ();
   int i;
   unsigned char csum = 0;
   char *buf2;
@@ -676,7 +631,7 @@ putpkt_binary_1 (char *buf, int cnt, int is_notif)
 	  return -1;
 	}
 
-      if (cs.noack_mode || is_notif)
+      if (noack_mode || is_notif)
 	{
 	  /* Don't expect an ack then.  */
 	  if (remote_debug)
@@ -971,7 +926,6 @@ reschedule (void)
 int
 getpkt (char *buf)
 {
-  client_state &cs = get_client_state ();
   char *bp;
   unsigned char csum, c1, c2;
   int c;
@@ -1023,7 +977,7 @@ getpkt (char *buf)
       if (csum == (c1 << 4) + c2)
 	break;
 
-      if (cs.noack_mode)
+      if (noack_mode)
 	{
 	  fprintf (stderr,
 		   "Bad checksum, sentsum=0x%x, csum=0x%x, "
@@ -1039,7 +993,7 @@ getpkt (char *buf)
 	return -1;
     }
 
-  if (!cs.noack_mode)
+  if (!noack_mode)
     {
       if (remote_debug)
 	{
@@ -1127,7 +1081,6 @@ void
 prepare_resume_reply (char *buf, ptid_t ptid,
 		      struct target_waitstatus *status)
 {
-  client_state &cs = get_client_state ();
   if (debug_threads)
     debug_printf ("Writing resume reply for %s:%d\n",
 		  target_pid_to_str (ptid), status->kind);
@@ -1147,9 +1100,8 @@ prepare_resume_reply (char *buf, ptid_t ptid,
 	const char **regp;
 	struct regcache *regcache;
 
-	if ((status->kind == TARGET_WAITKIND_FORKED && cs.report_fork_events)
-	    || (status->kind == TARGET_WAITKIND_VFORKED 
-		&& cs.report_vfork_events))
+	if ((status->kind == TARGET_WAITKIND_FORKED && report_fork_events)
+	    || (status->kind == TARGET_WAITKIND_VFORKED && report_vfork_events))
 	  {
 	    enum gdb_signal signal = GDB_SIGNAL_TRAP;
 	    const char *event = (status->kind == TARGET_WAITKIND_FORKED
@@ -1160,14 +1112,13 @@ prepare_resume_reply (char *buf, ptid_t ptid,
 	    buf = write_ptid (buf, status->value.related_pid);
 	    strcat (buf, ";");
 	  }
-	else if (status->kind == TARGET_WAITKIND_VFORK_DONE 
-		 && cs.report_vfork_events)
+	else if (status->kind == TARGET_WAITKIND_VFORK_DONE && report_vfork_events)
 	  {
 	    enum gdb_signal signal = GDB_SIGNAL_TRAP;
 
 	    sprintf (buf, "T%02xvforkdone:;", signal);
 	  }
-	else if (status->kind == TARGET_WAITKIND_EXECD && cs.report_exec_events)
+	else if (status->kind == TARGET_WAITKIND_EXECD && report_exec_events)
 	  {
 	    enum gdb_signal signal = GDB_SIGNAL_TRAP;
 	    const char *event = "exec";
@@ -1187,7 +1138,7 @@ prepare_resume_reply (char *buf, ptid_t ptid,
 	    buf += strlen (buf);
 	  }
 	else if (status->kind == TARGET_WAITKIND_THREAD_CREATED
-		 && cs.report_thread_events)
+		 && report_thread_events)
 	  {
 	    enum gdb_signal signal = GDB_SIGNAL_TRAP;
 
@@ -1235,12 +1186,12 @@ prepare_resume_reply (char *buf, ptid_t ptid,
 	      *buf++ = tohex ((addr >> (i - 1) * 4) & 0xf);
 	    *buf++ = ';';
 	  }
-	else if (cs.swbreak_feature && target_stopped_by_sw_breakpoint ())
+	else if (swbreak_feature && target_stopped_by_sw_breakpoint ())
 	  {
 	    sprintf (buf, "swbreak:;");
 	    buf += strlen (buf);
 	  }
-	else if (cs.hwbreak_feature && target_stopped_by_hw_breakpoint ())
+	else if (hwbreak_feature && target_stopped_by_hw_breakpoint ())
 	  {
 	    sprintf (buf, "hwbreak:;");
 	    buf += strlen (buf);
@@ -1268,13 +1219,13 @@ prepare_resume_reply (char *buf, ptid_t ptid,
 	       in GDB will claim this event belongs to inferior_ptid
 	       if we do not specify a thread, and there's no way for
 	       gdbserver to know what inferior_ptid is.  */
-	    if (1 || cs.general_thread != ptid)
+	    if (1 || !ptid_equal (general_thread, ptid))
 	      {
 		int core = -1;
 		/* In non-stop, don't change the general thread behind
 		   GDB's back.  */
 		if (!non_stop)
-		  cs.general_thread = ptid;
+		  general_thread = ptid;
 		sprintf (buf, "thread:");
 		buf += strlen (buf);
 		buf = write_ptid (buf, ptid);
@@ -1305,16 +1256,16 @@ prepare_resume_reply (char *buf, ptid_t ptid,
       }
       break;
     case TARGET_WAITKIND_EXITED:
-      if (cs.multi_process)
+      if (multi_process)
 	sprintf (buf, "W%x;process:%x",
-		 status->value.integer, ptid.pid ());
+		 status->value.integer, ptid_get_pid (ptid));
       else
 	sprintf (buf, "W%02x", status->value.integer);
       break;
     case TARGET_WAITKIND_SIGNALLED:
-      if (cs.multi_process)
+      if (multi_process)
 	sprintf (buf, "X%x;process:%x",
-		 status->value.sig, ptid.pid ());
+		 status->value.sig, ptid_get_pid (ptid));
       else
 	sprintf (buf, "X%02x", status->value.sig);
       break;
@@ -1484,7 +1435,6 @@ clear_symbol_cache (struct sym_cache **symcache_p)
 int
 look_up_one_symbol (const char *name, CORE_ADDR *addrp, int may_ask_gdb)
 {
-  client_state &cs = get_client_state ();
   char *p, *q;
   int len;
   struct sym_cache *sym;
@@ -1506,14 +1456,14 @@ look_up_one_symbol (const char *name, CORE_ADDR *addrp, int may_ask_gdb)
     return 0;
 
   /* Send the request.  */
-  strcpy (cs.own_buf, "qSymbol:");
-  bin2hex ((const gdb_byte *) name, cs.own_buf + strlen ("qSymbol:"),
+  strcpy (own_buf, "qSymbol:");
+  bin2hex ((const gdb_byte *) name, own_buf + strlen ("qSymbol:"),
 	  strlen (name));
-  if (putpkt (cs.own_buf) < 0)
+  if (putpkt (own_buf) < 0)
     return -1;
 
   /* FIXME:  Eventually add buffer overflow checking (to getpkt?)  */
-  len = getpkt (cs.own_buf);
+  len = getpkt (own_buf);
   if (len < 0)
     return -1;
 
@@ -1524,45 +1474,45 @@ look_up_one_symbol (const char *name, CORE_ADDR *addrp, int may_ask_gdb)
      while it figures out the address of the symbol.  */
   while (1)
     {
-      if (cs.own_buf[0] == 'm')
+      if (own_buf[0] == 'm')
 	{
 	  CORE_ADDR mem_addr;
 	  unsigned char *mem_buf;
 	  unsigned int mem_len;
 
-	  decode_m_packet (&cs.own_buf[1], &mem_addr, &mem_len);
+	  decode_m_packet (&own_buf[1], &mem_addr, &mem_len);
 	  mem_buf = (unsigned char *) xmalloc (mem_len);
 	  if (read_inferior_memory (mem_addr, mem_buf, mem_len) == 0)
-	    bin2hex (mem_buf, cs.own_buf, mem_len);
+	    bin2hex (mem_buf, own_buf, mem_len);
 	  else
-	    write_enn (cs.own_buf);
+	    write_enn (own_buf);
 	  free (mem_buf);
-	  if (putpkt (cs.own_buf) < 0)
+	  if (putpkt (own_buf) < 0)
 	    return -1;
 	}
-      else if (cs.own_buf[0] == 'v')
+      else if (own_buf[0] == 'v')
 	{
 	  int new_len = -1;
-	  handle_v_requests (cs.own_buf, len, &new_len);
+	  handle_v_requests (own_buf, len, &new_len);
 	  if (new_len != -1)
-	    putpkt_binary (cs.own_buf, new_len);
+	    putpkt_binary (own_buf, new_len);
 	  else
-	    putpkt (cs.own_buf);
+	    putpkt (own_buf);
 	}
       else
 	break;
-      len = getpkt (cs.own_buf);
+      len = getpkt (own_buf);
       if (len < 0)
 	return -1;
     }
 
-  if (!startswith (cs.own_buf, "qSymbol:"))
+  if (!startswith (own_buf, "qSymbol:"))
     {
-      warning ("Malformed response to qSymbol, ignoring: %s", cs.own_buf);
+      warning ("Malformed response to qSymbol, ignoring: %s\n", own_buf);
       return -1;
     }
 
-  p = cs.own_buf + strlen ("qSymbol:");
+  p = own_buf + strlen ("qSymbol:");
   q = p;
   while (*q && *q != ':')
     q++;
@@ -1598,18 +1548,17 @@ look_up_one_symbol (const char *name, CORE_ADDR *addrp, int may_ask_gdb)
 int
 relocate_instruction (CORE_ADDR *to, CORE_ADDR oldloc)
 {
-  client_state &cs = get_client_state ();
   int len;
   ULONGEST written = 0;
 
   /* Send the request.  */
-  sprintf (cs.own_buf, "qRelocInsn:%s;%s", paddress (oldloc),
+  sprintf (own_buf, "qRelocInsn:%s;%s", paddress (oldloc),
 	   paddress (*to));
-  if (putpkt (cs.own_buf) < 0)
+  if (putpkt (own_buf) < 0)
     return -1;
 
   /* FIXME:  Eventually add buffer overflow checking (to getpkt?)  */
-  len = getpkt (cs.own_buf);
+  len = getpkt (own_buf);
   if (len < 0)
     return -1;
 
@@ -1617,61 +1566,61 @@ relocate_instruction (CORE_ADDR *to, CORE_ADDR oldloc)
      wait for the qRelocInsn "response".  That requires re-entering
      the main loop.  For now, this is an adequate approximation; allow
      GDB to access memory.  */
-  while (cs.own_buf[0] == 'm' || cs.own_buf[0] == 'M' || cs.own_buf[0] == 'X')
+  while (own_buf[0] == 'm' || own_buf[0] == 'M' || own_buf[0] == 'X')
     {
       CORE_ADDR mem_addr;
       unsigned char *mem_buf = NULL;
       unsigned int mem_len;
 
-      if (cs.own_buf[0] == 'm')
+      if (own_buf[0] == 'm')
 	{
-	  decode_m_packet (&cs.own_buf[1], &mem_addr, &mem_len);
+	  decode_m_packet (&own_buf[1], &mem_addr, &mem_len);
 	  mem_buf = (unsigned char *) xmalloc (mem_len);
 	  if (read_inferior_memory (mem_addr, mem_buf, mem_len) == 0)
-	    bin2hex (mem_buf, cs.own_buf, mem_len);
+	    bin2hex (mem_buf, own_buf, mem_len);
 	  else
-	    write_enn (cs.own_buf);
+	    write_enn (own_buf);
 	}
-      else if (cs.own_buf[0] == 'X')
+      else if (own_buf[0] == 'X')
 	{
-	  if (decode_X_packet (&cs.own_buf[1], len - 1, &mem_addr,
+	  if (decode_X_packet (&own_buf[1], len - 1, &mem_addr,
 			       &mem_len, &mem_buf) < 0
 	      || write_inferior_memory (mem_addr, mem_buf, mem_len) != 0)
-	    write_enn (cs.own_buf);
+	    write_enn (own_buf);
 	  else
-	    write_ok (cs.own_buf);
+	    write_ok (own_buf);
 	}
       else
 	{
-	  decode_M_packet (&cs.own_buf[1], &mem_addr, &mem_len, &mem_buf);
+	  decode_M_packet (&own_buf[1], &mem_addr, &mem_len, &mem_buf);
 	  if (write_inferior_memory (mem_addr, mem_buf, mem_len) == 0)
-	    write_ok (cs.own_buf);
+	    write_ok (own_buf);
 	  else
-	    write_enn (cs.own_buf);
+	    write_enn (own_buf);
 	}
       free (mem_buf);
-      if (putpkt (cs.own_buf) < 0)
+      if (putpkt (own_buf) < 0)
 	return -1;
-      len = getpkt (cs.own_buf);
+      len = getpkt (own_buf);
       if (len < 0)
 	return -1;
     }
 
-  if (cs.own_buf[0] == 'E')
+  if (own_buf[0] == 'E')
     {
-      warning ("An error occurred while relocating an instruction: %s",
-	       cs.own_buf);
+      warning ("An error occurred while relocating an instruction: %s\n",
+	       own_buf);
       return -1;
     }
 
-  if (!startswith (cs.own_buf, "qRelocInsn:"))
+  if (!startswith (own_buf, "qRelocInsn:"))
     {
-      warning ("Malformed response to qRelocInsn, ignoring: %s",
-	       cs.own_buf);
+      warning ("Malformed response to qRelocInsn, ignoring: %s\n",
+	       own_buf);
       return -1;
     }
 
-  unpack_varlen_hex (cs.own_buf + strlen ("qRelocInsn:"), &written);
+  unpack_varlen_hex (own_buf + strlen ("qRelocInsn:"), &written);
 
   *to += written;
   return 0;

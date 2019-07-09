@@ -1,6 +1,6 @@
 /* Native-dependent code for X86 BSD's.
 
-   Copyright (C) 2003-2019 Free Software Foundation, Inc.
+   Copyright (C) 2003-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -40,6 +40,16 @@ size_t x86bsd_xsave_len;
 /* Support for debug registers.  */
 
 #ifdef HAVE_PT_GETDBREGS
+static void (*super_mourn_inferior) (struct target_ops *ops);
+
+/* Implement the "to_mourn_inferior" target_ops method.  */
+
+static void
+x86bsd_mourn_inferior (struct target_ops *ops)
+{
+  x86_cleanup_dregs ();
+  super_mourn_inferior (ops);
+}
 
 /* Helper macro to access debug register X.  FreeBSD/amd64 and modern
    versions of FreeBSD/i386 provide this macro in system headers.  Define
@@ -67,6 +77,7 @@ x86bsd_dr_get (ptid_t ptid, int regnum)
 static void
 x86bsd_dr_set (int regnum, unsigned long value)
 {
+  struct thread_info *thread;
   struct dbreg dbregs;
 
   if (ptrace (PT_GETDBREGS, get_ptrace_pid (inferior_ptid),
@@ -80,12 +91,13 @@ x86bsd_dr_set (int regnum, unsigned long value)
 
   DBREG_DRX ((&dbregs), regnum) = value;
 
-  for (thread_info *thread : current_inferior ()->non_exited_threads ())
-    {
-      if (ptrace (PT_SETDBREGS, get_ptrace_pid (thread->ptid),
-		  (PTRACE_TYPE_ARG3) &dbregs, 0) == -1)
-	perror_with_name (_("Couldn't write debug registers"));
-    }
+  ALL_NON_EXITED_THREADS (thread)
+    if (thread->inf == current_inferior ())
+      {
+	if (ptrace (PT_SETDBREGS, get_ptrace_pid (thread->ptid),
+		    (PTRACE_TYPE_ARG3) &dbregs, 0) == -1)
+	  perror_with_name (_("Couldn't write debug registers"));
+      }
 }
 
 static void
@@ -122,15 +134,28 @@ x86bsd_dr_get_control (void)
 
 #endif /* PT_GETDBREGS */
 
-void
-_initialize_x86_bsd_nat ()
+/* Create a prototype *BSD/x86 target.  The client can override it
+   with local methods.  */
+
+struct target_ops *
+x86bsd_target (void)
 {
+  struct target_ops *t;
+
+  t = inf_ptrace_target ();
+
 #ifdef HAVE_PT_GETDBREGS
+  x86_use_watchpoints (t);
+
   x86_dr_low.set_control = x86bsd_dr_set_control;
   x86_dr_low.set_addr = x86bsd_dr_set_addr;
   x86_dr_low.get_addr = x86bsd_dr_get_addr;
   x86_dr_low.get_status = x86bsd_dr_get_status;
   x86_dr_low.get_control = x86bsd_dr_get_control;
   x86_set_debug_register_length (sizeof (void *));
+  super_mourn_inferior = t->to_mourn_inferior;
+  t->to_mourn_inferior = x86bsd_mourn_inferior;
 #endif /* HAVE_PT_GETDBREGS */
+
+  return t;
 }

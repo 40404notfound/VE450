@@ -1,5 +1,5 @@
 /* FLEX lexer for Ada expressions, for GDB.
-   Copyright (C) 1994-2019 Free Software Foundation, Inc.
+   Copyright (C) 1994-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -41,7 +41,7 @@ POSEXP  (e"+"?{NUM10})
 
 %{
 
-#include "diagnostics.h"
+#include "common/diagnostics.h"
 
 /* Some old versions of flex generate code that uses the "register" keyword,
    which clang warns about.  This was observed for example with flex 2.5.35,
@@ -73,23 +73,20 @@ static void rewind_to_char (int);
 
 #undef YY_INPUT
 #define YY_INPUT(BUF, RESULT, MAX_SIZE) \
-    if ( *pstate->lexptr == '\000' ) \
+    if ( *lexptr == '\000' ) \
       (RESULT) = YY_NULL; \
     else \
       { \
-        *(BUF) = *pstate->lexptr; \
+        *(BUF) = *lexptr; \
         (RESULT) = 1; \
-	pstate->lexptr += 1; \
+	lexptr += 1; \
       }
 
 static int find_dot_all (const char *);
 
-/* Depth of parentheses.  */
-static int paren_depth;
-
 %}
 
-%option case-insensitive interactive nodefault noyywrap
+%option case-insensitive interactive nodefault
 
 %s BEFORE_QUAL_QUOTE
 
@@ -216,7 +213,7 @@ false		{ return FALSEKEYWORD; }
 
         /* ATTRIBUTES */
 
-{TICK}[a-zA-Z][a-zA-Z_]+ { BEGIN INITIAL; return processAttribute (yytext+1); }
+{TICK}[a-zA-Z][a-zA-Z]+ { BEGIN INITIAL; return processAttribute (yytext+1); }
 
 	/* PUNCTUATION */
 
@@ -232,7 +229,7 @@ false		{ return FALSEKEYWORD; }
 
 [-&*+./:<>=|;\[\]] { return yytext[0]; }
 
-","		{ if (paren_depth == 0 && pstate->comma_terminates)
+","		{ if (paren_depth == 0 && comma_terminates)
 		    {
 		      rewind_to_char (',');
 		      return 0;
@@ -293,7 +290,7 @@ false		{ return FALSEKEYWORD; }
 "$"({LETTER}|{DIG}|"$")*  {
 		  yylval.sval.ptr = yytext;
 		  yylval.sval.length = yyleng;
-		  return DOLLAR_VARIABLE;
+		  return SPECIAL_VARIABLE;
 		}
 
 	/* CATCH-ALL ERROR CASE */
@@ -308,7 +305,6 @@ static void
 lexer_init (FILE *inp)
 {
   BEGIN INITIAL;
-  paren_depth = 0;
   yyrestart (inp);
 }
 
@@ -374,11 +370,11 @@ processInt (struct parser_state *par_state, const char *base0,
       exp -= 1;
     }
 
-  if ((result >> (gdbarch_int_bit (par_state->gdbarch ())-1)) == 0)
+  if ((result >> (gdbarch_int_bit (parse_gdbarch (par_state))-1)) == 0)
     yylval.typed_val.type = type_int (par_state);
-  else if ((result >> (gdbarch_long_bit (par_state->gdbarch ())-1)) == 0)
+  else if ((result >> (gdbarch_long_bit (parse_gdbarch (par_state))-1)) == 0)
     yylval.typed_val.type = type_long (par_state);
-  else if (((result >> (gdbarch_long_bit (par_state->gdbarch ())-1)) >> 1) == 0)
+  else if (((result >> (gdbarch_long_bit (parse_gdbarch (par_state))-1)) >> 1) == 0)
     {
       /* We have a number representable as an unsigned integer quantity.
          For consistency with the C treatment, we will treat it as an
@@ -388,7 +384,7 @@ processInt (struct parser_state *par_state, const char *base0,
          assignment does the trick (no, it doesn't; read the reference manual).
        */
       yylval.typed_val.type
-	= builtin_type (par_state->gdbarch ())->builtin_unsigned_long;
+	= builtin_type (parse_gdbarch (par_state))->builtin_unsigned_long;
       if (result & LONGEST_SIGN)
 	yylval.typed_val.val =
 	  (LONGEST) (result & ~LONGEST_SIGN)
@@ -628,10 +624,16 @@ processAttribute (const char *str)
 static void
 rewind_to_char (int ch)
 {
-  pstate->lexptr -= yyleng;
-  while (toupper (*pstate->lexptr) != toupper (ch))
-    pstate->lexptr -= 1;
+  lexptr -= yyleng;
+  while (toupper (*lexptr) != toupper (ch))
+    lexptr -= 1;
   yyrestart (NULL);
+}
+
+int
+yywrap(void)
+{
+  return 1;
 }
 
 /* Dummy definition to suppress warnings about unused static definitions. */

@@ -1,6 +1,6 @@
 /* C language support routines for GDB, the GNU debugger.
 
-   Copyright (C) 1992-2019 Free Software Foundation, Inc.
+   Copyright (C) 1992-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -25,7 +25,6 @@
 #include "language.h"
 #include "varobj.h"
 #include "c-lang.h"
-#include "c-support.h"
 #include "valprint.h"
 #include "macroscope.h"
 #include "charset.h"
@@ -234,7 +233,7 @@ c_printstr (struct ui_file *stream, struct type *type,
    target charset.  */
 
 void
-c_get_string (struct value *value, gdb::unique_xmalloc_ptr<gdb_byte> *buffer,
+c_get_string (struct value *value, gdb_byte **buffer,
 	      int *length, struct type **char_type,
 	      const char **charset)
 {
@@ -279,21 +278,10 @@ c_get_string (struct value *value, gdb::unique_xmalloc_ptr<gdb_byte> *buffer,
   /* If the string lives in GDB's memory instead of the inferior's,
      then we just need to copy it to BUFFER.  Also, since such strings
      are arrays with known size, FETCHLIMIT will hold the size of the
-     array.
-
-     An array is assumed to live in GDB's memory, so we take this path
-     here.
-
-     However, it's possible for the caller to request more array
-     elements than apparently exist -- this can happen when using the
-     C struct hack.  So, only do this if either no length was
-     specified, or the length is within the existing bounds.  This
-     avoids running off the end of the value's contents.  */
+     array.  */
   if ((VALUE_LVAL (value) == not_lval
-       || VALUE_LVAL (value) == lval_internalvar
-       || TYPE_CODE (type) == TYPE_CODE_ARRAY)
-      && fetchlimit != UINT_MAX
-      && (*length < 0 || *length <= fetchlimit))
+       || VALUE_LVAL (value) == lval_internalvar)
+      && fetchlimit != UINT_MAX)
     {
       int i;
       const gdb_byte *contents = value_contents (value);
@@ -311,25 +299,13 @@ c_get_string (struct value *value, gdb::unique_xmalloc_ptr<gdb_byte> *buffer,
       /* I is now either a user-defined length, the number of non-null
  	 characters, or FETCHLIMIT.  */
       *length = i * width;
-      buffer->reset ((gdb_byte *) xmalloc (*length));
-      memcpy (buffer->get (), contents, *length);
+      *buffer = (gdb_byte *) xmalloc (*length);
+      memcpy (*buffer, contents, *length);
       err = 0;
     }
   else
     {
-      /* value_as_address does not return an address for an array when
-	 c_style_arrays is false, so we handle that specially
-	 here.  */
-      CORE_ADDR addr;
-      if (TYPE_CODE (type) == TYPE_CODE_ARRAY)
-	{
-	  if (VALUE_LVAL (value) != lval_memory)
-	    error (_("Attempt to take address of value "
-		     "not located in memory."));
-	  addr = value_address (value);
-	}
-      else
-	addr = value_as_address (value);
+      CORE_ADDR addr = value_as_address (value);
 
       /* Prior to the fix for PR 16196 read_string would ignore fetchlimit
 	 if length > 0.  The old "broken" behaviour is the behaviour we want:
@@ -349,7 +325,10 @@ c_get_string (struct value *value, gdb::unique_xmalloc_ptr<gdb_byte> *buffer,
       err = read_string (addr, *length, width, fetchlimit,
 			 byte_order, buffer, length);
       if (err != 0)
-	memory_error (TARGET_XFER_E_IO, addr);
+	{
+	  xfree (*buffer);
+	  memory_error (TARGET_XFER_E_IO, addr);
+	}
     }
 
   /* If the LENGTH is specified at -1, we want to return the string
@@ -359,7 +338,7 @@ c_get_string (struct value *value, gdb::unique_xmalloc_ptr<gdb_byte> *buffer,
   if (req_length == -1)
     /* If the last character is null, subtract it from LENGTH.  */
     if (*length > 0
-	&& extract_unsigned_integer (buffer->get () + *length - width,
+ 	&& extract_unsigned_integer (*buffer + *length - width,
 				     width, byte_order) == 0)
       *length -= width;
   
@@ -403,7 +382,7 @@ convert_ucn (char *p, char *limit, const char *dest_charset,
   gdb_byte data[4];
   int i;
 
-  for (i = 0; i < length && p < limit && ISXDIGIT (*p); ++i, ++p)
+  for (i = 0; i < length && p < limit && isxdigit (*p); ++i, ++p)
     result = (result << 4) + host_hex_value (*p);
 
   for (i = 3; i >= 0; --i)
@@ -445,7 +424,7 @@ convert_octal (struct type *type, char *p,
   unsigned long value = 0;
 
   for (i = 0;
-       i < 3 && p < limit && ISDIGIT (*p) && *p != '8' && *p != '9';
+       i < 3 && p < limit && isdigit (*p) && *p != '8' && *p != '9';
        ++i)
     {
       value = 8 * value + host_hex_value (*p);
@@ -468,7 +447,7 @@ convert_hex (struct type *type, char *p,
 {
   unsigned long value = 0;
 
-  while (p < limit && ISXDIGIT (*p))
+  while (p < limit && isxdigit (*p))
     {
       value = 16 * value + host_hex_value (*p);
       ++p;
@@ -509,7 +488,7 @@ convert_escape (struct type *type, const char *dest_charset,
 
     case 'x':
       ADVANCE;
-      if (!ISXDIGIT (*p))
+      if (!isxdigit (*p))
 	error (_("\\x used with no following hex digits."));
       p = convert_hex (type, p, limit, output);
       break;
@@ -531,7 +510,7 @@ convert_escape (struct type *type, const char *dest_charset,
 	int length = *p == 'u' ? 4 : 8;
 
 	ADVANCE;
-	if (!ISXDIGIT (*p))
+	if (!isxdigit (*p))
 	  error (_("\\u used with no following hex digits"));
 	p = convert_ucn (p, limit, dest_charset, output, length);
       }
@@ -738,42 +717,6 @@ c_watch_location_expression (struct type *type, CORE_ADDR addr)
     (xstrprintf ("* (%s *) %s", name.c_str (), core_addr_to_string (addr)));
 }
 
-/* See c-lang.h.  */
-
-bool
-c_is_string_type_p (struct type *type)
-{
-  type = check_typedef (type);
-  while (TYPE_CODE (type) == TYPE_CODE_REF)
-    {
-      type = TYPE_TARGET_TYPE (type);
-      type = check_typedef (type);
-    }
-
-  switch (TYPE_CODE (type))
-    {
-    case TYPE_CODE_ARRAY:
-      {
-	/* See if target type looks like a string.  */
-	struct type *array_target_type = TYPE_TARGET_TYPE (type);
-	return (TYPE_LENGTH (type) > 0
-		&& TYPE_LENGTH (array_target_type) > 0
-		&& c_textual_element_type (array_target_type, 0));
-      }
-    case TYPE_CODE_STRING:
-      return true;
-    case TYPE_CODE_PTR:
-      {
-	struct type *element_type = TYPE_TARGET_TYPE (type);
-	return c_textual_element_type (element_type, 0);
-      }
-    default:
-      break;
-    }
-
-  return false;
-}
-
 
 /* Table mapping opcodes into strings for printing operators
    and precedences of the operators.  */
@@ -808,7 +751,6 @@ const struct op_print c_op_print_tab[] =
   {"*", UNOP_IND, PREC_PREFIX, 0},
   {"&", UNOP_ADDR, PREC_PREFIX, 0},
   {"sizeof ", UNOP_SIZEOF, PREC_PREFIX, 0},
-  {"alignof ", UNOP_ALIGNOF, PREC_PREFIX, 0},
   {"++", UNOP_PREINCREMENT, PREC_PREFIX, 0},
   {"--", UNOP_PREDECREMENT, PREC_PREFIX, 0},
   {NULL, OP_NULL, PREC_PREFIX, 0}
@@ -899,6 +841,7 @@ extern const struct language_defn c_language_defn =
   c_extensions,
   &exp_descriptor_c,
   c_parse,
+  c_yyerror,
   null_post_parser,
   c_printchar,			/* Print a character constant */
   c_printstr,			/* Function to print string constant */
@@ -910,7 +853,6 @@ extern const struct language_defn c_language_defn =
   default_read_var_value,	/* la_read_var_value */
   NULL,				/* Language specific skip_trampoline */
   NULL,				/* name_of_this */
-  true,				/* la_store_sym_names_in_linkage_form_p */
   basic_lookup_symbol_nonlocal,	/* lookup_symbol_nonlocal */
   basic_lookup_transparent_type,/* lookup_transparent_type */
   NULL,				/* Language specific symbol demangler */
@@ -933,8 +875,7 @@ extern const struct language_defn c_language_defn =
   &c_varobj_ops,
   c_get_compile_context,
   c_compute_program,
-  c_is_string_type_p,
-  "{...}"			/* la_struct_too_deep_ellipsis */
+  LANG_MAGIC
 };
 
 enum cplus_primitive_types {
@@ -1045,6 +986,7 @@ extern const struct language_defn cplus_language_defn =
   cplus_extensions,
   &exp_descriptor_c,
   c_parse,
+  c_yyerror,
   null_post_parser,
   c_printchar,			/* Print a character constant */
   c_printstr,			/* Function to print string constant */
@@ -1056,7 +998,6 @@ extern const struct language_defn cplus_language_defn =
   default_read_var_value,	/* la_read_var_value */
   cplus_skip_trampoline,	/* Language specific skip_trampoline */
   "this",                       /* name_of_this */
-  false,			/* la_store_sym_names_in_linkage_form_p */
   cp_lookup_symbol_nonlocal,	/* lookup_symbol_nonlocal */
   cp_lookup_transparent_type,   /* lookup_transparent_type */
   gdb_demangle,			/* Language specific symbol demangler */
@@ -1077,10 +1018,9 @@ extern const struct language_defn cplus_language_defn =
   iterate_over_symbols,
   cp_search_name_hash,
   &cplus_varobj_ops,
-  cplus_get_compile_context,
-  cplus_compute_program,
-  c_is_string_type_p,
-  "{...}"			/* la_struct_too_deep_ellipsis */
+  NULL,
+  NULL,
+  LANG_MAGIC
 };
 
 static const char *asm_extensions[] =
@@ -1100,6 +1040,7 @@ extern const struct language_defn asm_language_defn =
   asm_extensions,
   &exp_descriptor_c,
   c_parse,
+  c_yyerror,
   null_post_parser,
   c_printchar,			/* Print a character constant */
   c_printstr,			/* Function to print string constant */
@@ -1111,7 +1052,6 @@ extern const struct language_defn asm_language_defn =
   default_read_var_value,	/* la_read_var_value */
   NULL,				/* Language specific skip_trampoline */
   NULL,				/* name_of_this */
-  true,				/* la_store_sym_names_in_linkage_form_p */
   basic_lookup_symbol_nonlocal,	/* lookup_symbol_nonlocal */
   basic_lookup_transparent_type,/* lookup_transparent_type */
   NULL,				/* Language specific symbol demangler */
@@ -1134,8 +1074,7 @@ extern const struct language_defn asm_language_defn =
   &default_varobj_ops,
   NULL,
   NULL,
-  c_is_string_type_p,
-  "{...}"			/* la_struct_too_deep_ellipsis */
+  LANG_MAGIC
 };
 
 /* The following language_defn does not represent a real language.
@@ -1155,6 +1094,7 @@ extern const struct language_defn minimal_language_defn =
   NULL,
   &exp_descriptor_c,
   c_parse,
+  c_yyerror,
   null_post_parser,
   c_printchar,			/* Print a character constant */
   c_printstr,			/* Function to print string constant */
@@ -1166,7 +1106,6 @@ extern const struct language_defn minimal_language_defn =
   default_read_var_value,	/* la_read_var_value */
   NULL,				/* Language specific skip_trampoline */
   NULL,				/* name_of_this */
-  true,				/* la_store_sym_names_in_linkage_form_p */
   basic_lookup_symbol_nonlocal,	/* lookup_symbol_nonlocal */
   basic_lookup_transparent_type,/* lookup_transparent_type */
   NULL,				/* Language specific symbol demangler */
@@ -1189,6 +1128,5 @@ extern const struct language_defn minimal_language_defn =
   &default_varobj_ops,
   NULL,
   NULL,
-  c_is_string_type_p,
-  "{...}"			/* la_struct_too_deep_ellipsis */
+  LANG_MAGIC
 };

@@ -1,6 +1,6 @@
 #objdump: -s -j .data -j "\$DATA\$"
 #name: fill test with forward labels
-#notarget: tic4x-*-* tic54x-*-*
+#not-target: tic4x-*-* tic54x-*-*
 
 .*: +file format .*
 

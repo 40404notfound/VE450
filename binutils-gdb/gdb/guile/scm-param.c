@@ -1,6 +1,6 @@
 /* GDB parameters implemented in Guile.
 
-   Copyright (C) 2008-2019 Free Software Foundation, Inc.
+   Copyright (C) 2008-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -251,10 +251,10 @@ pascm_signal_setshow_error (SCM exception, const char *msg)
      itself.  */
   if (gdbscm_user_error_p (gdbscm_exception_key (exception)))
     {
-      gdb::unique_xmalloc_ptr<char> excp_text
-	= gdbscm_exception_message_to_string (exception);
+      char *excp_text = gdbscm_exception_message_to_string (exception);
 
-      error ("%s", excp_text.get ());
+      make_cleanup (xfree, excp_text);
+      error ("%s", excp_text);
     }
   else
     {
@@ -273,6 +273,8 @@ pascm_set_func (const char *args, int from_tty, struct cmd_list_element *c)
 {
   param_smob *p_smob = (param_smob *) get_cmd_context (c);
   SCM self, result, exception;
+  char *msg;
+  struct cleanup *cleanups;
 
   gdb_assert (gdbscm_is_procedure (p_smob->set_func));
 
@@ -289,17 +291,18 @@ pascm_set_func (const char *args, int from_tty, struct cmd_list_element *c)
   if (!scm_is_string (result))
     error (_("Result of %s set-func is not a string."), p_smob->name);
 
-  gdb::unique_xmalloc_ptr<char> msg = gdbscm_scm_to_host_string (result, NULL,
-								 &exception);
+  msg = gdbscm_scm_to_host_string (result, NULL, &exception);
   if (msg == NULL)
     {
       gdbscm_print_gdb_exception (SCM_BOOL_F, exception);
       error (_("Error converting show text to host string."));
     }
 
+  cleanups = make_cleanup (xfree, msg);
   /* GDB is usually silent when a parameter is set.  */
-  if (*msg.get () != '\0')
-    fprintf_filtered (gdb_stdout, "%s\n", msg.get ());
+  if (*msg != '\0')
+    fprintf_filtered (gdb_stdout, "%s\n", msg);
+  do_cleanups (cleanups);
 }
 
 /* A callback function that is registered against the respective
@@ -313,6 +316,8 @@ pascm_show_func (struct ui_file *file, int from_tty,
 {
   param_smob *p_smob = (param_smob *) get_cmd_context (c);
   SCM value_scm, self, result, exception;
+  char *msg;
+  struct cleanup *cleanups;
 
   gdb_assert (gdbscm_is_procedure (p_smob->show_func));
 
@@ -333,15 +338,16 @@ pascm_show_func (struct ui_file *file, int from_tty,
 				  _("Error occurred showing parameter."));
     }
 
-  gdb::unique_xmalloc_ptr<char> msg = gdbscm_scm_to_host_string (result, NULL,
-								 &exception);
+  msg = gdbscm_scm_to_host_string (result, NULL, &exception);
   if (msg == NULL)
     {
       gdbscm_print_gdb_exception (SCM_BOOL_F, exception);
       error (_("Error converting show text to host string."));
     }
 
-  fprintf_filtered (file, "%s\n", msg.get ());
+  cleanups = make_cleanup (xfree, msg);
+  fprintf_filtered (file, "%s\n", msg);
+  do_cleanups (cleanups);
 }
 
 /* A helper function that dispatches to the appropriate add_setshow
@@ -510,8 +516,7 @@ compute_enum_list (SCM enum_values_scm, int arg_pos, const char *func_name)
 	  freeargv (enum_values);
 	  SCM_ASSERT_TYPE (0, value, arg_pos, func_name, _("string"));
 	}
-      enum_values[i] = gdbscm_scm_to_host_string (value, NULL,
-						  &exception).release ();
+      enum_values[i] = gdbscm_scm_to_host_string (value, NULL, &exception);
       if (enum_values[i] == NULL)
 	{
 	  freeargv (enum_values);
@@ -678,33 +683,34 @@ pascm_set_param_value_x (enum var_types type, union pascm_variable *var,
 	}
       else
 	{
+	  char *string;
 	  SCM exception;
 
-	  gdb::unique_xmalloc_ptr<char> string
-	    = gdbscm_scm_to_host_string (value, NULL, &exception);
+	  string = gdbscm_scm_to_host_string (value, NULL, &exception);
 	  if (string == NULL)
 	    gdbscm_throw (exception);
 	  xfree (var->stringval);
-	  var->stringval = string.release ();
+	  var->stringval = string;
 	}
       break;
 
     case var_enum:
       {
 	int i;
+	char *str;
 	SCM exception;
 
 	SCM_ASSERT_TYPE (scm_is_string (value), value, arg_pos, func_name,
 		       _("string"));
-	gdb::unique_xmalloc_ptr<char> str
-	  = gdbscm_scm_to_host_string (value, NULL, &exception);
+	str = gdbscm_scm_to_host_string (value, NULL, &exception);
 	if (str == NULL)
 	  gdbscm_throw (exception);
 	for (i = 0; enumeration[i]; ++i)
 	  {
-	    if (strcmp (enumeration[i], str.get ()) == 0)
+	    if (strcmp (enumeration[i], str) == 0)
 	      break;
 	  }
+	xfree (str);
 	if (enumeration[i] == NULL)
 	  {
 	    gdbscm_out_of_range_error (func_name, arg_pos, value,
@@ -1006,8 +1012,7 @@ gdbscm_register_parameter_x (SCM self)
 		_("parameter exists, \"show\" command is already defined"));
     }
 
-  gdbscm_gdb_exception exc {};
-  try
+  TRY
     {
       add_setshow_generic (p_smob->type, p_smob->cmd_class,
 			   p_smob->cmd_name, p_smob,
@@ -1019,12 +1024,12 @@ gdbscm_register_parameter_x (SCM self)
 			   set_list, show_list,
 			   &p_smob->set_command, &p_smob->show_command);
     }
-  catch (const gdb_exception &except)
+  CATCH (except, RETURN_MASK_ALL)
     {
-      exc = unpack (except);
+      GDBSCM_HANDLE_GDB_EXCEPTION (except);
     }
+  END_CATCH
 
-  GDBSCM_HANDLE_GDB_EXCEPTION (exc);
   /* Note: At this point the parameter exists in gdb.
      So no more errors after this point.  */
 
@@ -1054,26 +1059,28 @@ gdbscm_parameter_value (SCM self)
     }
   else
     {
+      char *name;
       SCM except_scm;
       struct cmd_list_element *alias, *prefix, *cmd;
       char *newarg;
       int found = -1;
-      gdbscm_gdb_exception except {};
+      struct gdb_exception except = exception_none;
 
-      gdb::unique_xmalloc_ptr<char> name
-	= gdbscm_scm_to_host_string (self, NULL, &except_scm);
+      name = gdbscm_scm_to_host_string (self, NULL, &except_scm);
       if (name == NULL)
 	gdbscm_throw (except_scm);
-      newarg = concat ("show ", name.get (), (char *) NULL);
-      try
+      newarg = concat ("show ", name, (char *) NULL);
+      TRY
 	{
 	  found = lookup_cmd_composition (newarg, &alias, &prefix, &cmd);
 	}
-      catch (const gdb_exception &ex)
+      CATCH (ex, RETURN_MASK_ALL)
 	{
-	  except = unpack (ex);
+	  except = ex;
 	}
+      END_CATCH
 
+      xfree (name);
       xfree (newarg);
       GDBSCM_HANDLE_GDB_EXCEPTION (except);
       if (!found)

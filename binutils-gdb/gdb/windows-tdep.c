@@ -1,4 +1,4 @@
-/* Copyright (C) 2008-2019 Free Software Foundation, Inc.
+/* Copyright (C) 2008-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -279,7 +279,7 @@ static const struct lval_funcs tlb_value_funcs =
 static struct value *
 tlb_make_value (struct gdbarch *gdbarch, struct internalvar *var, void *ignore)
 {
-  if (target_has_stack && inferior_ptid != null_ptid)
+  if (target_has_stack && !ptid_equal (inferior_ptid, null_ptid))
     {
       struct type *type = windows_get_tlb_type (gdbarch);
       return allocate_computed_value (type, &tlb_value_funcs, NULL);
@@ -327,22 +327,22 @@ display_one_tib (ptid_t ptid)
   if (target_get_tib_address (ptid, &thread_local_base) == 0)
     {
       printf_filtered (_("Unable to get thread local base for %s\n"),
-		       target_pid_to_str (ptid).c_str ());
+	target_pid_to_str (ptid));
       return -1;
     }
 
-  if (target_read (current_top_target (), TARGET_OBJECT_MEMORY,
+  if (target_read (&current_target, TARGET_OBJECT_MEMORY,
 		   NULL, tib, thread_local_base, tib_size) != tib_size)
     {
       printf_filtered (_("Unable to read thread information "
 			 "block for %s at address %s\n"),
-		       target_pid_to_str (ptid).c_str (), 
-		       paddress (target_gdbarch (), thread_local_base));
+	target_pid_to_str (ptid), 
+	paddress (target_gdbarch (), thread_local_base));
       return -1;
     }
 
   printf_filtered (_("Thread Information Block %s at %s\n"),
-		   target_pid_to_str (ptid).c_str (),
+		   target_pid_to_str (ptid),
 		   paddress (target_gdbarch (), thread_local_base));
 
   index = (gdb_byte *) tib;
@@ -367,7 +367,7 @@ display_one_tib (ptid_t ptid)
 static void
 display_tib (const char * args, int from_tty)
 {
-  if (inferior_ptid != null_ptid)
+  if (!ptid_equal (inferior_ptid, null_ptid))
     display_one_tib (inferior_ptid);
 }
 
@@ -415,6 +415,7 @@ windows_iterate_over_objfiles_in_search_order
    void *cb_data, struct objfile *current_objfile)
 {
   int stop;
+  struct objfile *objfile;
 
   if (current_objfile)
     {
@@ -423,7 +424,7 @@ windows_iterate_over_objfiles_in_search_order
 	return;
     }
 
-  for (objfile *objfile : current_program_space->objfiles ())
+  ALL_OBJFILES (objfile)
     {
       if (objfile != current_objfile)
 	{

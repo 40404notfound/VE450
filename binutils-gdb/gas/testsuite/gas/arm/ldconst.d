@@ -1,7 +1,7 @@
 #objdump: -dr --prefix-addresses --show-raw-insn
 #name: ARM ldr with immediate constant
 #as: -mcpu=arm7m -EL
-# skip: *-*-pe *-*-wince
+# skip: *-*-*coff *-*-pe *-*-wince *-*-*aout* *-*-netbsd
 
 .*: +file format .*arm.*
 

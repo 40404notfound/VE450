@@ -1,5 +1,5 @@
 /* Handle FR-V (FDPIC) shared libraries for GDB, the GNU Debugger.
-   Copyright (C) 2004-2019 Free Software Foundation, Inc.
+   Copyright (C) 2004-2018 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -377,7 +377,7 @@ frv_current_sos (void)
       if (got_addr != mgot)
 	{
 	  int errcode;
-	  gdb::unique_xmalloc_ptr<char> name_buf;
+	  char *name_buf;
 	  struct int_elf32_fdpic_loadmap *loadmap;
 	  struct so_list *sop;
 	  CORE_ADDR addr;
@@ -409,16 +409,16 @@ frv_current_sos (void)
 
 	  if (solib_frv_debug)
 	    fprintf_unfiltered (gdb_stdlog, "current_sos: name = %s\n",
-	                        name_buf.get ());
+	                        name_buf);
 	  
 	  if (errcode != 0)
 	    warning (_("Can't read pathname for link map entry: %s."),
 		     safe_strerror (errcode));
 	  else
 	    {
-	      strncpy (sop->so_name, name_buf.get (),
-		       SO_NAME_MAX_PATH_SIZE - 1);
+	      strncpy (sop->so_name, name_buf, SO_NAME_MAX_PATH_SIZE - 1);
 	      sop->so_name[SO_NAME_MAX_PATH_SIZE - 1] = '\0';
+	      xfree (name_buf);
 	      strcpy (sop->so_original_name, sop->so_name);
 	    }
 
@@ -561,13 +561,14 @@ enable_break2 (void)
          mechanism to find the dynamic linker's base address.  */
 
       gdb_bfd_ref_ptr tmp_bfd;
-      try
+      TRY
         {
           tmp_bfd = solib_bfd_open (buf);
         }
-      catch (const gdb_exception &ex)
+      CATCH (ex, RETURN_MASK_ALL)
 	{
 	}
+      END_CATCH
 
       if (tmp_bfd == NULL)
 	{
@@ -768,6 +769,8 @@ frv_relocate_main_executable (void)
   int status;
   CORE_ADDR exec_addr, interp_addr;
   struct int_elf32_fdpic_loadmap *ldm;
+  struct cleanup *old_chain;
+  struct section_offsets *new_offsets;
   int changed;
   struct obj_section *osect;
 
@@ -789,8 +792,9 @@ frv_relocate_main_executable (void)
   main_executable_lm_info = new lm_info_frv;
   main_executable_lm_info->map = ldm;
 
-  gdb::unique_xmalloc_ptr<struct section_offsets> new_offsets
-    (XCNEWVEC (struct section_offsets, symfile_objfile->num_sections));
+  new_offsets = XCNEWVEC (struct section_offsets,
+			  symfile_objfile->num_sections);
+  old_chain = make_cleanup (xfree, new_offsets);
   changed = 0;
 
   ALL_OBJFILE_OSECTIONS (symfile_objfile, osect)
@@ -824,7 +828,9 @@ frv_relocate_main_executable (void)
     }
 
   if (changed)
-    objfile_relocate (symfile_objfile, new_offsets.get ());
+    objfile_relocate (symfile_objfile, new_offsets);
+
+  do_cleanups (old_chain);
 
   /* Now that symfile_objfile has been relocated, we can compute the
      GOT value and stash it away.  */
